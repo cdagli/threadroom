@@ -139,3 +139,45 @@ test('Zoom limits keep anchors fixed and screen dragging moves the scene by the 
   const delta=[100,-40],next=panViewport(view,delta,viewportScale(view,rect,hoop));
   assert.ok(near(clientToWorld(next,[client[0]+delta[0],client[1]+delta[1]],rect,hoop),anchor));
 });
+
+test('Entry and exit snap to the outline and survive moving, resizing and anchor edits',()=>{
+  const {withEnd,snapEnd,openPath}=load('curves');
+  const square=[[30,30],[60,30],[60,60],[30,60]];
+  let o=withEnd(withEnd(object('Region',[square]),'entry',[20,45]),'exit',[50,61]);
+  assert.deepEqual([o.entry,o.exit],[[30,45],[50,60]]);
+  const moved=moveGeometry(o,([x,y])=>[x+5,y+7]);
+  assert.deepEqual([moved.entry,moved.exit],[[35,52],[55,67]]);
+  const scaled=moveGeometry(o,([x,y])=>[45+(x-45)*1.5,45+(y-45)*1.5]);
+  assert.deepEqual(scaled.entry,[22.5,45]);assert.ok(near(snapEnd(scaled,scaled.entry),scaled.entry));assert.ok(near(snapEnd(scaled,scaled.exit),scaled.exit));
+  const anchor=moveGeometry(o,(p,r,i)=>r===0&&i===1?[70,30]:p);
+  assert.deepEqual(anchor.entry,o.entry);assert.deepEqual(anchor.rings[0][1],[70,30]);
+  const curve=withEnd({...object('Curve',[curvePoints(anchors,false)],'running'),curve:{points:anchors,closed:false}},'entry',[66,51]);
+  assert.deepEqual(curve.entry,anchors.at(-1));
+  const shifted=moveGeometry(curve,([x,y])=>[x+2,y+3]);
+  assert.deepEqual(shifted.entry,[67,53]);assert.deepEqual(shifted.rings,[curvePoints(shifted.curve.points,false)]);
+  const p={version:1,name:'Ends',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[o,shifted]};
+  assert.ok(validProject(JSON.parse(JSON.stringify(p))));
+  // Open paths: one end sets the direction, so the other setting is cleared.
+  assert.ok(openPath(curve));assert.equal(openPath(o),false);
+  const reversed=withEnd(curve,'exit',[19,40]);
+  assert.deepEqual(reversed.exit,anchors[0]);assert.equal('entry' in reversed,false);
+  assert.equal('entry' in withEnd(o,'entry',undefined),false);
+  // Text keeps its ends when moved; the spec moves with it.
+  const text={...o,text:{origin:[45,45],rotation:0,size:6,path:undefined},rings:[square]};
+  const movedText=moveGeometry(text,([x,y])=>[x+1,y]);
+  assert.deepEqual(movedText.entry,[31,45]);assert.deepEqual(movedText.text.origin,[46,45]);
+});
+
+test('Marker positions show explicit points and estimate automatic ones',()=>{
+  const {routeEnds,withEnd}=load('curves');
+  const a=object('A',[[[10,10],[30,10]]],'running'),b=object('B',[[[80,12],[35,12]]],'running'),c=object('C',[[[50,50],[70,50],[70,70],[50,70]]]);
+  const p={version:1,name:'Ends',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[a,b,c]};
+  const auto=routeEnds(p,b.id);
+  assert.deepEqual([auto.entry,auto.exit,auto.auto],[[35,12],[80,12],{entry:true,exit:true}]);
+  const set=routeEnds({...p,objects:[a,withEnd(b,'entry',[81,12]),c]},b.id);
+  assert.deepEqual([set.entry,set.exit,set.auto],[[80,12],[35,12],{entry:false,exit:true}]);
+  const fill=routeEnds(p,c.id);assert.deepEqual(fill.auto,{entry:true,exit:true});
+  const eyes=object('Eyes',[[[35,47],[41,47]],[[59,47],[65,47]]],'bean'),two=routeEnds({...p,objects:[c,eyes,object('Nose',[[[48,56],[52,56],[50,58]]])]},eyes.id);
+  assert.deepEqual([two.entry,two.exit],[[59,47],[41,47]]);
+  assert.equal(routeEnds(p,'missing'),null);
+});

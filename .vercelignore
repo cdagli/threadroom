@@ -1,6 +1,5 @@
 node_modules
 .next
-out
 .venv
 .npm-cache
 tests

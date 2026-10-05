@@ -116,3 +116,25 @@ test('Satin text borders carry split and short-stitch defaults',()=>{
   assert.deepEqual([bean.splitLength,bean.shortStitches],[0,false]);
   assert.match(exportSVG(project({...o,text:{...o.text,content:'A'}})),/border"[^>]*data-threadroom-split-length="7" data-threadroom-short-stitches="true"/);
 });
+
+test('Entry and exit points are optional, validated and survive JSON',()=>{
+  const o=object('Region',[square]);
+  assert.equal('entry' in o,false);assert.equal('exit' in o,false);
+  const saved=JSON.parse(JSON.stringify(project({...o,entry:[30,45],exit:[60,45]})));
+  assert.ok(validProject(saved));assert.deepEqual([saved.objects[0].entry,saved.objects[0].exit],[[30,45],[60,45]]);
+  for(const v of [[1],[1,2,3],[NaN,1],[1,Infinity],['1',2],null,{x:1,y:2},[1e4,1]])
+    for(const k of ['entry','exit'])assert.equal(validProject(project({...o,[k]:v})),false,`${k} ${JSON.stringify(v)}`);
+});
+
+test('SVG export and the compile payload carry snapped entry and exit points',()=>{
+  const o={...object('Region',[square]),entry:[29,44],exit:[61.5,50]};
+  const svg=exportSVG(project(o));
+  assert.match(svg,/data-threadroom-entry="30 44"/);assert.match(svg,/data-threadroom-exit="60 50"/);
+  assert.doesNotMatch(exportSVG(project(object('Region',[square]))),/threadroom-(entry|exit)/);
+  assert.match(exportSVG(project({...object('Line',[line],'running'),exit:[29,41]})),/data-threadroom-exit="30 40"(?![^>]*entry)/);
+  const [p]=geometryPayload(project(o)).objects;assert.deepEqual([p.entry,p.exit],[[30,44],[60,50]]);
+  assert.equal(JSON.parse(JSON.stringify(geometryPayload(project(object('Region',[square]))))).objects[0].entry,undefined);
+  const text={...o,text:{border:{kind:'satin',color:'#664538',width:2}}};
+  const [letters,border]=geometryPayload(project(text)).objects;
+  assert.deepEqual(letters.entry,[30,44]);assert.equal(border.entry,undefined);assert.equal(border.exit,undefined);
+});

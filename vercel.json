@@ -2,12 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": "npm run build",
-  "outputDirectory": "out",
+  "outputDirectory": ".next-build",
   "functions": {
     "api/export.py": {
       "maxDuration": 60,
       "includeFiles": "embroidery/**",
-      "excludeFiles": "{node_modules/**,.next/**,.next-build/**,out/**,tests/**,.venv/**,.npm-cache/**}"
+      "excludeFiles": "{node_modules/**,.next/**,.next-build/**,tests/**,.venv/**,.npm-cache/**}"
     }
   }
 }

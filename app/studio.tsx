@@ -2,7 +2,7 @@
 import {useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {bounds, demo, fabrics, fromFabric, hoops, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
-import {curvePoints, moveGeometry, simplifyPath, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint} from '@/lib/curves';
+import {curvePoints, moveGeometry, simplifyPath, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {clientToWorld, panViewport, viewportScale, zoomViewport, type Viewport} from '@/lib/viewport';
 import {traceArtwork} from '@/lib/trace';
 import {parse} from '@/lib/pes-parser';
@@ -14,7 +14,7 @@ import TextPanel from './text-panel';
 
 type Tool = 'select' | 'freehand' | 'curve' | 'region' | 'points' | 'text' | 'pan';
 const tools: {id:Tool;icon:string;label:string;key:string;hint:string}[]=[
-  {id:'select',icon:'select',label:'Select',key:'V',hint:'Drag to move · Edit points to reshape.'},
+  {id:'select',icon:'select',label:'Select',key:'V',hint:'Drag to move · Edit points to reshape · Drag the green/red dots to set start and end.'},
   {id:'freehand',icon:'pen',label:'Freehand',key:'B',hint:'Draw a stroke. Release to finish.'},
   {id:'curve',icon:'curve',label:'Curve',key:'C',hint:'Click to trace · Drag points to adjust · Enter to finish.'},
   {id:'region',icon:'region',label:'Fill',key:'F',hint:'Click around the shape. Click the first point or Close shape to finish.'},
@@ -93,7 +93,7 @@ export default function Studio() {
   const file=useRef<HTMLInputElement>(null), svg=useRef<SVGSVGElement>(null);
   const current=useRef(project); current.current=project;
   const revision=useRef(0), playback=useRef(0);
-  const drag=useRef<{id:string;start:Point;source:StitchObject;before:Project;point?:[number,number];moved?:boolean}|null>(null);
+  const drag=useRef<{id:string;start:Point;source:StitchObject;before:Project;point?:[number,number];end?:'entry'|'exit';moved?:boolean}|null>(null);
   const panDrag=useRef<{start:Point;source:Point}|null>(null);
   const viewport=useRef<Viewport>({zoom:1,pan:[0,0]});viewport.current={zoom,pan};
   const wheelHandler=useRef<((event:WheelEvent)=>void)|null>(null);
@@ -110,6 +110,7 @@ export default function Studio() {
   const handles=useMemo(()=>editing&&item?insertionHandles(item):[],[editing,item]);
   const addPreview=editing&&pointMode==='add'&&item&&hover?closestInsertion(item,hover):null;
   const canUndoDraft=hasDraft&&draft.length>(continuation?.base||0);
+  const ends=useMemo(()=>tool==='select'&&view==='artwork'&&item&&!editing&&!hasDraft&&!continuation?routeEnds(project,item.id):null,[tool,view,item,editing,hasDraft,continuation,project]);
 
   useEffect(()=>{
     const canvas=svg.current;if(!canvas)return;
@@ -307,7 +308,8 @@ export default function Studio() {
       const target=e.target as SVGElement;
       const id=target.closest('[data-object]')?.getAttribute('data-object');
       const source=project.objects.find(o=>o.id===id);
-      const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]');
+      const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]'),end=target.closest('[data-end]')?.getAttribute('data-end');
+      if(ends&&item&&(end==='entry'||end==='exit')){drag.current={id:item.id,start:p,source:item,before:project,end};e.currentTarget.setPointerCapture(e.pointerId);return;}
       if(editing&&item){
         if(insertion){const handle=handles.find(h=>h.ring===Number(insertion.getAttribute('data-ring'))&&h.index===Number(insertion.getAttribute('data-insert')));if(handle)addPoint(handle.ring,handle.index,handle.point);return;}
         if(source?.id===item.id&&node){const location:[number,number]=[Number(node.getAttribute('data-ring')),Number(node.getAttribute('data-point'))];setActivePoint(location);if(pointMode==='remove'){removePoint(location);return;}drag.current={id:source.id,start:p,source,before:project,point:location};e.currentTarget.setPointerCapture(e.pointerId);return;}
@@ -337,6 +339,7 @@ export default function Studio() {
       const dx=p[0]-d.start[0],dy=p[1]-d.start[1];
       if(!d.moved&&Math.hypot(dx,dy)*canvasScale<.5)return;
       d.moved=true;
+      if(d.end){const next=withEnd(d.source,d.end,p);setProject({...d.before,objects:d.before.objects.map(o=>o.id===d.id?next:o)});invalidate();setSaved(false);return;}
       const next=moveGeometry(d.source,([x,y],ri,i)=>d.point&&(d.point[0]!==ri||d.point[1]!==i)?[x,y]:[x+dx,y+dy]);
       // Objects already outside the hoop (e.g. text that grew) can be dragged back in.
       if(outsideHoop(next.rings,hoop)&&!outsideHoop(d.source.rings,hoop))return;
@@ -381,7 +384,7 @@ export default function Studio() {
         const dx=h.width/2-(parsed.bounds.minX+parsed.bounds.maxX)/2,dy=h.height/2-(parsed.bounds.minY+parsed.bounds.maxY)/2;
         commit({...project,name:parsed.name,objects:[],artwork:undefined});
         let binary='';for(const b of new Uint8Array(data))binary+=String.fromCharCode(b);
-        setCompiled({pes:btoa(binary),filename:f.name,commands:parsed.commands.filter(c=>c.type==='stitch'||c.type==='jump').map(c=>({...c,x:c.x+dx,y:c.y+dy,fromX:c.fromX+dx,fromY:c.fromY+dy})),threads:parsed.blocks,stats:{stitches:parsed.stitches,jumps:parsed.jumps,trims:parsed.trims,colorChanges:parsed.colorChanges,width:parsed.width,height:parsed.height,maxStitch:0,bytes:f.size,durationMs:0},engine:'Imported PES',pesVersion:'Imported'});
+        setCompiled({pes:btoa(binary),filename:f.name,commands:parsed.commands.filter(c=>c.type==='stitch'||c.type==='jump').map(c=>({...c,x:c.x+dx,y:c.y+dy,fromX:c.fromX+dx,fromY:c.fromY+dy})),threads:parsed.blocks,stats:{stitches:parsed.stitches,jumps:parsed.jumps,jumpLength:Math.round(parsed.commands.filter((c,i)=>i&&c.type==='jump').reduce((s,c)=>s+Math.hypot(c.x-c.fromX,c.y-c.fromY),0)*10)/10,trims:parsed.trims,colorChanges:parsed.colorChanges,width:parsed.width,height:parsed.height,maxStitch:0,bytes:f.size,durationMs:0},engine:'Imported PES',pesVersion:'Imported'});
         setView('stitches');setSelected(null);fit();closePanel('artwork-panel');return;
       }
       if(!/\.(png|jpe?g|webp|svg)$/i.test(f.name))throw new Error('Choose PNG, JPG, WebP, SVG, PES, PEC, or a Threadroom JSON project.');
@@ -505,6 +508,8 @@ export default function Studio() {
                 else if(e.key===' '){e.preventDefault();e.stopPropagation();setActivePoint([ri,i]);}
               }}><circle cx={x} cy={y} r={12/canvasScale} fill="transparent"/><circle cx={x} cy={y} r={5/canvasScale} fill={activePoint?.[0]===ri&&activePoint?.[1]===i?'#526b57':'white'} stroke="#4d6853" strokeWidth={1.5/canvasScale} pointerEvents="none"/><title>{pointMode==='remove'?'Click to remove':'Drag to move · Delete to remove'}</title></g>))}
             </>}</g>):stitchPaths.map((p,i)=><g key={i}>{showJumps&&<path d={p.jump} fill="none" stroke="#c47c64" strokeWidth=".2" strokeDasharray=".6 .6"/>}<path d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round"/></g>)}
+            {ends&&(['entry','exit'] as const).map(k=>{const [x,y]=ends[k],c=k==='entry'?'#2f8a4a':'#c4453a',same=Math.hypot(ends.entry[0]-ends.exit[0],ends.entry[1]-ends.exit[1])*canvasScale<10,label=`${k==='entry'?'Entry':'Exit'} point${ends.auto[k]?' (automatic)':''}`;
+              return <g key={k} className="end-handle" data-end={k} role="button" tabIndex={0} aria-label={label} onKeyDown={e=>{if((e.key==='Delete'||e.key==='Backspace')&&item&&!ends.auto[k]){e.preventDefault();e.stopPropagation();updateObject({[k]:undefined});}}}><circle cx={x} cy={y} r={(k==='exit'&&same?6:12)/canvasScale} fill="transparent"/><circle cx={x} cy={y} r={(k==='entry'&&same?6.5:4.5)/canvasScale} fill={ends.auto[k]?'#fffef9':c} stroke={c} strokeWidth={1.6/canvasScale} pointerEvents="none"/><title>{`${label} · drag along the outline${ends.auto[k]?'':' · Delete to reset'}`}</title></g>;})}
             {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="#e4ecda" stroke="#526b57" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
             {draft.length>0&&<><path d={pathData([displayDraft],closedDraft)} fill={closedDraft?'#84998433':'none'} stroke="#526b57" strokeWidth=".4"/>{hover&&!drawing&&<path d={pathData([[draft[draft.length-1],hover]],false)} fill="none" stroke="#526b57" strokeWidth=".3" strokeDasharray="1 .6" pointerEvents="none"/>}{tool!=='freehand'&&draft.map(([x,y],i)=><g key={i} data-draft-point={i}><circle cx={x} cy={y} r={(i===0&&closedDraft?6:4)/canvasScale} fill={i===0&&closedDraft?'white':'#526b57'} stroke="#526b57" strokeWidth={1.5/canvasScale}/><circle cx={x} cy={y} r={12/canvasScale} fill="transparent"><title>{i===0&&closedDraft&&canFinish?'Click to close shape · drag to move point':'Drag to adjust point'}</title></circle></g>)}</>}
             {view==='stitches'&&progress<1&&needle&&<circle cx={needle.x} cy={needle.y} r="1" fill="#fff" stroke="#526b57" strokeWidth=".5"/>}
@@ -533,10 +538,11 @@ export default function Studio() {
           {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/>Short stitches on curves{source('shortStitches')}</label>}
           {usesPull(item.kind)&&<label htmlFor="pull-input">Pull compensation · mm{source('pullCompensation')}<input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
           {underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input">Underlay{source('underlay')}<select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{underlayNames[u]}</option>)}</select></label>}
+          <div className="ends-row"><span><i className="end-dot entry"/>Entry · <i className="end-dot exit"/>exit</span>{item.entry||item.exit?<button type="button" className="field-value reset" title="Return to automatic entry and exit" onClick={()=>updateObject({entry:undefined,exit:undefined})}>Reset</button>:<span className="field-value inherited">Auto</span>}</div>
           <div className="reorder"><Button label="Sew earlier" size="sm" isDisabled={project.objects[0].id===item.id} onClick={()=>{const items=[...project.objects],i=items.findIndex(o=>o.id===item.id);[items[i-1],items[i]]=[items[i],items[i-1]];commit({...project,objects:items});}}/><Button label="Sew later" size="sm" isDisabled={project.objects.at(-1)?.id===item.id} onClick={()=>{const items=[...project.objects],i=items.findIndex(o=>o.id===item.id);[items[i+1],items[i]]=[items[i],items[i+1]];commit({...project,objects:items});}}/></div>
         </fieldset>}
         <section className="panel-section design-summary"><h2>Design</h2><div className="summary-grid"><div><span>Design size</span><strong>{(compiled?.stats.width||size.width).toFixed(1)} × {(compiled?.stats.height||size.height).toFixed(1)}<small> mm</small></strong></div><div><span>Stitches</span><strong>{compiled?compiled.stats.stitches.toLocaleString():'—'}</strong></div><div><span>Thread changes</span><strong>{compiled?compiled.stats.colorChanges:'—'}</strong></div></div>
-          {compiled&&<p className="section-copy">{compiled.stats.jumps} jumps · {compiled.stats.trims} trims</p>}
+          {compiled&&<p className="section-copy">{compiled.stats.jumps} jumps · {compiled.stats.jumpLength.toLocaleString()} mm · {compiled.stats.trims} trims</p>}
           {!!size.width&&<label>Design width · mm<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
           {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>Design exceeds hoop</div>}
           {project.objects.length>0&&<label className="check-label"><input type="checkbox" disabled={hasDraft} checked={editPoints} onChange={e=>{if(e.target.checked)editObject();else finishEditing();}}/>Edit points</label>}{project.artwork&&<label className="check-label"><input type="checkbox" checked={showImage} onChange={e=>setShowImage(e.target.checked)}/>Show reference</label>}{compiled&&<label className="check-label"><input type="checkbox" checked={showJumps} onChange={e=>setShowJumps(e.target.checked)}/>Show jumps</label>}

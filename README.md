@@ -53,7 +53,28 @@ The existing `../pes-viewer` and original bear files are unchanged.
   continuous. Both are per-object settings with fixed defaults (*Default* /
   *Reset*); text satin borders use the defaults.
 - Underlay: edge walk, light tatami or edge + tatami for fills; center walk,
-  edge walk, light zigzag or edge + zigzag for satin lines.
+  edge walk, light zigzag or edge + zigzag for satin lines. Fill underlay stays
+  0.4 mm inside the edge (around holes too, and on nonzero text fills), so it
+  never shows past the top stitches. Parts of a fill narrower than 2 mm get no
+  underlay; satin narrower than 1.5 mm gets at most a centre walk.
+- **Entry and exit points.** A selected object shows a green entry and a red exit
+  marker (hollow while automatic). Drag them along the outline; on an open line
+  they snap to its ends, so moving one just reverses the direction. **Reset**
+  (or Delete on a focused marker) returns to automatic. Points move and resize
+  with the object and are kept in JSON, autosave, undo/redo and SVG export
+  (`data-threadroom-entry` / `-exit`). Automatically, each object starts at its
+  point nearest the previous exit and fills end near the next object; closed
+  outlines start at their nearest point, lines and satin columns may sew in
+  reverse, and satin underlay passes alternate direction so they join the top
+  pass without a trim.
+- Fill routing: each separate part sews its underlay, then its top rows.
+  Sections are ordered (a bounded search) to need the fewest trims and joined by
+  travel stitches through the inside of the shape, at least 0.3 mm from the
+  edge, where they will be covered: underlay travel anywhere in the part, top
+  travel only through rows not yet sewn. An explicit entry starts with such
+  travel; the section nearest the exit is sewn last, ending on the row end
+  nearest it. Ties are only sewn where a trim follows. The preview shows jumps,
+  total jump length and trims.
 - Preview the **exported PES after Python reads it back**, with playback and
   jumps. Preview existing PES/PEC files using an independent browser parser.
 - Save/load editable JSON projects, autosave locally, undo/redo, and export
@@ -170,8 +191,8 @@ vercel
 The CLI will ask you to choose your account/team and a new project. Keep the
 checked-in configuration. This POC deliberately uses:
 
-- `framework: null`, `npm run build`, and output directory `out`: Next.js
-  creates a static application; Vercel serves its assets.
+- `framework: null`, `npm run build`, and output directory `.next-build`:
+  Next.js exports the static application there; Vercel serves its assets.
 - `api/export.py`: a separate Vercel Python Function at `/api/export`.
 - `requirements.txt`: installs `pystitch==1.0.1`; `.python-version`: Python 3.12.
 - `includeFiles`: bundles `embroidery/` for the Python Function.
@@ -205,6 +226,9 @@ npm run build
 
 Tests exercise physical dimensions, PES v6 colours, holes in fill/underlay,
 disconnected travel, every stitch style, underlay modes, cross-fill holes,
+automatic and explicit entry/exit points (fills, closed outlines, open paths),
+hidden travel and underlay staying inside, underlay inset and narrow-object
+skipping, the bear's trim count,
 curve-resolution-independent satin density, short stitches on tight arcs,
 staggered satin splitting with pull compensation, stitch lengths, hoop checks,
 malformed input, request limits, and independent PES decoding. Tests use the
@@ -213,6 +237,10 @@ virtual environment if present and regenerate their own small fixtures.
 The live local editor was checked in a browser at desktop and mobile sizes,
 including API health, real Python generation, and a downloaded PES independently
 read back as PES v6: 3,249 stitches, four thread blocks, 58.8 × 51.4 mm.
+After entry/exit routing (2026-10-05) the bear sample compiles to 3,380
+stitches, 25 trims and 206 mm of jumps (before: 4,174 stitches, 87 trims,
+946 mm); entry/exit markers were dragged, moved, resized, undone and previewed
+in the browser.
 Browser interaction checks also cover Done/Enter completion, Backspace, Escape,
 click-first-point closure, pan during a trace, freehand release, undo/redo, and
 auto tracing the bear image into 35 regions. Finished-curve checks cover inserting
@@ -231,21 +259,26 @@ This is an experimental compiler, not an Ink/Stitch integration or a production
 auto-digitizer. The first deployable version proves the browser/Python boundary.
 It has basic scanline fill, sparse perpendicular fill underlay, constant-width
 satin foundations, cross-fill grids, and tie stitches. Crosses jump between
-diagonals instead of using production cross-stitch routing. Edge-walk fill
-underlay follows the boundary without an inset. Pull compensation is a fixed amount per object; it does not scale with
+diagonals instead of using production cross-stitch routing, so cross fills
+still trim between diagonals. Pull compensation is a fixed amount per object; it does not scale with
 column width or offset fill outlines in other directions. Short stitches use a
 fixed threshold and inset; they do not handle self-overlapping columns on curves
-tighter than half the width. It does **not** have robust fill
-routing, overlap compensation between independent objects, satin rails, or
-production fabric/stabilizer presets. Freehand and point paths are subdivided
+tighter than half the width. Fill rows can only end where they meet the
+outline, so an exit on an edge parallel to the rows ends at the nearest row
+end. Top-fill travel may run up to 1.5 mm over just-sewn rows where a section
+ends at the edge; otherwise a trim is used. Satin with an even number of passes
+(e.g. centre walk + top) ends where it started, so its entry decides both ends.
+It does **not** have turning or guided fills, overlap compensation between
+independent objects, or satin rails. Fabric profiles are starting points, not
+tested production presets. Freehand and point paths are subdivided
 to keep sewn segments near or below 3 mm (allowing 0.1 mm format rounding);
 wide-column bites follow the split length instead.
 
 The 80-pixel tracing grid is designed for simple illustrations; small details
 and photographs need manual correction. Automatic tracing assigns fill to all
 regions. Regions are grouped in colour order initially; review/change their
-sewing order. The current routing can produce many jumps and trims, especially
-on traced pixel boundaries. Counts are shown in the preview.
+sewing order. Traced pixel boundaries still produce more trims than drawn
+shapes (the traced bear: 185 trims, down from 763). Counts are shown in the preview.
 
 Resizing editable objects regenerates stitches. Imported PES is a stitch
 preview; it cannot recover original editable regions. A thread simulation

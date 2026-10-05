@@ -8,6 +8,7 @@ import subprocess
 import unittest
 
 from pystitch import read_pes
+import embroidery.compiler as C
 from embroidery.compiler import compile_project, inside, satin_path
 
 
@@ -199,12 +200,11 @@ class FillRuleTests(unittest.TestCase):
             compile_project(project(fillRule="winding"))
 
     def test_separate_letters_are_filled_one_after_another(self):
-        import embroidery.compiler as C
         rings = [[[20,30],[35,30],[35,60],[20,60]], [[50,30],[65,30],[65,60],[50,60]]]
-        paths = list(C.fill_paths(rings, 0.45, 0, 2.5, "nonzero"))
-        sides = [p[0][0] < 42 for p in paths]
-        switches = sum(1 for a, b in zip(sides, sides[1:]) if a != b)
-        self.assertEqual(switches, 1)
+        for underlay in ("none", "edge-tatami"):
+            result = compile_project(project(rings=rings, angle=0, fillRule="nonzero", underlay=underlay))
+            sides = [c["x"] < 42 for c in result["commands"] if c["type"] == "stitch"]
+            self.assertEqual(sum(1 for a, b in zip(sides, sides[1:]) if a != b), 1, underlay)
 
 
 
@@ -413,3 +413,193 @@ class ShortStitchAndSplitTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=patch):
                 compile_project(project("satin", [[[30,40],[60,40]]], **patch))
         compile_project(project("running", [[[30,40],[60,40]]], splitLength=None, shortStitches=None))
+
+
+def objects_project(*objects):
+    colours = ("#c99d72", "#849984", "#d8949b", "#664538", "#a6bdca", "#f4e5cc")
+    return {"version": 1, "name": "Ends", "machine": "brother-pr1x", "hoop": "100x100",
+            "objects": [{"name": "Region", "kind": "fill", "color": colours[i], "spacing": .45, "underlay": "none",
+                         "pullCompensation": 0, "splitLength": 7, "shortStitches": True, "angle": 0, **o} for i, o in enumerate(objects)]}
+
+
+def ends(result):
+    """(first, last) needle position of each thread block, read from the written PES."""
+    blocks = {}
+    for c in result["commands"]:
+        blocks.setdefault(c["block"], []).append(c)
+    return [((b[0]["x"], b[0]["y"]), next((c["x"], c["y"]) for c in reversed(b) if c["type"] == "stitch")) for _, b in sorted(blocks.items())]
+
+
+def sewn_samples(result, block=None):
+    for c in result["commands"]:
+        if c["type"] == "stitch" and block in (None, c["block"]):
+            for t in (.1, .3, .5, .7, .9):
+                yield [c["fromX"]+(c["x"]-c["fromX"])*t, c["fromY"]+(c["y"]-c["fromY"])*t]
+
+
+class EntryExitTests(unittest.TestCase):
+    square = [[30,30],[60,30],[60,60],[30,60]]
+
+    def test_automatic_entry_is_nearest_the_previous_exit(self):
+        loop = [[20,65],[40,65],[40,85],[20,85],[20,65]]
+        lines = ({"kind": "running", "rings": [[[10,10],[30,10]]]}, {"kind": "running", "rings": [[[80,12],[35,12]]]})
+        result = compile_project(objects_project(*lines, {"rings": [[[50,30],[70,30],[70,50],[50,50]]]}))
+        (_, a_end), (b_start, b_end), (c_start, c_end) = ends(result)
+        self.assertEqual((a_end, b_start, b_end), ((30, 10), (35, 12), (80, 12)))
+        # The fill starts at the row end nearest the previous exit; its underlay
+        # (inset, 2 mm rows) starts within an underlay row of it.
+        self.assertLess(math.dist(c_start, (70, 30)), .3)
+        for mode in ("edge", "tatami"):
+            under = ends(compile_project(objects_project({"kind": "running", "rings": [[[80,12],[90,12]]]}, {"rings": [[[50,30],[70,30],[70,50],[50,50]]], "underlay": mode})))
+            self.assertLess(math.dist(under[1][0], (70, 30)), 1.5, mode)
+        result = compile_project(objects_project({"kind": "running", "rings": [[[60,60],[30,60]]]}, {"kind": "bean", "rings": [loop]}))
+        (_, c_end), (d_start, d_end) = ends(result)
+        # The closed outline starts at its nearest point, not at its first vertex.
+        self.assertLess(math.dist(d_start, C.nearest_on([loop], list(c_end), False)[2]), .11)
+        self.assertLess(math.dist(d_end, d_start), .11)
+        self.assertNotEqual(d_start, (20, 65))
+
+    def test_fill_ends_near_the_next_object(self):
+        # Rows end on the outline where they cross it, so the end is the row end nearest the next start.
+        for angle in (0, 35, 90):
+            for line, corner in (([[62,62],[80,80]], (60, 60)), ([[80,10],[62,28]], (60, 30))):
+                result = compile_project(objects_project({"rings": [self.square], "angle": angle, "underlay": "edge-tatami"},
+                                                         {"kind": "running", "rings": [line]}))
+                (_, end), (start, _) = ends(result)
+                self.assertLess(math.dist(end, corner), 1.0, (angle, line))
+                self.assertEqual(start, min(map(tuple, line), key=lambda p: math.dist(p, corner)))
+
+    def test_explicit_fill_entry_and_exit_are_respected_with_hidden_travel(self):
+        rings = [[[25,25],[75,25],[75,75],[25,75]], [[40,40],[60,40],[60,60],[40,60]]]
+        region = C.Region(rings, "evenodd")
+        for underlay in ("none", "edge-tatami"):
+            # Exits lie where rows meet the outline (an exit on an edge parallel to the
+            # rows ends at the nearest row end instead).
+            for angle, entry, exit in ((0, [25,50], [75,52]), (35, [50,75], [40,47]), (90, [60,25], [50,60]), (35, [60,25], [60,50])):
+                result = compile_project(objects_project({"rings": rings, "angle": angle, "underlay": underlay, "entry": entry, "exit": exit}))
+                (start, end), = ends(result)
+                self.assertLess(math.dist(start, entry), .11, (underlay, angle))
+                self.assertLess(math.dist(end, exit), .8, (underlay, angle))
+                self.assertTrue(all(region.contains(p, .15) for p in sewn_samples(result)), (underlay, angle))
+                # Every top row is still sewn: entry/exit routing only reorders.
+                plain = compile_project(objects_project({"rings": rings, "angle": angle, "underlay": underlay}))
+                self.assertAlmostEqual(result["stats"]["stitches"], plain["stats"]["stitches"], delta=plain["stats"]["stitches"]*.08)
+
+    def test_explicit_closed_outline_entry_and_exit(self):
+        loop = self.square+[self.square[0]]
+        for kind in ("running", "bean"):
+            result = compile_project(objects_project({"kind": kind, "rings": [loop], "entry": [45,30], "exit": [60,50]}))
+            (start, end), = ends(result)
+            self.assertLess(math.dist(start, (45, 30)), .11, kind)
+            self.assertLess(math.dist(end, (60, 50)), .11, kind)
+        satin = compile_project(objects_project({"kind": "satin", "rings": [loop], "satinWidth": 2, "spacing": .4, "underlay": "center", "entry": [30,40]}))
+        (start, end), = ends(satin)
+        self.assertLess(math.dist(start, (30, 40)), 1.1)
+        self.assertLess(math.dist(end, (30, 40)), 1.1)
+
+    def test_explicit_open_path_ends_only_reverse_direction(self):
+        line = [[30,40],[45,44],[60,40]]
+        for kind, extra in (("running", {}), ("bean", {}), ("backstitch", {}), ("satin", {"satinWidth": 2, "spacing": .4, "underlay": "edge"})):
+            forward, = ends(compile_project(objects_project({"kind": kind, "rings": [line], **extra})))
+            entry, = ends(compile_project(objects_project({"kind": kind, "rings": [line], "entry": [60,40], **extra})))
+            exit, = ends(compile_project(objects_project({"kind": kind, "rings": [line], "exit": [30,40], **extra})))
+            # Backstitch begins one stitch in and sews back to the end.
+            start = 2.6 if kind == "backstitch" else 1.1
+            self.assertLess(math.dist(forward[0], (30, 40)), start, kind)
+            self.assertLess(math.dist(entry[0], (60, 40)), start, kind)
+            self.assertLess(math.dist(entry[1], (30, 40)), 1.1, kind)
+            self.assertLess(math.dist(exit[1], (30, 40)), 1.1, kind)
+        # Satin underlay passes alternate, so an even number of passes returns to the start.
+        for mode in ("center", "zigzag", "edge-zigzag"):
+            satin, = ends(compile_project(objects_project({"kind": "satin", "rings": [line], "satinWidth": 2, "spacing": .4, "underlay": mode, "entry": [60,40]})))
+            self.assertLess(math.dist(satin[0], (60, 40)), 1.1, mode)
+            self.assertLess(math.dist(satin[1], (60, 40)), 1.1, mode)
+
+    def test_satin_underlay_passes_connect_without_trims(self):
+        line = [[[30,40],[60,40]]]
+        for mode in ("none", "center", "edge", "zigzag", "edge-zigzag"):
+            result = compile_project(project("satin", line, satinWidth=3, underlay=mode))
+            self.assertEqual(result["stats"]["trims"], 1, mode)
+
+    def test_multi_ring_entry_and_exit_pick_rings(self):
+        rings = [[[20,20],[30,20]], [[50,20],[60,20]], [[80,20],[90,20]]]
+        (start, end), = ends(compile_project(objects_project({"kind": "running", "rings": rings, "entry": [50,20], "exit": [90,20]})))
+        self.assertEqual((start, end), ((50, 20), (90, 20)))
+
+    def test_entry_and_exit_validation(self):
+        for value in ([1], [1, 2, 3], [math.nan, 1], [-1, 5], [5, 101], "1,2", {"x": 1}):
+            with self.assertRaises(ValueError, msg=value):
+                compile_project(objects_project({"rings": [self.square], "entry": value}))
+        compile_project(objects_project({"rings": [self.square], "entry": None, "exit": None}))
+
+
+class UnderlayInsetTests(unittest.TestCase):
+    rings = [[[25,25],[75,25],[75,75],[25,75]], [[40,40],[60,40],[60,60],[40,60]]]
+
+    def clearance(self, plan, rings):
+        samples = [q for path in plan for a, b in zip(path, path[1:]) for q in C.interpolate(a, b, .1)]
+        return min(C.segment_distance(p, a, b) for p in samples for r in rings for a, b in zip(r, r[1:]+r[:1]))
+
+    def test_edge_walk_and_tatami_underlay_stay_inside_with_holes_and_nonzero(self):
+        for rule, rings in (("evenodd", self.rings), ("nonzero", [self.rings[0], self.rings[1][::-1]])):
+            region = C.Region(rings, rule)
+            for mode, minimum in (("edge", C.EDGE_INSET-.01), ("tatami", .3), ("edge-tatami", .3)):
+                o = {"kind": "fill", "rings": rings, "fillRule": rule, "spacing": .45, "pullCompensation": 0, "angle": 35, "underlay": mode}
+                plan = C.route_fill(o, None, None, None, True)
+                self.assertTrue(plan, (rule, mode))
+                self.assertGreaterEqual(self.clearance(plan, rings), minimum, (rule, mode))
+                self.assertTrue(all(region.contains(p, 0) for path in plan for p in path), (rule, mode))
+        # The edge walk follows the hole too: its inset ring surrounds the hole.
+        loops = C.inset_rings(self.rings, C.Region(self.rings, "evenodd"), C.EDGE_INSET)
+        self.assertEqual(len(loops), 2)
+        xs = [p[0] for p in loops[1]]
+        self.assertAlmostEqual(min(xs), 40-C.EDGE_INSET, places=6)
+        self.assertAlmostEqual(max(xs), 60+C.EDGE_INSET, places=6)
+
+    def test_nonzero_text_underlay_merges_overlapping_letters(self):
+        a, b = [[20,20],[60,20],[60,60],[20,60]], [[40,40],[80,40],[80,80],[40,80]]
+        o = {"kind": "fill", "rings": [a, b], "fillRule": "nonzero", "spacing": .45, "pullCompensation": 0, "angle": 0, "underlay": "edge"}
+        plan = C.route_fill(o, None, None, None, True)
+        # The overlap is filled, so no edge walk runs through it.
+        self.assertFalse(any(41 < p[0] < 59 and 41 < p[1] < 59 for path in plan for p in path))
+        self.assertTrue(plan)
+
+    def test_bear_underlay_and_travel_stay_inside(self):
+        bear = node("demo", None)
+        body = bear["objects"][0]
+        plan = C.route_fill(body, None, None, None, True)
+        self.assertEqual(len(plan), 1)  # one connected underlay run, no trims
+        self.assertGreaterEqual(self.clearance(plan, body["rings"]), .2)
+        result = compile_project({**bear, "objects": [body]})
+        region = C.Region(body["rings"], "evenodd")
+        self.assertTrue(all(region.contains(p, body["pullCompensation"]/2+.15) for p in sewn_samples(result)))
+
+
+class TinyUnderlayTests(unittest.TestCase):
+    def test_narrow_fills_skip_underlay(self):
+        narrow = [[[30,30],[60,30],[60,31.6],[30,31.6]]]
+        wide = [[[30,30],[60,30],[60,33],[30,33]]]
+        for mode in ("edge", "tatami", "edge-tatami"):
+            self.assertEqual(compile_project(project(rings=narrow, underlay=mode))["commands"], compile_project(project(rings=narrow))["commands"], mode)
+            self.assertGreater(compile_project(project(rings=wide, underlay=mode))["stats"]["stitches"], compile_project(project(rings=wide))["stats"]["stitches"], mode)
+        # Only the narrow part of a fill loses its underlay.
+        both = compile_project(project(rings=narrow+[[[30,50],[60,50],[60,60],[30,60]]], underlay="edge"))
+        self.assertTrue(any(c["type"] == "stitch" and 50.3 < c["y"] < 50.5 for c in both["commands"]))
+
+    def test_narrow_satin_underlay_becomes_a_centre_walk(self):
+        line = [[[30,40],[60,40]]]
+        for mode in ("edge", "zigzag", "edge-zigzag"):
+            self.assertEqual(compile_project(project("satin", line, satinWidth=1.2, underlay=mode))["commands"],
+                             compile_project(project("satin", line, satinWidth=1.2, underlay="center"))["commands"], mode)
+            self.assertNotEqual(compile_project(project("satin", line, satinWidth=2, underlay=mode))["commands"],
+                                compile_project(project("satin", line, satinWidth=2, underlay="center"))["commands"], mode)
+        self.assertNotEqual(compile_project(project("satin", line, satinWidth=1.2, underlay="none"))["commands"],
+                            compile_project(project("satin", line, satinWidth=1.2, underlay="center"))["commands"])
+
+
+class BearRoutingTests(unittest.TestCase):
+    def test_bear_sample_trims_and_travel(self):
+        result = compile_project(node("demo", None))
+        self.assertLessEqual(result["stats"]["trims"], 50)
+        self.assertLess(result["stats"]["jumpLength"], 500)
+        self.assertGreater(result["stats"]["stitches"], 3000)

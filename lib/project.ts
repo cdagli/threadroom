@@ -9,6 +9,7 @@ export type StitchObject = {
   length: number; angle: number; satinWidth: number;
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
+  entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
   curve?: {points: Point[]; closed: boolean};
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
@@ -21,7 +22,7 @@ export type Project = {
 export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number};
 export type Compiled = {
   pes: string; filename: string; commands: Command[]; threads: {color: string; name: string}[];
-  stats: {stitches: number; jumps: number; trims: number; colorChanges: number; width: number; height: number; maxStitch: number; bytes: number; durationMs: number};
+  stats: {stitches: number; jumps: number; jumpLength: number; trims: number; colorChanges: number; width: number; height: number; maxStitch: number; bytes: number; durationMs: number};
   engine: string; pesVersion: string;
 };
 export const hoops: Record<string, {width: number; height: number; label: string}> = {
@@ -115,6 +116,7 @@ export function demo(): Project {
 export function pathData(rings: Point[][], closed: boolean) {
   return rings.map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ')+(closed?' Z':'')).join(' ');
 }
+const validPoint=(pt:unknown)=>Array.isArray(pt)&&pt.length===2&&pt.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000);
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
@@ -136,9 +138,10 @@ export function validProject(value: unknown): value is Project {
     if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=.3&&o.spacing<=2)))return false;
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
     if(o.underlay!==undefined&&!underlayOptions(o.kind).includes(o.underlay))return false;
+    if([o.entry,o.exit].some(pt=>pt!==undefined&&!validPoint(pt)))return false;
     if(o.curve){
       if(typeof o.curve.closed!=='boolean'||!Array.isArray(o.curve.points)||o.curve.points.length<(o.curve.closed?3:2)||o.curve.points.length>200) return false;
-      if(o.curve.points.some(pt=>!Array.isArray(pt)||pt.length!==2||pt.some(n=>typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>1000)))return false;
+      if(!o.curve.points.every(validPoint))return false;
     }
   }
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;
