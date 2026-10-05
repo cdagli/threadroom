@@ -88,7 +88,7 @@ test('Moving and resizing text updates its editable settings consistently with i
 test('Projects with text validate, and export sends nonzero letters plus a border object',()=>{
   const t={...spec(),border:{kind:'satin',color:'#664538',width:1.2}};
   const o={...object('HI',layoutText(t,[latin]).rings),text:t};
-  const project={version:1,name:'Text',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[o,{...object('Empty',[]),text:spec({content:''})}]};
+  const project={version:1,name:'Text',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[o,{...object('Empty',[]),text:spec({content:''})}]};
   assert.ok(validProject(project));
   assert.equal(validProject({...project,objects:[{...o,text:{...t,size:500}}]}),false);
   assert.equal(validText({...t,font:{...t.font,id:'../x'}}),false);

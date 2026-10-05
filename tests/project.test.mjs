@@ -1,10 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
-const {object,validProject,fabrics,resolve,profileDefault,fromFabric,withFabric,underlayOptions}=load('project');
+const {object,validProject,fabrics,resolve:resolveLocks,profileDefault,fromFabric,withFabric,underlayOptions,defaultLocks,defaultTrimJump,lockLimits,demo}=load('project');
+const resolve=(o,fabric)=>resolveLocks(o,fabric,defaultLocks);
 const {exportSVG}=load('svg-export');
 const {geometryPayload}=load('curves');
-const project=(o,fabric='woven')=>({version:1,name:'Fabric',machine:'brother-pr1x',hoop:'100x100',fabric,objects:[o]});
+const project=(o,fabric='woven')=>({version:1,name:'Fabric',machine:'brother-pr1x',hoop:'100x100',fabric,locks:{...defaultLocks},trimJump:defaultTrimJump,objects:[o]});
 const square=[[30,30],[60,30],[60,60],[30,60]],line=[[30,40],[60,40]];
 
 test('Fabric profiles are complete and within the editor limits',()=>{
@@ -72,8 +73,8 @@ test('SVG export carries resolved values and names inherited ones',()=>{
   const svg=exportSVG(project({...o,pullCompensation:.25},'jersey'));
   assert.match(svg,/data-threadroom-fabric="jersey"/);
   assert.match(svg,/data-threadroom-pull-compensation="0.25"/);assert.match(svg,/data-threadroom-spacing="0.48"/);
-  assert.match(svg,/data-threadroom-underlay="edge-tatami"/);assert.match(svg,/data-threadroom-inherited="spacing underlay"/);
-  assert.match(exportSVG(project({...o,spacing:.5,underlay:'none',pullCompensation:0})),/data-threadroom-inherited=""/);
+  assert.match(svg,/data-threadroom-underlay="edge-tatami"/);assert.match(svg,/data-threadroom-inherited="spacing underlay tie-in tie-off lock-size"/);
+  assert.match(exportSVG(project({...o,spacing:.5,underlay:'none',pullCompensation:0,tieIn:'none',tieOff:'tack',lockSize:1})),/data-threadroom-inherited=""/);
 });
 
 test('Split length and short stitches default on wide kinds and are range-checked',()=>{
@@ -103,7 +104,7 @@ test('SVG export carries split length and short stitches for wide kinds',()=>{
   const satin=object('Line',[line],'satin');
   const svg=exportSVG(project({...satin,splitLength:5}));
   assert.match(svg,/data-threadroom-split-length="5"/);assert.match(svg,/data-threadroom-short-stitches="true"/);
-  assert.match(svg,/data-threadroom-inherited="spacing underlay pull-compensation short-stitches"/);
+  assert.match(svg,/data-threadroom-inherited="spacing underlay pull-compensation short-stitches tie-in tie-off lock-size"/);
   assert.match(exportSVG(project({...object('Line',[line],'e-stitch'),shortStitches:false})),/data-threadroom-split-length="7"(?![^>]*short-stitches)/);
   assert.doesNotMatch(exportSVG(project(object('Region',[square]))),/split-length|short-stitches/);
 });
@@ -137,4 +138,29 @@ test('SVG export and the compile payload carry snapped entry and exit points',()
   const text={...o,text:{border:{kind:'satin',color:'#664538',width:2}}};
   const [letters,border]=geometryPayload(project(text)).objects;
   assert.deepEqual(letters.entry,[30,44]);assert.equal(border.entry,undefined);assert.equal(border.exit,undefined);
+});
+
+test('Lock and trim settings: project defaults, object overrides and validation',()=>{
+  assert.deepEqual(defaultLocks,{tieIn:'tack',tieOff:'tack',lockSize:1});assert.equal(defaultTrimJump,3);
+  assert.ok(validProject(demo()));assert.deepEqual([demo().locks,demo().trimJump],[defaultLocks,3]);
+  const o=object('Region',[square]),p=project(o);
+  for(const v of [lockLimits.trim[0],3,lockLimits.trim[1]])assert.ok(validProject({...p,trimJump:v}),String(v));
+  for(const v of [.9,10.1,NaN,'3',null,undefined])assert.equal(validProject({...p,trimJump:v}),false,String(v));
+  for(const locks of [undefined,null,{...defaultLocks,tieIn:'knot'},{...defaultLocks,tieOff:undefined},{...defaultLocks,lockSize:.4},{...defaultLocks,lockSize:1.6},{...defaultLocks,lockSize:'1'}])assert.equal(validProject({...p,locks}),false,JSON.stringify(locks));
+  for(const t of ['none','tack','triangle'])assert.ok(validProject({...p,locks:{...defaultLocks,tieIn:t,tieOff:t}}),t);
+  for(const v of ['none','tack','triangle'])assert.ok(validProject(project({...o,tieIn:v,tieOff:v})),v);
+  for(const v of ['arrow',1,null])assert.equal(validProject(project({...o,tieOff:v})),false,String(v));
+  for(const v of [.5,1.5])assert.ok(validProject(project({...o,lockSize:v})));
+  for(const v of [.49,1.51,'1',null])assert.equal(validProject(project({...o,lockSize:v})),false,String(v));
+  // Unset object values inherit the project's; set ones win, both in the payload and SVG.
+  const q={...p,locks:{tieIn:'triangle',tieOff:'none',lockSize:.7},trimJump:6.5,objects:[o,{...o,id:'b',tieOff:'tack',lockSize:1.4}]};
+  const payload=geometryPayload(q);
+  assert.equal('locks' in payload,false);assert.equal(payload.trimJump,6.5);
+  assert.deepEqual(payload.objects.map(x=>[x.tieIn,x.tieOff,x.lockSize]),[['triangle','none',.7],['triangle','tack',1.4]]);
+  const svg=exportSVG(q);
+  assert.match(svg,/data-threadroom-trim-jump="6.5"/);
+  assert.match(svg,/data-threadroom-tie-in="triangle" data-threadroom-tie-off="none" data-threadroom-lock-size="0.7"/);
+  assert.match(svg,/data-threadroom-tie-in="triangle" data-threadroom-tie-off="tack" data-threadroom-lock-size="1.4"/);
+  assert.match(svg,/data-threadroom-inherited="spacing underlay pull-compensation tie-in"/);
+  assert.equal(fromFabric('fill','tieIn'),false);
 });

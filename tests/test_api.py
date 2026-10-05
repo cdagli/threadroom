@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 from email.message import Message
@@ -31,11 +32,11 @@ class ApiTests(unittest.TestCase):
             self.assertIsInstance(data["error"],str)
 
     def test_post_returns_pes_and_preview_from_same_file(self):
-        p={"version":1,"machine":"brother-pr1x","hoop":"100x100","objects":[
-            {"kind":"running","color":"#849984","rings":[[[30,30],[40,40]]],"spacing":.45,"underlay":"none","pullCompensation":0}]}
+        p={"version":1,"machine":"brother-pr1x","hoop":"100x100","trimJump":3,"objects":[
+            {"kind":"running","color":"#849984","rings":[[[30,30],[40,40]]],"spacing":.45,"underlay":"none","pullCompensation":0,"tieIn":"tack","tieOff":"tack","lockSize":1}]}
         status,data=self.invoke(json.dumps(p).encode())
         self.assertEqual(status,200)
-        self.assertTrue(data["pes"].startswith("I1BFUzAwNjA"))
+        self.assertEqual(base64.b64decode(data["pes"])[:8],b"#PES0060")
         self.assertGreater(data["stats"]["stitches"],0)
         self.assertEqual(data["threads"][0]["color"],"#849984")
 

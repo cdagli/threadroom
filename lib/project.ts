@@ -3,6 +3,8 @@ export type Point = [number, number];
 export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual';
 export type Underlay = 'none' | 'center' | 'edge' | 'zigzag' | 'edge-zigzag' | 'tatami' | 'edge-tatami';
 export type Fabric = 'woven' | 'gauze' | 'jersey' | 'rib' | 'fleece' | 'terry' | 'denim';
+export type Lock = 'none' | 'tack' | 'triangle';
+export type Locks = {tieIn: Lock; tieOff: Lock; lockSize: number};
 // Fabric-driven values are optional: unset values follow the project's fabric profile.
 export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
@@ -10,6 +12,7 @@ export type StitchObject = {
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
   entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
+  tieIn?: Lock; tieOff?: Lock; lockSize?: number; // unset follows the project's locks
   curve?: {points: Point[]; closed: boolean};
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
@@ -17,7 +20,7 @@ export type StitchObject = {
 export type Artwork = {src: string; name: string; x: number; y: number; width: number; height: number};
 export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
-  fabric: Fabric; objects: StitchObject[]; artwork?: Artwork;
+  fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; artwork?: Artwork;
 };
 export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number};
 export type Compiled = {
@@ -56,9 +59,17 @@ export const usesShortStitches=(kind:Kind)=>kind==='satin'||kind==='zigzag';
 // keeps even an unsplit bite with 1 mm compensation within the machine limit.
 export const satinLimits={width:[.5,10] as const,split:[3,12] as const};
 export const satinDefaults={splitLength:7,shortStitches:true};
-export type Setting = 'spacing' | 'underlay' | 'pullCompensation' | 'splitLength' | 'shortStitches';
+export type Setting = 'spacing' | 'underlay' | 'pullCompensation' | 'splitLength' | 'shortStitches' | keyof Locks;
+// Ties are sewn only around trims: tie-in after each trim and at the start, tie-off before each trim
+// and colour change. Size 1 mm hides under fill rows and satin yet grips; jumps up to 3 mm (the
+// longest running stitch) sew as one connecting stitch instead of a trim, so no float is longer.
+export const lockNames: Record<Lock, string> = {none: 'None', tack: 'Tack', triangle: 'Triangle'};
+export const lockLimits={size:[.5,1.5] as const,trim:[1,10] as const};
+export const defaultLocks: Locks = {tieIn: 'tack', tieOff: 'tack', lockSize: 1};
+export const defaultTrimJump=3;
+export const isLockSetting=(key:Setting):key is keyof Locks=>key==='tieIn'||key==='tieOff'||key==='lockSize';
 // Profile default for an unset value; null when the stitch style ignores the setting.
-export function profileDefault(kind:Kind, fabric:Fabric, key:Setting):number|Underlay|boolean|null {
+export function profileDefault(kind:Kind, fabric:Fabric, key:Exclude<Setting,keyof Locks>):number|Underlay|boolean|null {
   const f=fabrics[fabric];
   if(key==='splitLength')return isWideKind(kind)?satinDefaults.splitLength:null;
   if(key==='shortStitches')return usesShortStitches(kind)?satinDefaults.shortStitches:null;
@@ -67,12 +78,13 @@ export function profileDefault(kind:Kind, fabric:Fabric, key:Setting):number|Und
   return usesPull(kind)?f.pull:null;
 }
 // True when the default comes from the fabric (not a fixed style default such as zigzag spacing).
-export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&(kind==='fill'||kind==='satin');
+export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&!isLockSetting(key)&&(kind==='fill'||kind==='satin');
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
-export type Resolved = StitchObject & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean};
-export function resolve(o:StitchObject, fabric:Fabric):Resolved {
-  const value=(key:Setting)=>o[key]??profileDefault(o.kind,fabric,key);
-  return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay: (value('underlay')??'none') as Underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true};
+export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean};
+export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
+  const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??profileDefault(o.kind,fabric,key);
+  return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay: (value('underlay')??'none') as Underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true,
+    tieIn: o.tieIn??locks.tieIn, tieOff: o.tieOff??locks.tieOff, lockSize: o.lockSize??locks.lockSize};
 }
 export const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '#a6bdca'];
 export function object(name: string, rings: Point[][], kind: Kind = 'fill', color = palette[0]): StitchObject {
@@ -111,17 +123,21 @@ export function demo(): Project {
     object('Sleepy eyes', [[[35,47],[36,48],[38,49],[40,48],[41,47]], [[59,47],[60,48],[62,49],[64,48],[65,47]]], 'bean', palette[3]),
     object('Little nose', [ellipse(50,56,2.1,1.3)], 'fill', palette[3]),
     object('Smile', [[[50,57],[50,60],[48,62],[46,60]], [[50,60],[52,62],[54,60]]], 'bean', palette[3])];
-  return {version: 1, name: 'Sleepy little bear', machine: 'brother-pr1x', hoop: '100x100', fabric: 'woven', objects: items};
+  return {version: 1, name: 'Sleepy little bear', machine: 'brother-pr1x', hoop: '100x100', fabric: 'woven', locks: {...defaultLocks}, trimJump: defaultTrimJump, objects: items};
 }
 export function pathData(rings: Point[][], closed: boolean) {
   return rings.map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ')+(closed?' Z':'')).join(' ');
 }
+const validLock=(v:unknown)=>typeof v==='string'&&Object.hasOwn(lockNames,v);
+const validSize=(v:unknown)=>typeof v==='number'&&v>=lockLimits.size[0]&&v<=lockLimits.size[1];
 const validPoint=(pt:unknown)=>Array.isArray(pt)&&pt.length===2&&pt.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000);
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
   if (p.version !== 1 || p.machine !== 'brother-pr1x' || !hoops[p.hoop] || !Object.hasOwn(fabrics,p.fabric) || typeof p.name !== 'string') return false;
   if (!Array.isArray(p.objects) || p.objects.length > 80) return false;
+  if (!p.locks || typeof p.locks !== 'object' || !validLock(p.locks.tieIn) || !validLock(p.locks.tieOff) || !validSize(p.locks.lockSize)) return false;
+  if (typeof p.trimJump !== 'number' || !(p.trimJump >= lockLimits.trim[0] && p.trimJump <= lockLimits.trim[1])) return false;
   let count=0;
   for (const o of p.objects) {
     if (!o || typeof o.id !== 'string' || typeof o.name !== 'string' || !Object.hasOwn(kindNames,o.kind) || !/^#[0-9a-f]{6}$/i.test(o.color) || !Array.isArray(o.rings) || (!o.rings.length && !o.text)) return false;
@@ -139,6 +155,7 @@ export function validProject(value: unknown): value is Project {
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
     if(o.underlay!==undefined&&!underlayOptions(o.kind).includes(o.underlay))return false;
     if([o.entry,o.exit].some(pt=>pt!==undefined&&!validPoint(pt)))return false;
+    if([o.tieIn,o.tieOff].some(v=>v!==undefined&&!validLock(v))||o.lockSize!==undefined&&!validSize(o.lockSize))return false;
     if(o.curve){
       if(typeof o.curve.closed!=='boolean'||!Array.isArray(o.curve.points)||o.curve.points.length<(o.curve.closed?3:2)||o.curve.points.length>200) return false;
       if(!o.curve.points.every(validPoint))return false;

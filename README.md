@@ -73,8 +73,26 @@ The existing `../pes-viewer` and original bear files are unchanged.
   edge, where they will be covered: underlay travel anywhere in the part, top
   travel only through rows not yet sewn. An explicit entry starts with such
   travel; the section nearest the exit is sewn last, ending on the row end
-  nearest it. Ties are only sewn where a trim follows. The preview shows jumps,
-  total jump length and trims.
+  nearest it. The preview shows jumps, total jump length and trims.
+- **Lock stitches and trims** (Setup): **Tie-in** and **Tie-off** are *None*,
+  *Tack* (along the path and back, twice) or *Triangle* (a small arrow pointing
+  along the path); **Lock size** 0.5–1.5 mm (default tack, 1 mm: hidden under
+  fill rows and satin, yet long enough to grip). Objects inherit these
+  (*Setup*) or override them (*Reset*). **Trim jumps longer than** 1–10 mm
+  (default 3 mm, the longest running stitch, so an untrimmed connector is never
+  a longer float than a normal stitch). A colour change or a longer jump is tied
+  off, trimmed and tied in; the design starts with a tie-in and ends with a
+  tie-off. Shorter jumps sew as one connecting stitch with no trim and no ties.
+  In PES, pystitch writes every jump after the first with the PEC trim flag
+  (0x20) and drops the TRIM command itself, so a jump that must not cut is
+  written as a stitch. The compiler checks that the trims read back from the
+  PES equal the trims it planned. Settings are kept in JSON, autosave,
+  undo/redo and SVG export (`data-threadroom-tie-in`, `-tie-off`,
+  `-lock-size`, and `data-threadroom-trim-jump` on the root).
+- **Cross stitch** sews each row run as `/` half-crosses, then returns with the
+  `\` legs, so every top leg lies the same way. Travel between legs, runs and
+  rows passes through cell centres along cross legs (covered or doubled by
+  them), never across empty cells; only unreachable parts trim.
 - Preview the **exported PES after Python reads it back**, with playback and
   jumps. Preview existing PES/PEC files using an independent browser parser.
 - Save/load editable JSON projects, autosave locally, undo/redo, and export
@@ -228,7 +246,9 @@ Tests exercise physical dimensions, PES v6 colours, holes in fill/underlay,
 disconnected travel, every stitch style, underlay modes, cross-fill holes,
 automatic and explicit entry/exit points (fills, closed outlines, open paths),
 hidden travel and underlay staying inside, underlay inset and narrow-object
-skipping, the bear's trim count,
+skipping, the bear's trim count, tie-in/tie-off types and sizes around trims,
+trim thresholds, trims read back from the PEC flags, cross-stitch routing,
+one undo step per drag,
 curve-resolution-independent satin density, short stitches on tight arcs,
 staggered satin splitting with pull compensation, stitch lengths, hoop checks,
 malformed input, request limits, and independent PES decoding. Tests use the
@@ -237,10 +257,16 @@ virtual environment if present and regenerate their own small fixtures.
 The live local editor was checked in a browser at desktop and mobile sizes,
 including API health, real Python generation, and a downloaded PES independently
 read back as PES v6: 3,249 stitches, four thread blocks, 58.8 × 51.4 mm.
-After entry/exit routing (2026-10-05) the bear sample compiles to 3,380
-stitches, 25 trims and 206 mm of jumps (before: 4,174 stitches, 87 trims,
-946 mm); entry/exit markers were dragged, moved, resized, undone and previewed
-in the browser.
+After entry/exit routing (2026-10-05) the bear sample compiled to 3,383
+stitches and 25 reported trims; 13 of those were spurious: a JUMP followed by
+the first tie stitch made pystitch write a second trim-jump (and drop that tie
+stitch). Runs now land with a stitch. With locks and a 3 mm trim threshold the
+bear reads back as 3,432 stitches, 11 jumps, 10 trims and 199 mm of jumps (1 mm:
+11 trims; 7 mm: 9 trims). The stitch-library fixture went from 905 trims (906
+jumps, 3,213 stitches) to 10 trims (11 jumps, 2,371 stitches) with production
+cross routing. Lock settings, trim threshold, object overrides, autosave,
+undo and the compile payload were checked in the browser, as were undo after
+a move, a marker drag, and drags whose pointer-up was lost.
 Browser interaction checks also cover Done/Enter completion, Backspace, Escape,
 click-first-point closure, pan during a trace, freehand release, undo/redo, and
 auto tracing the bear image into 35 regions. Finished-curve checks cover inserting
@@ -258,9 +284,10 @@ binding is unavailable; its transport fixtures are excluded from deployment.
 This is an experimental compiler, not an Ink/Stitch integration or a production
 auto-digitizer. The first deployable version proves the browser/Python boundary.
 It has basic scanline fill, sparse perpendicular fill underlay, constant-width
-satin foundations, cross-fill grids, and tie stitches. Crosses jump between
-diagonals instead of using production cross-stitch routing, so cross fills
-still trim between diagonals. Pull compensation is a fixed amount per object; it does not scale with
+satin foundations, cross-fill grids, and tie stitches. An untrimmed connector
+(shorter than the trim threshold) is a straight stitch even where it crosses a
+hole or sewn stitches; do not set the threshold above a float you would accept.
+Triangle locks reach half the lock size to each side of the path. Pull compensation is a fixed amount per object; it does not scale with
 column width or offset fill outlines in other directions. Short stitches use a
 fixed threshold and inset; they do not handle self-overlapping columns on curves
 tighter than half the width. Fill rows can only end where they meet the

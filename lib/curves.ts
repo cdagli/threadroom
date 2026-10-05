@@ -111,7 +111,7 @@ export function routeEnds(project:Project,id:string){
   const nextStart=next&&next.rings.length?next.entry??(()=>{const c=centre(o),line=!isFillKind(next.kind);
     return next.rings.flatMap(r=>line&&!closedRing(next,r)?[r[0],r[r.length-1]]:r).reduce((a,b)=>Math.hypot(b[0]-c[0],b[1]-c[1])<Math.hypot(a[0]-c[0],a[1]-c[1])?b:a);})():undefined;
   let entry=o.entry&&snapEnd(o,o.entry),exit=o.exit&&snapEnd(o,o.exit);
-  const open=openPath(o)&&o.rings.length===1,ring=o.rings[0],even=passes(resolve(o,project.fabric))%2===0;
+  const open=openPath(o)&&o.rings.length===1,ring=o.rings[0],even=passes(resolve(o,project.fabric,project.locks))%2===0;
   const other=(p:Point)=>even?p:Math.hypot(p[0]-ring[0][0],p[1]-ring[0][1])<1e-6?ring[ring.length-1]:ring[0];
   if(open&&!entry&&exit)entry=other(exit);
   entry??=snapEnd(o,prev?.rings.length?prev.exit??centre(prev):o.rings[0][0]);
@@ -150,8 +150,8 @@ export function samplePath(points:Point[], length:number):Point[] {
   return result;
 }
 
-export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'|'objects'>&{objects:Resolved[]} {
-  const {artwork,fabric,...rest}=project;void artwork;
+export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'|'locks'|'objects'>&{objects:Resolved[]} {
+  const {artwork,fabric,locks,...rest}=project;void artwork;
   // Smooth display tessellation is finer than running stitches. Sample along
   // the whole curve so its visual resolution does not set the stitch density.
   // Text outlines are also finely tessellated; a text border is sent as a
@@ -159,7 +159,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
   const line=(kind:string)=>['running','bean','backstitch','underlay','manual'].includes(kind);
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
-  return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric))).flatMap(o=>{
+  return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
     if(!o.text)return [o.curve&&line(o.kind)?{...o,rings:o.rings.map(r=>samplePath(r,o.length))}:o];
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
     const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};

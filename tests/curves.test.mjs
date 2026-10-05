@@ -45,7 +45,7 @@ test('Freehand simplification removes jitter and retains corners/endpoints',()=>
 
 test('Curve projects round-trip anchors and reject malformed control points',()=>{
   const o={...object('Curve',[curvePoints(anchors,false)],'running'),curve:{points:anchors,closed:false}};
-  const p={version:1,name:'Curve test',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[o]};
+  const p={version:1,name:'Curve test',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[o]};
   assert.ok(validProject(JSON.parse(JSON.stringify(p))));
   assert.equal(validProject({...p,objects:[{...o,curve:{points:[[NaN,1],[2,3]],closed:false}}]}),false);
   assert.equal(validProject({...p,objects:[{...o,curve:{points:[[1,1],[2,3]],closed:true}}]}),false);
@@ -55,7 +55,7 @@ test('Curve projects round-trip anchors and reject malformed control points',()=
 
 test('Export uses stitch length rather than display tessellation density for curves',()=>{
   const o={...object('Curve',[curvePoints(anchors,false)],'running'),curve:{points:anchors,closed:false}};
-  const p={version:1,name:'Curve',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[o],artwork:{src:'image'}};
+  const p={version:1,name:'Curve',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[o],artwork:{src:'image'}};
   const exported=geometryPayload(p);
   assert.equal(exported.artwork,undefined);
   const ring=exported.objects[0].rings[0];
@@ -85,7 +85,7 @@ test('Adding a curve anchor finds the displayed curve and regenerates export geo
   assert.equal(next.curve.points.length,5);assert.deepEqual(next.curve.points[2],hit.point);
   assert.deepEqual(next.rings,[curvePoints(next.curve.points,false)]);
   assert.equal(o.curve.points.length,4);assert.equal(o.curve.points,anchors);
-  const p={version:1,name:'Edited curve',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[next]};
+  const p={version:1,name:'Edited curve',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[next]};
   assert.ok(validProject(JSON.parse(JSON.stringify(p))));
   assert.ok(geometryPayload(p).objects[0].rings[0].length<next.rings[0].length);
 });
@@ -155,7 +155,7 @@ test('Entry and exit snap to the outline and survive moving, resizing and anchor
   assert.deepEqual(curve.entry,anchors.at(-1));
   const shifted=moveGeometry(curve,([x,y])=>[x+2,y+3]);
   assert.deepEqual(shifted.entry,[67,53]);assert.deepEqual(shifted.rings,[curvePoints(shifted.curve.points,false)]);
-  const p={version:1,name:'Ends',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[o,shifted]};
+  const p={version:1,name:'Ends',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[o,shifted]};
   assert.ok(validProject(JSON.parse(JSON.stringify(p))));
   // Open paths: one end sets the direction, so the other setting is cleared.
   assert.ok(openPath(curve));assert.equal(openPath(o),false);
@@ -171,7 +171,7 @@ test('Entry and exit snap to the outline and survive moving, resizing and anchor
 test('Marker positions show explicit points and estimate automatic ones',()=>{
   const {routeEnds,withEnd}=load('curves');
   const a=object('A',[[[10,10],[30,10]]],'running'),b=object('B',[[[80,12],[35,12]]],'running'),c=object('C',[[[50,50],[70,50],[70,70],[50,70]]]);
-  const p={version:1,name:'Ends',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',objects:[a,b,c]};
+  const p={version:1,name:'Ends',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[a,b,c]};
   const auto=routeEnds(p,b.id);
   assert.deepEqual([auto.entry,auto.exit,auto.auto],[[35,12],[80,12],{entry:true,exit:true}]);
   const set=routeEnds({...p,objects:[a,withEnd(b,'entry',[81,12]),c]},b.id);

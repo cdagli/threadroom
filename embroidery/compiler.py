@@ -13,6 +13,9 @@ longer than the object's split length are split with staggered penetrations,
 and satin/zigzag bites on a compressed inner curve alternately stop short.
 Spacing, underlay and pull compensation arrive resolved from the editor's
 fabric profile (lib/project.ts); the compiler has no fabric defaults.
+Runs that change colour or start more than trimJump mm away are tied off,
+trimmed and tied in (per-object tack/triangle locks); nearer runs join with
+one stitch. Cross fills sew rows of half-crosses and return over them.
 This is an experimental digitizer, not Ink/Stitch's production fill engine.
 """
 import base64
@@ -43,6 +46,7 @@ SQRT2 = math.sqrt(2)
 # from the edge; a route longer than TRAVEL_LIMIT mm trims instead.
 EDGE_INSET, MIN_UNDERLAY_FILL, MIN_UNDERLAY_SATIN, TRAVEL_MARGIN, TRAVEL_LIMIT = .4, 2.0, 1.5, .3, 60
 ORDER_BUDGET = 20_000  # section-order search steps per part
+LOCKS = ("none", "tack", "triangle")
 UNDERLAYS = {"fill": ("none", "edge", "tatami", "edge-tatami"), "satin": ("none", "center", "edge", "zigzag", "edge-zigzag")}
 
 
@@ -63,6 +67,7 @@ def validate(project):
     if hoop not in HOOPS:
         raise ValueError("Choose a supported PR1X hoop.")
     width, height = HOOPS[hoop]
+    trim_jump = number(project.get("trimJump"), 1, 10, "Trim jump length")
     objects = project.get("objects")
     if not isinstance(objects, list) or not 1 <= len(objects) <= 80:
         raise ValueError("Add between 1 and 80 embroidery objects.")
@@ -106,7 +111,10 @@ def validate(project):
                 number(point[1], 0, height, "Entry/exit Y position")
         if obj.get("fillRule", "evenodd") not in ("evenodd", "nonzero"):
             raise ValueError("Unknown fill rule.")
-    return width, height, objects
+        if obj.get("tieIn") not in LOCKS or obj.get("tieOff") not in LOCKS:
+            raise ValueError("Choose a tie-in and tie-off: none, tack or triangle.")
+        number(obj.get("lockSize"), 0.5, 1.5, "Lock stitch size")
+    return width, height, trim_jump, objects
 
 
 def inside(point, rings, rule="evenodd", tolerance=0.001):
@@ -748,45 +756,101 @@ def rail_paths(ring, width, length):
     return rails
 
 
-def cross_paths(rings, cell, angle, rule="evenodd", pull=0):
-    """Complete crosses inside the region, as rows of (diagonal, diagonal)."""
-    theta = math.radians(angle)
-    c, s = math.cos(theta), math.sin(theta)
-    rotated = [[[x*c+y*s, -x*s+y*c] for x, y in r] for r in rings]
+def cross_cells(rings, cell, angle, rule="evenodd"):
+    """Grid cells (i, j) holding a complete cross, in the frame rotated by
+    angle; cell (i, j) spans corners (x0+i*cell, y0+j*cell) to (+cell, +cell)."""
+    rotated = [rotate(r, angle) for r in rings]
     points = [p for ring in rotated for p in ring]
     min_x, max_x = min(p[0] for p in points), max(p[0] for p in points)
     min_y, max_y = min(p[1] for p in points), max(p[1] for p in points)
     if (max_x-min_x)*(max_y-min_y)/cell**2 > MAX_STITCHES/8:
         raise ValueError("This cross-stitch grid is too dense. Increase the cross size or reduce the design size.")
     # Keep complete crosses inside the region, including concavities and holes.
-    region, rows = Region(rotated, rule), []
-    y = min_y+cell/2
-    while y+cell/2 <= max_y:
-        row = []
-        x = min_x+cell/2
-        while x+cell/2 <= max_x:
-            corners = [[x-cell/2,y-cell/2],[x+cell/2,y+cell/2], [x+cell/2,y-cell/2],[x-cell/2,y+cell/2]]
-            if all(region.contains(p) for p in corners) and all(region.contains(p) for a,b in ((corners[0],corners[1]),(corners[2],corners[3])) for p in interpolate(a,b,0.1)):
-                e = pull/2/math.sqrt(2)
-                row.append([[[p[0]*c-p[1]*s,p[0]*s+p[1]*c] for p in (a,b)]
-                            for a,b in (([x-cell/2-e,y-cell/2-e],[x+cell/2+e,y+cell/2+e]), ([x+cell/2+e,y-cell/2-e],[x-cell/2-e,y+cell/2+e]))])
-            x += cell
-        if row:
-            rows.append(row)
-        y += cell
-    return rows
+    region, cells = Region(rotated, rule), set()
+    for j in range(int((max_y-min_y)/cell+1e-9)):
+        for i in range(int((max_x-min_x)/cell+1e-9)):
+            x, y = min_x+i*cell, min_y+j*cell
+            corners = [[x, y], [x+cell, y+cell], [x+cell, y], [x, y+cell]]
+            if all(region.contains(p) for a, b in ((corners[0], corners[1]), (corners[2], corners[3])) for p in interpolate(a, b, 0.1)+[a]):
+                cells.add((i, j))
+    return cells, (min_x, min_y)
 
 
 def route_cross(obj, at, entry, target):
-    """Rows of crosses sewn back and forth, from the end nearer the entry."""
-    rows = cross_paths(obj["rings"], obj["spacing"], obj.get("angle", 0), obj.get("fillRule", "evenodd"), obj["pullCompensation"])
-    crosses = [cross for i, row in enumerate(rows) for cross in (row[::-1] if i % 2 else row)]
-    if not crosses:
+    """Production cross stitch: each row run sews its "/" half-crosses, then
+    returns over them with the "\\" legs, so every top leg lies the same way.
+    Travel between legs, runs and rows passes through cell centres along
+    cross legs (covered or doubled by them), never across empty cells; only
+    parts that hidden travel cannot reach start a new path (after a jump)."""
+    cell, angle, e = obj["spacing"], obj.get("angle", 0), obj["pullCompensation"]/2/SQRT2
+    cells, (x0, y0) = cross_cells(obj["rings"], cell, angle, obj.get("fillRule", "evenodd"))
+    if not cells:
         return []
+    corner = lambda v: [x0+v[0]*cell, y0+v[1]*cell]
+    centre = lambda i, j: [x0+(i+.5)*cell, y0+(j+.5)*cell]
+    def leg(i, j, slash, right):
+        """(corner, needle point) at each end, sewn rightwards or leftwards; pull extends both ends."""
+        a, b = (((i, j+1), (-e, e)), ((i+1, j), (e, -e))) if slash else (((i, j), (-e, -e)), ((i+1, j+1), (e, e)))
+        return [(v, [corner(v)[0]+d[0], corner(v)[1]+d[1]]) for v, d in ((a, b) if right else (b, a))]
+    def travel(a, b):
+        """Corner-to-corner moves through filled cells' centres (breadth-first), or None."""
+        if a == b:
+            return []
+        previous, queue, limit = {a: None}, [a], int(TRAVEL_LIMIT/(cell*SQRT2))+1
+        depth = {a: 0}
+        for v in queue:
+            if depth[v] >= limit:
+                break
+            for ci, cj in ((v[0]-1, v[1]-1), (v[0], v[1]-1), (v[0]-1, v[1]), (v[0], v[1])):
+                if (ci, cj) not in cells:
+                    continue
+                for w in ((ci, cj), (ci+1, cj), (ci, cj+1), (ci+1, cj+1)):
+                    if w not in previous:
+                        previous[w], depth[w] = (v, (ci, cj)), depth[v]+1
+                        if w == b:
+                            path = []
+                            while previous[w]:
+                                v0, c = previous[w]
+                                path[:0] = [centre(*c), corner(w)]
+                                w = v0
+                            return path
+                        queue.append(w)
+        return None
+    def plan(up):
+        """Rows bottom to top starting at the left, or top to bottom from the
+        right, so each run ends at the corner where the next row starts."""
+        rows = {}
+        for i, j in cells:
+            rows.setdefault(j, []).append(i)
+        runs = []
+        for j in sorted(rows, reverse=up):
+            xs = sorted(rows[j], reverse=not up)
+            run = [xs[0]]
+            for i in xs[1:]:
+                if abs(i-run[-1]) == 1:
+                    run.append(i)
+                else:
+                    runs.append((j, run))
+                    run = [i]
+            runs.append((j, run))
+        paths, at_v = [], None
+        for j, run in runs:
+            right = up
+            legs = [(i, leg(i, j, True, right)) for i in run]+[(i, leg(i, j, False, not right)) for i in run[::-1]]
+            hop = None if at_v is None else travel(at_v, legs[0][1][0][0])
+            if hop is None:
+                paths.append([legs[0][1][0][1]])
+            else:
+                paths[-1].extend(hop[:-1]+[legs[0][1][0][1]])
+            for k, (i, ((_, a), (v, b))) in enumerate(legs):
+                if k:
+                    paths[-1].extend([centre(legs[k-1][0], j), a])
+                paths[-1].append(b)
+                at_v = v
+        return [rotate(path, angle, True) for path in paths]
     start = entry or at
-    cost = lambda order: (math.dist(start, order[0][0][0]) if start else 0) + (math.dist(order[-1][1][-1], target) if target else 0)
-    crosses = min((crosses, crosses[::-1]), key=cost)
-    return [[(diagonal, 3)] for cross in crosses for diagonal in cross]
+    cost = lambda paths: (math.dist(start, paths[0][0]) if start else 0)+(math.dist(paths[-1][-1], target) if target else 0)+len(paths)*1000
+    return [[(path, 3)] for path in min((plan(True), plan(False)), key=cost)]
 
 
 LINE_PASSES = {"none": 0, "center": 1, "edge": 2, "zigzag": 1, "edge-zigzag": 3}
@@ -928,14 +992,13 @@ def plan_object(obj, at, target):
 
 def compile_project(project):
     started = time.perf_counter()
-    width, height, objects = validate(project)
+    width, height, trim_jump, objects = validate(project)
     pattern = EmbPattern()
     # PES short strings are byte-length fields; keep metadata ASCII here.
     name = re.sub(r"[^a-zA-Z0-9 _-]", "", str(project.get("name", "Threadroom")))[:40] or "Threadroom"
     pattern.metadata("name", name)
     pattern.metadata("author", "Threadroom")
     total = 0
-    previous_color = None
     previous = None
 
     def move(command, point):
@@ -956,43 +1019,66 @@ def compile_project(project):
             for p in interpolate(previous, point, limit):
                 move(STITCH, p)
 
-    def tie(a, b):
-        d = math.dist(a, b)
-        if d > 0.05:
-            p = [a[0]+(b[0]-a[0])*min(0.4, d)/d, a[1]+(b[1]-a[1])*min(0.4, d)/d]
-            sew_to(p)
-            sew_to(a)
+    def lock(points, kind, size):
+        """Lock stitches at points[0], where the needle is, heading along the
+        path: a tack sews size along it and back twice; a triangle sews an
+        arrow size long and wide pointing along it. Ends at points[0]."""
+        a, q, run = points[0], points[0], 0
+        for u, v in zip(points, points[1:]):
+            d = math.dist(u, v)
+            if run+d >= size:
+                q = [u[0]+(v[0]-u[0])*(size-run)/d, u[1]+(v[1]-u[1])*(size-run)/d]
+                break
+            run, q = run+d, v
+        d = math.dist(a, q)
+        if kind == "none" or d < .3:
+            return
+        n = [-(q[1]-a[1])/2, (q[0]-a[0])/2]
+        for p in [q, a, q, a] if kind == "tack" else [[q[0]+n[0], q[1]+n[1]], [q[0]-n[0], q[1]-n[1]], a]:
+            sew_to([min(max(p[0], 0), width), min(max(p[1], 0), height)])
 
+    # Runs: stitch paths that each start after a jump in the plan.
+    runs, at = [], None
     for index, obj in enumerate(objects):
         target = obj.get("exit") or next_target(obj, objects[index+1] if index+1 < len(objects) else None)
-        plan = plan_object(obj, previous, target)
-        if not plan:
-            continue
-        color = obj["color"].lower()
-        if previous_color != color:
-            if previous_color is not None:
-                pattern.add_command(TRIM)
+        clamp = obj["kind"] in FILL_KINDS  # compensation may reach past a ring that touches the hoop edge
+        for chunks in plan_object(obj, at, target):
+            chunks = [([[min(max(x, 0), width), min(max(y, 0), height)] for x, y in points] if clamp else points, limit) for points, limit in chunks]
+            points = [p for chunk, _ in chunks for p in chunk]
+            runs.append((obj, chunks, points))
+            at = points[-1]
+    # A run that changes colour or starts more than trim_jump away trims: tie
+    # off, trim, jump, tie in. Nearer runs join with one connecting stitch and
+    # no ties: pystitch writes every PEC jump after the first with the trim flag
+    # (0x20) and drops TRIM itself, so a jump that must not trim is a stitch.
+    color, last, trims = None, None, 0
+    for obj, chunks, points in runs:
+        changes = obj["color"].lower() != color
+        trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump)
+        if trim:
+            lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
+            pattern.add_command(TRIM)
+            trims += 1
+        if changes:
+            if color is not None:
                 pattern.add_command(COLOR_CHANGE)
+            color = obj["color"].lower()
             thread = EmbThread()
             thread.set_hex_color(color)
             thread.description = str(obj.get("name", "Thread"))[:40].encode("ascii", "ignore").decode()
             thread.brand = "Threadroom"
             pattern.add_thread(thread)
-            previous_color = color
-        elif previous is not None:
-            pattern.add_command(TRIM)
-        clamp = obj["kind"] in FILL_KINDS  # compensation may reach past a ring that touches the hoop edge
-        for part, chunks in enumerate(plan):
-            chunks = [([[min(max(x, 0), width), min(max(y, 0), height)] for x, y in points] if clamp else points, limit) for points, limit in chunks]
-            points = [p for chunk, _ in chunks for p in chunk]
-            if part:
-                pattern.add_command(TRIM)
-            move(JUMP, points[0])
-            tie(points[0], next((p for p in points if math.dist(p, points[0]) > 0.05), points[0]))
-            for chunk, limit in chunks:
-                for i, point in enumerate(chunk):
-                    sew_to(point, limit if i else 3)
-            tie(points[-1], next((p for p in reversed(points) if math.dist(p, points[-1]) > 0.05), points[-1]))
+        if last is None or trim:
+            # Land with a stitch: pystitch encodes the first stitch after a trim as
+            # trim-jump + penetration. A JUMP here would add a second trim-jump.
+            move(STITCH, points[0])
+            lock(points, obj["tieIn"], obj["lockSize"])
+        for k, (chunk, limit) in enumerate(chunks):
+            for i, point in enumerate(chunk):
+                sew_to(point, limit if i else 3 if k or last is None or trim else trim_jump+.01)
+        last = (obj, points)
+    if last:
+        lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
     pattern.add_command(TRIM)
     pattern.add_command(END)
     output = io.BytesIO()
@@ -1035,6 +1121,8 @@ def compile_project(project):
         last = p
     if not sewn:
         raise ValueError("This design produced no stitches. Enlarge the regions or use a running stitch.")
+    if counts["trims"] != trims:
+        raise ValueError("The PES writer changed the trims; this design cannot be exported safely.")
     xs, ys = [p[0] for p in sewn], [p[1] for p in sewn]
     return {"pes": base64.b64encode(data).decode(), "filename": name.replace(" ", "-").lower()+".pes",
             "commands": commands, "threads": threads, "stats": {**counts,

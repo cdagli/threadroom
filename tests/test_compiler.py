@@ -13,10 +13,14 @@ from embroidery.compiler import compile_project, inside, satin_path
 
 
 def project(kind="fill", rings=None, **settings):
-    return {"version": 1, "name": "Compiler test", "machine": "brother-pr1x", "hoop": "100x100",
-            "objects": [{"name": "Region", "kind": kind, "color": "#c99d72",
+    return {"version": 1, "name": "Compiler test", "machine": "brother-pr1x", "hoop": "100x100", "trimJump": 3,
+            "objects": [{"name": "Region", "kind": kind, "color": "#c99d72", **LOCKS,
                          "rings": rings or [[[30,30],[60,30],[60,60],[30,60]]],
                          "spacing": .45, "underlay": "none", "pullCompensation": 0, "splitLength": 7, "shortStitches": True, **settings}]}
+
+
+LOCKS = {"tieIn": "tack", "tieOff": "tack", "lockSize": 1}
+EDITOR = {"locks": LOCKS, "trimJump": 3}
 
 
 def node(script, value):
@@ -158,7 +162,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_stitch_library_fixture_for_independent_parser(self):
         p=project("running",[[[12,12],[42,12]]])
-        p.update(name="Stitch sampler",fabric="woven")
+        p.update(name="Stitch sampler",fabric="woven",**EDITOR)
         # Saved projects: fabric-driven values are inherited except where set.
         p["objects"]=[]
         for i,kind in enumerate(("running","bean","backstitch","satin","zigzag","e-stitch","underlay","manual")):
@@ -279,7 +283,7 @@ class FabricProfileTests(unittest.TestCase):
         cls.fabrics = node("profiles", None)
 
     def editor(self, fabric, *objects):
-        return {"version": 1, "name": "Fabric", "machine": "brother-pr1x", "hoop": "100x100", "fabric": fabric,
+        return {"version": 1, "name": "Fabric", "machine": "brother-pr1x", "hoop": "100x100", "fabric": fabric, **EDITOR,
                 "objects": [{"id": str(i), "name": "Region", "color": "#c99d72", "length": 2.5, "angle": 0, "satinWidth": 3, **o}
                             for i, o in enumerate(objects)]}
 
@@ -398,7 +402,7 @@ class ShortStitchAndSplitTests(unittest.TestCase):
     def test_text_border_satin_is_split(self):
         from embroidery.compiler import split_bites
         self.assertEqual(split_bites([[0,0],[0,5]], 7), [[0,0],[0,5]])
-        payload = resolved({"version": 1, "name": "Text", "machine": "brother-pr1x", "hoop": "100x100", "fabric": "woven", "objects": [
+        payload = resolved({"version": 1, "name": "Text", "machine": "brother-pr1x", "hoop": "100x100", "fabric": "woven", **EDITOR, "objects": [
             {"id": "t", "name": "Text", "kind": "fill", "color": "#c99d72", "length": 2.5, "angle": 0, "satinWidth": 2,
              "rings": [[[30,30],[60,30],[60,60],[30,60]]], "text": {"border": {"kind": "satin", "color": "#664538", "width": 4}}}]})
         border = payload["objects"][1]
@@ -417,8 +421,8 @@ class ShortStitchAndSplitTests(unittest.TestCase):
 
 def objects_project(*objects):
     colours = ("#c99d72", "#849984", "#d8949b", "#664538", "#a6bdca", "#f4e5cc")
-    return {"version": 1, "name": "Ends", "machine": "brother-pr1x", "hoop": "100x100",
-            "objects": [{"name": "Region", "kind": "fill", "color": colours[i], "spacing": .45, "underlay": "none",
+    return {"version": 1, "name": "Ends", "machine": "brother-pr1x", "hoop": "100x100", "trimJump": 3,
+            "objects": [{"name": "Region", "kind": "fill", "color": colours[i], **LOCKS, "spacing": .45, "underlay": "none",
                          "pullCompensation": 0, "splitLength": 7, "shortStitches": True, "angle": 0, **o} for i, o in enumerate(objects)]}
 
 
@@ -519,7 +523,7 @@ class EntryExitTests(unittest.TestCase):
         line = [[[30,40],[60,40]]]
         for mode in ("none", "center", "edge", "zigzag", "edge-zigzag"):
             result = compile_project(project("satin", line, satinWidth=3, underlay=mode))
-            self.assertEqual(result["stats"]["trims"], 1, mode)
+            self.assertEqual(result["stats"]["trims"], 0, mode)
 
     def test_multi_ring_entry_and_exit_pick_rings(self):
         rings = [[[20,20],[30,20]], [[50,20],[60,20]], [[80,20],[90,20]]]
@@ -600,6 +604,143 @@ class TinyUnderlayTests(unittest.TestCase):
 class BearRoutingTests(unittest.TestCase):
     def test_bear_sample_trims_and_travel(self):
         result = compile_project(node("demo", None))
-        self.assertLessEqual(result["stats"]["trims"], 50)
+        self.assertLessEqual(result["stats"]["trims"], 25)  # default 3 mm threshold
+        self.assertEqual(pec_trims(result), result["stats"]["trims"])
         self.assertLess(result["stats"]["jumpLength"], 500)
         self.assertGreater(result["stats"]["stitches"], 3000)
+
+
+def pec_trims(result):
+    """Independent PEC decode: long-form moves carrying the trim flag (0x20)."""
+    data = base64.b64decode(result["pes"])
+    i, trims = int.from_bytes(data[8:12], "little")+532, 0
+    while data[i] != 0xFF:
+        if data[i] == 0xFE and data[i+1] == 0xB0:
+            i += 3
+            continue
+        flags = 0
+        for _ in range(2):
+            flags |= data[i] & 0x30 if data[i] & 0x80 else 0
+            i += 2 if data[i] & 0x80 else 1
+        trims += bool(flags & 0x20)
+    return trims
+
+
+def runs(result):
+    """Needle positions of each run that starts after a jump (the landing first)."""
+    out = []
+    for c in result["commands"]:
+        if c["type"] == "jump":
+            out.append([])
+        elif out and (not out[-1] or math.dist(out[-1][-1], (c["x"], c["y"])) > 1e-9):
+            out[-1].append((c["x"], c["y"]))
+    return out
+
+
+def near(a, b, tolerance=.08):
+    return math.dist(a, b) <= tolerance
+
+
+class LockAndTrimTests(unittest.TestCase):
+    def lines(self, gap, trim_jump=3, colours=("#c99d72", "#c99d72"), **locks):
+        p = project("running", [[[20,40],[50,40]]], **locks)
+        p["trimJump"] = trim_jump
+        second = {**p["objects"][0], "rings": [[[50+gap,40],[80,40]]], "color": colours[1]}
+        p["objects"].append(second)
+        return compile_project(p)
+
+    def test_lock_types_and_sizes_around_trims(self):
+        for size in (.5, 1, 1.5):
+            tack = runs(self.lines(10, tieIn="tack", tieOff="tack", lockSize=size))
+            self.assertEqual(len(tack), 2)
+            for run, start, ahead, end, back in ((tack[0], (20,40), (20+size,40), (50,40), (50-size,40)), (tack[1], (60,40), (60+size,40), (80,40), (80-size,40))):
+                # Tie-in: land, along the path size mm and back, twice; tie-off mirrors it before the trim.
+                self.assertTrue(all(near(a, b) for a, b in zip(run[:5], (start, ahead, start, ahead, start))), (size, run[:5]))
+                self.assertTrue(all(near(a, b) for a, b in zip(run[-5:], (end, back, end, back, end))), (size, run[-5:]))
+            arrow = runs(self.lines(10, tieIn="triangle", tieOff="triangle", lockSize=size))
+            for run in arrow:
+                (x, y) = run[0]
+                self.assertTrue(near(run[1], (x+size, y+size/2)) and near(run[2], (x+size, y-size/2)) and near(run[3], (x, y)), (size, run[:4]))
+                (x, y) = run[-1]
+                self.assertTrue(near(run[-2], (x-size, y+size/2)) or near(run[-2], (x-size, y-size/2)), (size, run[-4:]))
+        plain = runs(self.lines(10, tieIn="none", tieOff="none"))
+        self.assertTrue(near(plain[0][1], (22.5, 40)) and near(plain[0][-2], (47.5, 40)), plain[0][:3])
+        mixed = runs(self.lines(10, tieIn="none", tieOff="triangle", lockSize=1))
+        self.assertTrue(near(mixed[1][1], (62.5, 40)))
+        self.assertTrue(near(mixed[0][-2], (49, 39.5)) or near(mixed[0][-2], (49, 40.5)), mixed[0][-4:])
+
+    def test_jumps_below_the_threshold_sew_one_stitch_without_trim_or_ties(self):
+        for gap, trim_jump, trims in ((2, 3, 0), (5, 3, 1), (5, 6, 0), (9.5, 10, 0), (2, 1, 1)):
+            result = self.lines(gap, trim_jump)
+            self.assertEqual(result["stats"]["trims"], trims, (gap, trim_jump))
+            self.assertEqual(pec_trims(result), trims)
+            self.assertEqual(len(runs(result)), trims+1)
+            if not trims:
+                # One connecting stitch, and no lock stitches on either side of it.
+                stitches = [c for c in result["commands"] if c["type"] == "stitch"]
+                joint = next(c for c in stitches if near((c["fromX"], c["fromY"]), (50,40)) and c["x"] > 50.5)
+                self.assertTrue(near((joint["x"], joint["y"]), (50+gap, 40)))
+                self.assertEqual(sum(near((c["x"], c["y"]), (50,40)) for c in stitches), 1)
+                self.assertEqual(sum(near((c["x"], c["y"]), (50+gap,40)) for c in stitches), 1)
+        # A colour change always trims, with ties on both sides.
+        result = self.lines(1, 10, ("#c99d72", "#849984"))
+        self.assertEqual((result["stats"]["trims"], result["stats"]["colorChanges"]), (1, 1))
+        first, second = runs(result)
+        self.assertTrue(near(first[-2], (49,40)) and near(second[1], (52,40)))
+
+    def test_readback_trims_match_the_compiler(self):
+        p = json.loads(Path("tests/stitch-library.project.json").read_text())
+        for trim_jump in (1, 3, 7, 10):
+            for payload in ({**node("demo", None), "trimJump": trim_jump}, resolved({**p, "trimJump": trim_jump})):
+                result = compile_project(payload)
+                decoded = read_pes(io.BytesIO(base64.b64decode(result["pes"])))
+                self.assertEqual(sum(1 for *_, c in decoded.stitches if c & 0xFF == 2), result["stats"]["trims"])
+                self.assertEqual(pec_trims(result), result["stats"]["trims"])
+                self.assertEqual(result["stats"]["jumps"], result["stats"]["trims"]+1)  # only the first move is a plain jump
+
+    def test_settings_are_validated(self):
+        for key, value in (("trimJump", .9), ("trimJump", 10.5), ("trimJump", None), ("trimJump", True)):
+            p = project()
+            p[key] = value
+            with self.assertRaisesRegex(ValueError, "Trim jump"):
+                compile_project(p)
+        for settings in ({"tieIn": "knot"}, {"tieOff": None}, {"lockSize": .4}, {"lockSize": 1.6}, {"lockSize": "1"}):
+            with self.assertRaises(ValueError):
+                compile_project(project(**settings))
+        missing = project()
+        del missing["objects"][0]["tieIn"]
+        with self.assertRaises(ValueError):
+            compile_project(missing)
+
+
+class CrossStitchTests(unittest.TestCase):
+    def test_crosses_sew_rows_of_half_crosses_with_few_trims(self):
+        square = [[[58,52],[84,52],[84,72],[58,72]]]
+        for spacing, angle in ((1.5, 0), (2, 0), (1.5, 30)):
+            result = compile_project(project("cross", square, spacing=spacing, angle=angle))
+            self.assertEqual(result["stats"]["trims"], 0, (spacing, angle))
+            cells, (x0, y0) = C.cross_cells(square, spacing, angle)
+            legs = {}
+            for c in result["commands"]:
+                if c["type"] != "stitch":
+                    continue
+                a, b = C.rotate([[c["fromX"], c["fromY"]], [c["x"], c["y"]]], angle)
+                if math.dist(a, b) < spacing*1.3:
+                    continue
+                i, j = math.floor((a[0]+b[0])/2/spacing-x0/spacing), math.floor((a[1]+b[1])/2/spacing-y0/spacing)
+                slash = (b[0]-a[0])*(b[1]-a[1]) < 0
+                legs.setdefault((i, j), []).append(slash)
+            self.assertEqual(set(legs), cells)
+            # Each cell: its "/" leg, then the "\\" leg on top.
+            self.assertTrue(all(v == [True, False] for v in legs.values()), [v for v in legs.values() if v != [True, False]][:3])
+            # Travel stays on the cross legs (through cell centres), never across a cell edge.
+            for c in result["commands"]:
+                if c["type"] == "stitch" and math.dist((c["fromX"], c["fromY"]), (c["x"], c["y"])) > .05:
+                    a, b = C.rotate([[c["fromX"], c["fromY"]], [c["x"], c["y"]]], angle)
+                    self.assertAlmostEqual(abs(b[0]-a[0]), abs(b[1]-a[1]), delta=.2, msg=(a, b))  # 0.1 mm PES rounding
+
+    def test_stitch_library_crosses_trim_far_less(self):
+        p = json.loads(Path("tests/stitch-library.project.json").read_text())
+        cross = resolved({**p, "objects": [o for o in p["objects"] if o["kind"] == "cross"]})
+        self.assertLessEqual(compile_project(cross)["stats"]["trims"], 2)
+        self.assertLessEqual(compile_project(resolved(p))["stats"]["trims"], 15)  # was 905

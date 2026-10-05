@@ -5,14 +5,8 @@
 import {cpSync,readFileSync,writeFileSync,readdirSync} from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {createRequire} from 'node:module';
-import ts from 'typescript';
-const require=createRequire(import.meta.url);
-const source=readFileSync('lib/project.ts','utf8');
-const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-const module={exports:{}};
-new Function('module','exports','require',code)(module,module.exports,require);
-const project=module.exports.demo();
+// The compile payload the editor sends for the bear sample (fabric and locks resolved).
+const project=JSON.parse(spawnSync(process.execPath,['tests/editor.mjs','demo'],{input:'null',encoding:'utf8'}).stdout);
 writeFileSync('tests/generated-project.json',JSON.stringify(project));
 const result=spawnSync('.venv/bin/python',['-c', 'import json;from embroidery.compiler import compile_project;p=json.load(open("tests/generated-project.json"));r=compile_project(p);open("tests/generated-demo.json","w").write(json.dumps(r));print(r["stats"])'],{stdio:'inherit'});
 if(result.status!==0)process.exit(result.status||1);
