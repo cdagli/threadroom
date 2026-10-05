@@ -189,3 +189,81 @@ class FillRuleTests(unittest.TestCase):
         switches = sum(1 for a, b in zip(sides, sides[1:]) if a != b)
         self.assertEqual(switches, 1)
 
+
+
+class PullCompensationTests(unittest.TestCase):
+    def extent(self, result):
+        """Sewn extent read back from the written PES, in mm."""
+        parsed = read_pes(io.BytesIO(base64.b64decode(result["pes"])))
+        points = [(x/10, y/10) for x, y, c in parsed.stitches if c & 0xFF == 0]
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        return max(xs)-min(xs), max(ys)-min(ys)
+
+    def test_satin_styles_widen_by_the_compensation(self):
+        line = [[[30,40],[60,40]]]
+        for kind, spacing in (("satin", .45), ("zigzag", 1.5), ("e-stitch", 1.5)):
+            base = self.extent(compile_project(project(kind, line, satinWidth=3, spacing=spacing)))
+            wide = self.extent(compile_project(project(kind, line, satinWidth=3, spacing=spacing, pullCompensation=.4)))
+            self.assertAlmostEqual(base[1], 3, delta=.11)
+            self.assertAlmostEqual(wide[1]-base[1], .4, delta=.11, msg=kind)
+            self.assertAlmostEqual(wide[0], base[0], delta=.11, msg=kind)
+
+    def test_satin_underlay_stays_inset(self):
+        line = [[[30,40],[60,40]]]
+        base = compile_project(project("satin", line, satinWidth=3, underlay=True, underlayType="edge"))
+        wide = compile_project(project("satin", line, satinWidth=3, underlay=True, underlayType="edge", pullCompensation=.4))
+        rail = lambda r: sorted({round(c["y"], 2) for c in r["commands"][:20] if c["type"] == "stitch"})
+        self.assertEqual(rail(base), rail(wide))
+
+    def test_fills_lengthen_rows_by_the_compensation(self):
+        for angle in (0, 90):
+            base = self.extent(compile_project(project(angle=angle)))
+            wide = self.extent(compile_project(project(angle=angle, pullCompensation=.5)))
+            along = 0 if angle == 0 else 1
+            self.assertAlmostEqual(wide[along]-base[along], .5, delta=.11, msg=angle)
+            self.assertAlmostEqual(wide[1-along], base[1-along], delta=.11, msg=angle)
+        cross = [self.extent(compile_project(project("cross", spacing=2, angle=0, pullCompensation=v)))[0] for v in (0, .6)]
+        self.assertAlmostEqual(cross[1]-cross[0], .6/math.sqrt(2), delta=.11)
+
+    def test_fill_holes_shrink_only_by_half_the_compensation(self):
+        rings = [[[25,25],[75,25],[75,75],[25,75]],[[40,40],[60,40],[60,60],[40,60]]]
+        for rule, hole in (("evenodd", rings[1]), ("nonzero", list(reversed(rings[1])))):
+            result = compile_project(project(rings=[rings[0], hole], angle=0, pullCompensation=.6, fillRule=rule))
+            for c in result["commands"]:
+                if c["type"] == "stitch":
+                    for t in (.2, .5, .8):
+                        x = c["fromX"]+(c["x"]-c["fromX"])*t
+                        y = c["fromY"]+(c["y"]-c["fromY"])*t
+                        self.assertFalse(40.42 < x < 59.58 and 40.12 < y < 59.88, (rule, c))
+            self.assertLess(result["stats"]["trims"], 10)
+
+    def test_running_styles_are_unaffected(self):
+        line = [[[30,40],[40,45],[60,40]]]
+        for kind in ("running", "bean", "backstitch", "underlay", "manual"):
+            base = compile_project(project(kind, line))
+            self.assertEqual(base["commands"], compile_project(project(kind, line, pullCompensation=1))["commands"], kind)
+            p = project(kind, line); p["fabric"] = "jersey"
+            self.assertEqual(base["commands"], compile_project(p)["commands"], kind)
+
+    def test_fabric_default_applies_unless_set_explicitly(self):
+        line = [[[30,40],[60,40]]]
+        def height(fabric=None, **settings):
+            p = project("satin", line, satinWidth=3, **settings)
+            if fabric: p["fabric"] = fabric
+            return self.extent(compile_project(p))[1]
+        self.assertAlmostEqual(height("woven")-height(), .2, delta=.11)
+        self.assertAlmostEqual(height("jersey")-height(), .35, delta=.11)
+        self.assertAlmostEqual(height("jersey", pullCompensation=0), height(), delta=.01)
+        self.assertAlmostEqual(height("woven", pullCompensation=.6)-height(), .6, delta=.11)
+
+    def test_fill_touching_the_hoop_edge_stays_inside(self):
+        result = compile_project(project(rings=[[[0,0],[40,0],[40,40],[0,40]]], angle=0, pullCompensation=1))
+        self.assertTrue(all(0 <= c["x"] <= 100 for c in result["commands"]))
+
+    def test_rejects_out_of_range_compensation_and_fabric(self):
+        for value in (-.1, 1.5, math.nan, "0.2", True):
+            with self.assertRaises(ValueError):
+                compile_project(project(pullCompensation=value))
+        p = project(); p["fabric"] = "denim"
+        with self.assertRaises(ValueError):
+            compile_project(p)

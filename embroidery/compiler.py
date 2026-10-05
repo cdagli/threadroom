@@ -4,7 +4,8 @@ Deliberately independent of Inkscape and GUI/native dependencies. Fill uses
 even-odd scan lines (including holes), with jumps across disconnected spans.
 Fill rows are grouped into sections (e.g. one per letter) and each section
 is sewn before the next. Text fills use the nonzero rule so overlapping glyph
-contours merge.
+contours merge. Pull compensation widens satin bites and extends fill rows
+and cross diagonals along their stitch direction (half on each side).
 This is an experimental digitizer, not Ink/Stitch's production fill engine.
 """
 import base64
@@ -20,6 +21,9 @@ HOOPS = {"100x100": (100, 100), "180x130": (180, 130), "300x200": (300, 200), "6
 MAX_STITCHES = 100_000
 CONNECT_TOLERANCE = 0.1
 FILL_KINDS = ("fill", "cross")
+WIDE_KINDS = ("satin", "zigzag", "e-stitch")
+# Default pull compensation (mm) by fabric preset; projects without one get none.
+FABRIC_PULL = {"woven": 0.2, "jersey": 0.35}
 KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual")
 
 
@@ -40,6 +44,8 @@ def validate(project):
     if hoop not in HOOPS:
         raise ValueError("Choose a supported PR1X hoop.")
     width, height = HOOPS[hoop]
+    if project.get("fabric", "woven") not in FABRIC_PULL:
+        raise ValueError("Unknown fabric preset.")
     objects = project.get("objects")
     if not isinstance(objects, list) or not 1 <= len(objects) <= 80:
         raise ValueError("Add between 1 and 80 embroidery objects.")
@@ -67,6 +73,7 @@ def validate(project):
         number(obj.get("length", 2.5), 0.5, 3, "Stitch length")
         number(obj.get("angle", 0), -180, 180, "Fill angle")
         number(obj.get("satinWidth", 2), 0.5, 6, "Satin width")
+        number(obj.get("pullCompensation", 0), 0, 1, "Pull compensation")
         if not isinstance(obj.get("underlay", False), bool):
             raise ValueError("Underlay must be true or false.")
         mode = obj.get("underlayType", "auto")
@@ -149,7 +156,17 @@ def scan_spans(rings, y, rule):
     return spans
 
 
-def fill_sections(rotated, spacing, rule):
+def extend_spans(spans, pull):
+    """Lengthens each row by pull/2 at both ends, never past the midpoint of
+    the gap to a neighbouring span, so separate parts stay separate."""
+    if pull <= 0:
+        return spans
+    return [(left - min(pull/2, (left-spans[i-1][1])/2 if i else pull/2),
+             right + min(pull/2, (spans[i+1][0]-right)/2 if i+1 < len(spans) else pull/2))
+            for i, (left, right) in enumerate(spans)]
+
+
+def fill_sections(rotated, spacing, rule, pull=0):
     """Groups scan-line spans into sections that can be sewn back and forth
     without leaving the shape: a span continues a section only when the two
     overlap exclusively. Letters, and parts split by holes, become sections."""
@@ -157,7 +174,7 @@ def fill_sections(rotated, spacing, rule):
     y = min(ys) + spacing/2
     sections, active = [], []
     while y < max(ys):
-        spans = [span for span in scan_spans(rotated, y, rule) if span[1]-span[0] >= 0.15]
+        spans = [span for span in extend_spans(scan_spans(rotated, y, rule), pull) if span[1]-span[0] >= 0.15]
         overlaps = lambda a, b: a[0] < b[1] and b[0] < a[1]
         following = []
         for span in spans:
@@ -174,11 +191,11 @@ def fill_sections(rotated, spacing, rule):
     return sections
 
 
-def fill_paths(rings, spacing, angle, length, rule="evenodd"):
+def fill_paths(rings, spacing, angle, length, rule="evenodd", pull=0):
     theta = math.radians(angle)
     c, s = math.cos(theta), math.sin(theta)
     rotated = [[[x*c+y*s, -x*s+y*c] for x, y in r] for r in rings]
-    remaining = fill_sections(rotated, spacing, rule)
+    remaining = fill_sections(rotated, spacing, rule, pull)
     at = None
     while remaining:
         # Sew the nearest section next to keep jumps and trims short.
@@ -232,7 +249,7 @@ def rail_paths(ring, width, length):
     return rails
 
 
-def cross_paths(rings, cell, angle, rule="evenodd"):
+def cross_paths(rings, cell, angle, rule="evenodd", pull=0):
     theta = math.radians(angle)
     c, s = math.cos(theta), math.sin(theta)
     rotated = [[[x*c+y*s, -x*s+y*c] for x, y in r] for r in rings]
@@ -248,7 +265,8 @@ def cross_paths(rings, cell, angle, rule="evenodd"):
         while x+cell/2 <= max_x:
             corners = [[x-cell/2,y-cell/2],[x+cell/2,y+cell/2], [x+cell/2,y-cell/2],[x-cell/2,y+cell/2]]
             if all(inside(p, rotated, rule) for p in corners) and all(inside(p, rotated, rule) for a,b in ((corners[0],corners[1]),(corners[2],corners[3])) for p in interpolate(a,b,0.1)):
-                for a,b in ((corners[0],corners[1]),(corners[2],corners[3])):
+                e = pull/2/math.sqrt(2)
+                for a,b in (([x-cell/2-e,y-cell/2-e],[x+cell/2+e,y+cell/2+e]), ([x+cell/2+e,y-cell/2-e],[x-cell/2-e,y+cell/2+e])):
                     yield [[p[0]*c-p[1]*s,p[0]*s+p[1]*c] for p in (a,b)]
             x += cell
         y += cell
@@ -310,6 +328,7 @@ def compile_project(project):
         length = obj.get("length", 2.5)
         kind = obj["kind"]
         rule = obj.get("fillRule", "evenodd")
+        pull = obj.get("pullCompensation", FABRIC_PULL.get(project.get("fabric"), 0)) if kind in (*FILL_KINDS, *WIDE_KINDS) else 0
         paths = []
         if kind in FILL_KINDS:
             if obj.get("underlay"):
@@ -317,7 +336,9 @@ def compile_project(project):
                     paths.extend(line_path(ring+[ring[0]], length) for ring in rings)
                 else:
                     paths.extend(fill_paths(rings, 2, obj.get("angle", 0)+90, length, rule))
-            paths.extend(cross_paths(rings, spacing, obj.get("angle", 0), rule) if kind == "cross" else fill_paths(rings, spacing, obj.get("angle", 0), length, rule))
+            top = cross_paths(rings, spacing, obj.get("angle", 0), rule, pull) if kind == "cross" else fill_paths(rings, spacing, obj.get("angle", 0), length, rule, pull)
+            # Compensation may reach past a ring that touches the hoop edge.
+            paths.extend([[min(max(x, 0), width), min(max(y, 0), height)] for x, y in path] for path in top)
         else:
             for ring in rings:
                 if obj.get("underlay") and kind == "satin":
@@ -328,7 +349,7 @@ def compile_project(project):
                         paths.append(satin_path(ring, 2, max(0.1, obj.get("satinWidth", 2)-0.5)))
                     else:
                         paths.append(line_path(ring, length))
-                path = (satin_path(ring, spacing, obj.get("satinWidth", 2), kind) if kind in ("satin", "zigzag", "e-stitch")
+                path = (satin_path(ring, spacing, obj.get("satinWidth", 2)+pull, kind) if kind in WIDE_KINDS
                         else ring if kind == "manual" else line_path(ring, length))
                 if kind == "bean":
                     triple = [path[0]]
@@ -352,7 +373,7 @@ def compile_project(project):
             connect = kind == "fill" and object_previous is not None and math.dist(object_previous, path[0]) <= 3
             if connect:
                 # Connectors may graze a concave edge by a hidden fraction of a millimetre.
-                connect = all(inside(p, rings, rule, CONNECT_TOLERANCE) for p in interpolate(object_previous, path[0], 0.1))
+                connect = all(inside(p, rings, rule, CONNECT_TOLERANCE+pull/2) for p in interpolate(object_previous, path[0], 0.1))
             if connect:
                 sew_to(path[0])
             else:

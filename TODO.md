@@ -6,7 +6,7 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 
 ## 1. Stitch quality
 
-- [ ] **Pull compensation.** Add a per-object setting (mm, with a fabric default) that widens satins and fills against the pull direction. This is the largest risk for real stitch-outs.
+- [x] **Pull compensation.** Add a per-object setting (mm, with a fabric default) that widens satins and fills against the pull direction. This is the largest risk for real stitch-outs.
 - [ ] **Fabric profiles.** Replace the woven/jersey preset with profiles (woven, jersey/knit, fleece, terry, …) that set density, underlay and compensation, and that recommend a stabilizer.
 - [ ] **Short stitches on inner curves, plus automatic satin splitting** for columns too wide to stitch safely.
 - [ ] **Entry and exit points.** Let the user choose where each object starts and ends, so travel stitches get shorter.

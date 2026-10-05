@@ -6,6 +6,7 @@ export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
   spacing: number; length: number; angle: number; satinWidth: number; underlay: boolean;
   underlayType?: UnderlayType;
+  pullCompensation?: number; // mm; the fabric default applies when unset
   curve?: {points: Point[]; closed: boolean};
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
@@ -31,6 +32,9 @@ export const kindNames: Record<Kind, string> = {running:'Running / straight', be
 export const kindHints: Record<Kind, string> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
 export const isFillKind=(kind:Kind)=>kind==='fill'||kind==='cross';
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
+// Keep in sync with FABRIC_PULL in embroidery/compiler.py.
+export const pullDefaults: Record<Project['fabric'], number> = {woven: .2, jersey: .35};
+export const pullCompensation=(o:StitchObject,fabric:Project['fabric'])=>o.pullCompensation??pullDefaults[fabric];
 export const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '#a6bdca'];
 export function object(name: string, rings: Point[][], kind: Kind = 'fill', color = palette[0]): StitchObject {
   return {id: crypto.randomUUID(), name, rings, kind, color, spacing: 0.45, length: 2.5, angle: 35, satinWidth: 2, underlay: false};
@@ -89,6 +93,7 @@ export function validProject(value: unknown): value is Project {
     }
     if ([o.spacing,o.length,o.angle,o.satinWidth].some(n=>typeof n !== 'number' || !Number.isFinite(n)) || typeof o.underlay !== 'boolean') return false;
     if(o.spacing<.3||o.spacing>2||o.length<.5||o.length>3||o.angle< -180||o.angle>180||o.satinWidth<.5||o.satinWidth>6)return false;
+    if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
     if(o.underlayType!==undefined&&!['auto','center','edge','zigzag','tatami'].includes(o.underlayType))return false;
     if(o.underlay&&o.underlayType&&o.underlayType!=='auto'&&!((isFillKind(o.kind)&&['edge','tatami'].includes(o.underlayType))||(o.kind==='satin'&&['center','edge','zigzag'].includes(o.underlayType))))return false;
     if(o.curve){

@@ -10,13 +10,18 @@ The existing `../pes-viewer` and original bear files are unchanged.
   flat colours into editable regions. Tracing runs locally in the browser.
 - Draw freehand strokes (finish on release), smooth curves, polygon fills, or individual stitch points. Curves retain draggable anchors in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
-  fill direction, constant-width satin, and light underlay.
+  fill direction, constant-width satin, light underlay, and pull compensation.
 - PR1X hoop profiles: 100 × 100, 180 × 130, 300 × 200, and 60 × 40 mm. Select
   the hoop actually fitted to your machine. Profiles are limits, not a machine
-  connection. Woven/jersey presets set fill spacing only.
+  connection. Woven/jersey presets set fill spacing and default pull compensation
+  (0.2 / 0.35 mm).
 - Choose illustrated stitch styles: running/straight, bean, backstitch, satin,
   zigzag, appliqué E-stitch, tatami fill, cross-stitch fill, standalone underlay,
   and manual stitches. Each generates real paths in **PES v6 with custom RGB thread colours**.
+- Pull compensation (0–1 mm) widens satin, zigzag and E-stitch bites and
+  lengthens tatami rows and cross diagonals by the amount, half per side.
+  Unset objects follow the fabric preset; explicit values are kept when it
+  changes. Underlay stays inset.
 - Add automatic, edge-walk or light-tatami underlay to fills, or center-walk,
   edge-walk or light-zigzag underlay to satin lines.
 - Preview the **exported PES after Python reads it back**, with playback and
@@ -196,7 +201,8 @@ auto-digitizer. The first deployable version proves the browser/Python boundary.
 It has basic scanline fill, sparse perpendicular fill underlay, constant-width
 satin foundations, cross-fill grids, and tie stitches. Crosses jump between
 diagonals instead of using production cross-stitch routing. Edge-walk fill
-underlay follows the boundary without an inset. It does **not** have pull compensation, robust fill
+underlay follows the boundary without an inset. Pull compensation is a fixed amount per object; it does not scale with
+column width or offset fill outlines in other directions. It does **not** have robust fill
 routing, overlap compensation between independent objects, satin rails, or
 production fabric/stabilizer presets. Freehand and point paths are subdivided
 to keep sewn segments near or below 3 mm (allowing 0.1 mm format rounding).
