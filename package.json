@@ -1,0 +1,30 @@
+{
+  "name": "threadroom-poc",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "next dev --webpack",
+    "build": "next build --webpack",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.6.5",
+    "@astryxdesign/theme-neutral": "0.6.5",
+    "@stylexjs/stylex": "0.19.0",
+    "next": "16.3.8",
+    "opentype.js": "2.0.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22 <25"
+  }
+}

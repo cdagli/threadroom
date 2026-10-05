@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+.venv
+.npm-cache
+tests
+studio-preview.png
+studio-mobile.png
+sample-output
+__pycache__
+*.pyc
+
+.next-build/
