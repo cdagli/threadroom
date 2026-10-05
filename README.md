@@ -39,6 +39,19 @@ The existing `../pes-viewer` and original bear files are unchanged.
 - Pull compensation (0–1 mm) widens satin, zigzag and E-stitch bites and
   lengthens tatami rows and cross diagonals by the amount, half per side.
   Underlay stays inset.
+- Satin, zigzag and E-stitch columns are 0.5–10 mm wide. Each bite is one
+  stitch; bites longer than **Split above** (default 7 mm, 3–12 mm) are split
+  into pieces of at most that length, with penetrations staggered by a
+  golden-ratio sequence so they never line up into a groove. Pull compensation
+  is applied before splitting. 7 mm: longer floats loosen and snag on baby
+  clothes; the PR1X limit is 12.7 mm, and a 10 mm column with 1 mm compensation
+  stays under it even with splitting raised to 12 mm (effectively off).
+- **Short stitches on curves** (satin and zigzag, on by default): where the inner
+  edge is compressed below 80 % of the centre line and its needle hits are
+  closer than 1 mm, alternate inner bites stop 25 % of the width short. The
+  outer edge and every other inner hit are unchanged, so the edge stays
+  continuous. Both are per-object settings with fixed defaults (*Default* /
+  *Reset*); text satin borders use the defaults.
 - Underlay: edge walk, light tatami or edge + tatami for fills; center walk,
   edge walk, light zigzag or edge + zigzag for satin lines.
 - Preview the **exported PES after Python reads it back**, with playback and
@@ -192,7 +205,8 @@ npm run build
 
 Tests exercise physical dimensions, PES v6 colours, holes in fill/underlay,
 disconnected travel, every stitch style, underlay modes, cross-fill holes,
-curve-resolution-independent satin density, stitch lengths, hoop checks,
+curve-resolution-independent satin density, short stitches on tight arcs,
+staggered satin splitting with pull compensation, stitch lengths, hoop checks,
 malformed input, request limits, and independent PES decoding. Tests use the
 virtual environment if present and regenerate their own small fixtures.
 
@@ -219,10 +233,13 @@ It has basic scanline fill, sparse perpendicular fill underlay, constant-width
 satin foundations, cross-fill grids, and tie stitches. Crosses jump between
 diagonals instead of using production cross-stitch routing. Edge-walk fill
 underlay follows the boundary without an inset. Pull compensation is a fixed amount per object; it does not scale with
-column width or offset fill outlines in other directions. It does **not** have robust fill
+column width or offset fill outlines in other directions. Short stitches use a
+fixed threshold and inset; they do not handle self-overlapping columns on curves
+tighter than half the width. It does **not** have robust fill
 routing, overlap compensation between independent objects, satin rails, or
 production fabric/stabilizer presets. Freehand and point paths are subdivided
-to keep sewn segments near or below 3 mm (allowing 0.1 mm format rounding).
+to keep sewn segments near or below 3 mm (allowing 0.1 mm format rounding);
+wide-column bites follow the split length instead.
 
 The 80-pixel tracing grid is designed for simple illustrations; small details
 and photographs need manual correction. Automatic tracing assigns fill to all

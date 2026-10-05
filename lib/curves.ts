@@ -1,4 +1,4 @@
-import {fabrics, resolve, type Point, type Project, type Resolved, type StitchObject} from './project';
+import {fabrics, profileDefault, resolve, type Point, type Project, type Resolved, type StitchObject} from './project';
 import {mergedOutline, transformText} from './text';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
@@ -110,7 +110,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
     const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
     if(!text.border||!(o.kind==='fill'||o.kind==='cross'))return [letters];
     const b=text.border,outline=mergedOutline(o.rings);
-    return [letters,{...plain,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
+    return [letters,{...plain,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',splitLength:Number(profileDefault(b.kind,fabric,'splitLength')??0),shortStitches:profileDefault(b.kind,fabric,'shortStitches')===true,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
   })};
 }
 

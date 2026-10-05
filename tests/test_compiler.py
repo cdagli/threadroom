@@ -15,7 +15,7 @@ def project(kind="fill", rings=None, **settings):
     return {"version": 1, "name": "Compiler test", "machine": "brother-pr1x", "hoop": "100x100",
             "objects": [{"name": "Region", "kind": kind, "color": "#c99d72",
                          "rings": rings or [[[30,30],[60,30],[60,60],[30,60]]],
-                         "spacing": .45, "underlay": "none", "pullCompensation": 0, **settings}]}
+                         "spacing": .45, "underlay": "none", "pullCompensation": 0, "splitLength": 7, "shortStitches": True, **settings}]}
 
 
 def node(script, value):
@@ -81,9 +81,10 @@ class CompilerTests(unittest.TestCase):
         self.assertGreater(results["backstitch"]["stats"]["stitches"],results["running"]["stats"]["stitches"])
         self.assertGreater(results["satin"]["stats"]["stitches"],results["zigzag"]["stats"]["stitches"]*2)
         self.assertGreater(results["e-stitch"]["stats"]["stitches"],results["zigzag"]["stats"]["stitches"])
-        for result in results.values():
+        for kind,result in results.items():
             self.assertGreater(result["stats"]["stitches"],0)
-            self.assertLessEqual(result["stats"]["maxStitch"],3.15)
+            # Wide bites are single stitches up to the split length (default 7 mm).
+            self.assertLessEqual(result["stats"]["maxStitch"],3.4 if kind in ("satin","zigzag","e-stitch") else 3.15)
             parsed=read_pes(io.BytesIO(base64.b64decode(result["pes"])))
             self.assertEqual(parsed.threadlist[0].hex_color(),"#c99d72")
         # E-stitch bites cross from the edge and return to the same edge.
@@ -297,7 +298,7 @@ class FabricProfileTests(unittest.TestCase):
             self.assertTrue(f["stabilizer"] and f["topping"])
             result = compile_project(resolved(p))
             self.assertGreater(result["stats"]["stitches"], 500, fabric)
-            self.assertLessEqual(result["stats"]["maxStitch"], 3.15, fabric)
+            self.assertLessEqual(result["stats"]["maxStitch"], 7.15, fabric)
             self.assertEqual(base64.b64decode(result["pes"])[:8], b"#PES0060")
 
     def test_profile_sets_fill_density(self):
@@ -326,3 +327,89 @@ class FabricProfileTests(unittest.TestCase):
                    {"kind": "satin", "rings": [[[30,70],[60,70]]], "spacing": .5, "underlay": "none", "pullCompensation": 0})
         results = [self.compile(f, *objects)["commands"] for f in self.fabrics]
         self.assertTrue(all(r == results[0] for r in results))
+
+
+class ShortStitchAndSplitTests(unittest.TestCase):
+    centre = (50, 50)
+    arc = [[50+6*math.cos(t/100*math.pi), 50+6*math.sin(t/100*math.pi)] for t in range(101)]
+
+    def sewn(self, result):
+        """Sewn segments read back from the written PES, in mm."""
+        parsed = read_pes(io.BytesIO(base64.b64decode(result["pes"])))
+        points = [(x/10, y/10, c & 0xFF) for x, y, c in parsed.stitches]
+        # A stitch at a jump target is the needle going down, not a sewn stitch.
+        return [(a[:2], b[:2]) for a, b in zip(points, points[1:]) if a[2] == b[2] == 0]
+
+    def test_tight_arc_shortens_alternate_inner_bites_and_keeps_the_outer_edge(self):
+        width = 4
+        plain, short = (satin_path(self.arc, .4, width, "satin", 0, s) for s in (False, True))
+        straight = satin_path([[30,40],[60,40]], .4, width, "satin", 0, True)
+        radius = lambda p: math.dist(p, self.centre)
+        self.assertEqual([p for p in short if radius(p) > 6], [p for p in plain if radius(p) > 6])
+        inner = [radius(p) for p in short if radius(p) < 6]
+        self.assertTrue(any(r > 4.5 for r in inner) and any(abs(r-4) < .01 for r in inner))
+        # Alternate inner hits stay on the edge, so it looks continuous.
+        self.assertGreaterEqual(sum(abs(r-4) < .01 for r in inner), len(inner)//2)
+        bite = lambda path: [math.dist(a, b) for a, b in zip(path, path[1:])]
+        self.assertLess(min(bite(short)), width-.5)
+        self.assertGreaterEqual(min(bite(short)), width*.75-.01)
+        self.assertTrue(all(abs(b-math.hypot(width, .4)) < .01 for b in bite(straight)))
+        self.assertTrue(all(abs(b-width) < .05 for b in bite(plain)))
+        on, off = (compile_project(project("satin", [self.arc], satinWidth=width, spacing=.4, shortStitches=s)) for s in (True, False))
+        self.assertLess(sum(math.dist(a, b) for a, b in self.sewn(on)), sum(math.dist(a, b) for a, b in self.sewn(off)))
+
+    def test_wide_satin_is_split_with_staggered_penetrations(self):
+        line = [[[30,40],[60,40]]]
+        whole = compile_project(project("satin", line, satinWidth=10, spacing=.4, splitLength=12))
+        self.assertAlmostEqual(whole["stats"]["maxStitch"], 10, delta=.15)
+        for kind, spacing in (("satin", .4), ("zigzag", 1.5), ("e-stitch", 1.5)):
+            for split in (3, 5, 7):
+                result = compile_project(project(kind, line, satinWidth=10, spacing=spacing, splitLength=split, pullCompensation=.5))
+                self.assertLessEqual(result["stats"]["maxStitch"], split+.15, (kind, split))
+                self.assertGreaterEqual(min(math.dist(a, b) for a, b in self.sewn(result)), .29, (kind, split))
+        path = satin_path(line[0], .4, 10, "satin", 7)
+        inner = [round(p[1], 1) for p in path if 35.1 < p[1] < 44.9]
+        self.assertGreater(len(set(inner)), 10)
+        # Neighbouring bites never put their split points on the same line.
+        splits = [[p[1] for p in path[i:i+3] if 35.1 < p[1] < 44.9] for i in range(1, 60, 3)]
+        for a, b in zip(splits, splits[1:]):
+            self.assertGreater(min(abs(x-y) for x in a for y in b), .2)
+
+    def test_split_keeps_pull_compensation(self):
+        line = [[[30,40],[60,40]]]
+        extent = lambda r: PullCompensationTests.extent(None, r)[1]
+        base = compile_project(project("satin", line, satinWidth=9, spacing=.4))
+        wide = compile_project(project("satin", line, satinWidth=9, spacing=.4, pullCompensation=.6))
+        self.assertAlmostEqual(extent(base), 9, delta=.11)
+        self.assertAlmostEqual(extent(wide)-extent(base), .6, delta=.11)
+        self.assertLessEqual(wide["stats"]["maxStitch"], 7.15)
+
+    def test_max_stitch_length_is_respected_everywhere(self):
+        square = [[30,30],[60,30],[60,60],[30,60]]
+        for kind in ("fill", "cross", "running", "bean", "backstitch", "underlay", "manual"):
+            rings = [square] if kind in ("fill", "cross") else [self.arc]
+            result = compile_project(project(kind, rings, spacing=2 if kind == "cross" else .45, satinWidth=10, splitLength=3))
+            self.assertLessEqual(result["stats"]["maxStitch"], 3.15, kind)
+        for kind in ("satin", "zigzag", "e-stitch"):
+            for underlay in (("none", "center", "edge", "zigzag", "edge-zigzag") if kind == "satin" else ("none",)):
+                result = compile_project(project(kind, [self.arc], satinWidth=10, spacing=.4 if kind == "satin" else 1.5, underlay=underlay, pullCompensation=1))
+                self.assertLessEqual(result["stats"]["maxStitch"], 7.15, (kind, underlay))
+
+    def test_text_border_satin_is_split(self):
+        from embroidery.compiler import split_bites
+        self.assertEqual(split_bites([[0,0],[0,5]], 7), [[0,0],[0,5]])
+        payload = resolved({"version": 1, "name": "Text", "machine": "brother-pr1x", "hoop": "100x100", "fabric": "woven", "objects": [
+            {"id": "t", "name": "Text", "kind": "fill", "color": "#c99d72", "length": 2.5, "angle": 0, "satinWidth": 2,
+             "rings": [[[30,30],[60,30],[60,60],[30,60]]], "text": {"border": {"kind": "satin", "color": "#664538", "width": 4}}}]})
+        border = payload["objects"][1]
+        self.assertEqual((border["kind"], border["splitLength"], border["shortStitches"]), ("satin", 7, True))
+        border.update(splitLength=3)
+        result = compile_project({**payload, "objects": [border]})
+        self.assertLessEqual(result["stats"]["maxStitch"], 3.15)
+
+    def test_rejects_out_of_range_split_and_short_settings(self):
+        for patch in ({"splitLength": 2.9}, {"splitLength": 12.1}, {"splitLength": None}, {"splitLength": True},
+                      {"shortStitches": 1}, {"shortStitches": None}, {"satinWidth": 10.5}):
+            with self.assertRaises(ValueError, msg=patch):
+                compile_project(project("satin", [[[30,40],[60,40]]], **patch))
+        compile_project(project("running", [[[30,40],[60,40]]], splitLength=None, shortStitches=None))

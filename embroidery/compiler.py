@@ -6,6 +6,9 @@ Fill rows are grouped into sections (e.g. one per letter) and each section
 is sewn before the next. Text fills use the nonzero rule so overlapping glyph
 contours merge. Pull compensation widens satin bites and extends fill rows
 and cross diagonals along their stitch direction (half on each side).
+Wide columns (satin, zigzag, E-stitch) sew each bite as one stitch; bites
+longer than the object's split length are split with staggered penetrations,
+and satin/zigzag bites on a compressed inner curve alternately stop short.
 Spacing, underlay and pull compensation arrive resolved from the editor's
 fabric profile (lib/project.ts); the compiler has no fabric defaults.
 This is an experimental digitizer, not Ink/Stitch's production fill engine.
@@ -25,6 +28,11 @@ CONNECT_TOLERANCE = 0.1
 FILL_KINDS = ("fill", "cross")
 WIDE_KINDS = ("satin", "zigzag", "e-stitch")
 KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual")
+SATIN_MAX = 12.7  # PR1X / PES single stitch limit
+# Short stitches: shorten alternate inner bites by SHORT_INSET of the width where the
+# inner rail is compressed below SHORT_RATIO of the centre line and its needle hits
+# are closer than SHORT_HIT mm. Split points step by the golden ratio (no lines).
+SHORT_RATIO, SHORT_HIT, SHORT_INSET, GOLDEN = .8, 1.0, .25, (math.sqrt(5)-1)/2
 UNDERLAYS = {"fill": ("none", "edge", "tatami", "edge-tatami"), "satin": ("none", "center", "edge", "zigzag", "edge-zigzag")}
 
 
@@ -71,8 +79,12 @@ def validate(project):
         number(obj.get("spacing"), 0.3, 2, "Stitch spacing")
         number(obj.get("length", 2.5), 0.5, 3, "Stitch length")
         number(obj.get("angle", 0), -180, 180, "Fill angle")
-        number(obj.get("satinWidth", 2), 0.5, 6, "Satin width")
+        number(obj.get("satinWidth", 2), 0.5, 10, "Satin width")
         number(obj.get("pullCompensation"), 0, 1, "Pull compensation")
+        if obj["kind"] in WIDE_KINDS:
+            number(obj.get("splitLength"), 3, 12, "Split length")
+            if not isinstance(obj.get("shortStitches"), bool):
+                raise ValueError("Short stitches must be on or off.")
         if obj.get("underlay") not in UNDERLAYS.get("fill" if obj["kind"] in FILL_KINDS else obj["kind"], ("none",)):
             raise ValueError("Choose an underlay suited to this stitch style.")
         if obj.get("fillRule", "evenodd") not in ("evenodd", "nonzero"):
@@ -201,7 +213,7 @@ def fill_paths(rings, spacing, angle, length, rule="evenodd", pull=0):
             yield [[x*c-y*s, x*s+y*c] for x, y in path]
 
 
-def satin_path(ring, spacing, width, style="satin"):
+def satin_path(ring, spacing, width, style="satin", split=0, short=False):
     # Constant-width satin along a user-drawn centre line.
     points = sample_path(ring, spacing)
     closed = len(ring) > 2 and math.dist(ring[0], ring[-1]) < 1e-6
@@ -209,23 +221,53 @@ def satin_path(ring, spacing, width, style="satin"):
     # spikes at sharp corners; closed outlines wrap around their seam.
     k = max(1, round(0.8/spacing))
     n = len(points)-1 if closed else len(points)
-    result = []
+    frames = []
     for i, point in enumerate(points):
         if closed:
             a, b = points[(i-k) % n], points[(i+k) % n]
         else:
             a, b = points[max(0, i-k)], points[min(len(points)-1, i+k)]
         distance = math.dist(a, b)
-        if distance < 0.001:
-            continue
-        def side_point(side):
-            return [point[0]-(b[1]-a[1])/distance*width/2*side,
-                    point[1]+(b[0]-a[0])/distance*width/2*side]
+        if distance >= 0.001:
+            frames.append((i, point, [-(b[1]-a[1])/distance, (b[0]-a[0])/distance]))
+    at = lambda f, side, offset=width/2: [f[1][0]+f[2][0]*offset*side, f[1][1]+f[2][1]*offset*side]
+    def compression(j, side):
+        a, b = frames[(j-1) % len(frames) if closed else max(0, j-1)], frames[(j+1) % len(frames) if closed else min(len(frames)-1, j+1)]
+        centre = math.dist(a[1], b[1])
+        return math.dist(at(a, side), at(b, side))/centre if centre > 1e-9 else 1
+    result = []
+    for j, f in enumerate(frames):
+        i = f[0]
         if style == "e-stitch":
             # Walk one rail; each bite goes across and back to that rail.
-            result.extend([side_point(-1), side_point(1), side_point(-1)])
-        else:
-            result.append(side_point(1 if i % 2 else -1))
+            result.extend([at(f, -1), at(f, 1), at(f, -1)])
+            continue
+        side = 1 if i % 2 else -1
+        ratio = compression(j, side) if short and (i//2) % 2 else 1
+        result.append(at(f, side, width/2-SHORT_INSET*width) if ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else at(f, side))
+    return split_bites(result, split)
+
+
+def split_bites(path, limit):
+    """Splits stitches longer than limit into pieces of at most limit. Each
+    split bite shifts its penetrations by up to a third of a piece (golden-ratio
+    sequence), so neighbouring bites never line up into a visible groove.
+    Offsets are mirrored for bites sewn the other way, so the stagger holds
+    across the column rather than per direction."""
+    if not limit or len(path) < 2:
+        return path
+    result, count, ref = [path[0]], 0, None
+    for a, b in zip(path, path[1:]):
+        d = math.dist(a, b)
+        if d > limit:
+            pieces = math.ceil(d/(limit*.75))
+            v = [b[0]-a[0], b[1]-a[1]]
+            flip = ref is not None and v[0]*ref[0]+v[1]*ref[1] < 0
+            ref = [-v[0], -v[1]] if flip else v
+            offset = ((count*GOLDEN) % 1-.5)*2/3*(-1 if flip else 1)
+            count += 1
+            result.extend([a[0]+(b[0]-a[0])*(j+offset)/pieces, a[1]+(b[1]-a[1])*(j+offset)/pieces] for j in range(1, pieces))
+        result.append(b)
     return result
 
 
@@ -288,11 +330,11 @@ def compile_project(project):
         pattern.add_stitch_absolute(command, round((x-width/2)*10), round((y-height/2)*10))
         previous = point
 
-    def sew_to(point):
+    def sew_to(point, limit=3):
         if previous is None:
             move(JUMP, point)
         else:
-            for p in interpolate(previous, point, 3):
+            for p in interpolate(previous, point, limit):
                 move(STITCH, p)
 
     def tie(a, b):
@@ -324,6 +366,7 @@ def compile_project(project):
         rule = obj.get("fillRule", "evenodd")
         pull = obj["pullCompensation"] if kind in (*FILL_KINDS, *WIDE_KINDS) else 0
         paths = []
+        direct = set()  # wide top paths: bites already split, sewn as single stitches
         foundation = 0
         if kind in FILL_KINDS:
             if "edge" in underlay:
@@ -343,8 +386,10 @@ def compile_project(project):
                     paths.extend(rail_paths(ring, inset, length))
                 if "zigzag" in underlay:
                     paths.append(satin_path(ring, 2, inset))
-                path = (satin_path(ring, spacing, obj.get("satinWidth", 2)+pull, kind) if kind in WIDE_KINDS
-                        else ring if kind == "manual" else line_path(ring, length))
+                if kind in WIDE_KINDS:
+                    direct.add(len(paths))
+                path = (satin_path(ring, spacing, obj.get("satinWidth", 2)+pull, kind, obj["splitLength"], obj["shortStitches"] and kind != "e-stitch")
+                        if kind in WIDE_KINDS else ring if kind == "manual" else line_path(ring, length))
                 if kind == "bean":
                     triple = [path[0]]
                     for a, b in zip(path, path[1:]):
@@ -378,13 +423,13 @@ def compile_project(project):
                 move(JUMP, path[0])
                 tie(path[0], path[1])
             for point in path[1:]:
-                sew_to(point)
+                sew_to(point, SATIN_MAX if index in direct else 3)
             tie(path[-1], path[-2])
             object_previous = path[-1]
     pattern.add_command(TRIM)
     pattern.add_command(END)
     output = io.BytesIO()
-    write_pes(pattern, output, {"version": 6, "max_stitch": 30, "max_jump": 2047, "full_jump": True})
+    write_pes(pattern, output, {"version": 6, "max_stitch": 127, "max_jump": 2047, "full_jump": True})
     data = output.getvalue()
     # Preview the file that was actually written, including quantisation and
     # format normalisation. This also detects writer/reader disagreement.

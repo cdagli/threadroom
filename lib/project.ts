@@ -8,6 +8,7 @@ export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
   length: number; angle: number; satinWidth: number;
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
+  splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
   curve?: {points: Point[]; closed: boolean};
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
@@ -49,21 +50,28 @@ export const underlayNames: Record<Underlay, string> = {none: 'None', center: 'C
 export const underlayOptions=(kind:Kind):Underlay[]=>isFillKind(kind)?['none','edge','tatami','edge-tatami']:kind==='satin'?['none','center','edge','zigzag','edge-zigzag']:['none'];
 export const usesSpacing=(kind:Kind)=>isFillKind(kind)||isWideKind(kind);
 export const usesPull=usesSpacing;
-export type Setting = 'spacing' | 'underlay' | 'pullCompensation';
+export const usesShortStitches=(kind:Kind)=>kind==='satin'||kind==='zigzag';
+// Bites above 7 mm loosen and snag on baby clothes (PR1X sews up to 12.7 mm); width cap 10 mm
+// keeps even an unsplit bite with 1 mm compensation within the machine limit.
+export const satinLimits={width:[.5,10] as const,split:[3,12] as const};
+export const satinDefaults={splitLength:7,shortStitches:true};
+export type Setting = 'spacing' | 'underlay' | 'pullCompensation' | 'splitLength' | 'shortStitches';
 // Profile default for an unset value; null when the stitch style ignores the setting.
-export function profileDefault(kind:Kind, fabric:Fabric, key:Setting):number|Underlay|null {
+export function profileDefault(kind:Kind, fabric:Fabric, key:Setting):number|Underlay|boolean|null {
   const f=fabrics[fabric];
+  if(key==='splitLength')return isWideKind(kind)?satinDefaults.splitLength:null;
+  if(key==='shortStitches')return usesShortStitches(kind)?satinDefaults.shortStitches:null;
   if(key==='spacing')return kind==='fill'?f.fill:kind==='satin'?f.satin:usesSpacing(kind)?1.5:null;
   if(key==='underlay')return kind==='fill'?f.fillUnderlay:kind==='satin'?f.satinUnderlay:kind==='cross'?'none':null;
   return usesPull(kind)?f.pull:null;
 }
 // True when the default comes from the fabric (not a fixed style default such as zigzag spacing).
-export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):kind==='fill'||kind==='satin';
+export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&(kind==='fill'||kind==='satin');
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
-export type Resolved = StitchObject & {spacing: number; underlay: Underlay; pullCompensation: number};
+export type Resolved = StitchObject & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean};
 export function resolve(o:StitchObject, fabric:Fabric):Resolved {
   const value=(key:Setting)=>o[key]??profileDefault(o.kind,fabric,key);
-  return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay: (value('underlay')??'none') as Underlay, pullCompensation: Number(value('pullCompensation')??0)};
+  return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay: (value('underlay')??'none') as Underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true};
 }
 export const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '#a6bdca'];
 export function object(name: string, rings: Point[][], kind: Kind = 'fill', color = palette[0]): StitchObject {
@@ -122,7 +130,9 @@ export function validProject(value: unknown): value is Project {
       if (count > 12000 || r.some(pt => !Array.isArray(pt) || pt.length !== 2 || pt.some(n => typeof n !== 'number' || !Number.isFinite(n) || Math.abs(n)>1000))) return false;
     }
     if ([o.length,o.angle,o.satinWidth].some(n=>typeof n !== 'number' || !Number.isFinite(n))) return false;
-    if(o.length<.5||o.length>3||o.angle< -180||o.angle>180||o.satinWidth<.5||o.satinWidth>6)return false;
+    if(o.length<.5||o.length>3||o.angle< -180||o.angle>180||o.satinWidth<satinLimits.width[0]||o.satinWidth>satinLimits.width[1])return false;
+    if(o.splitLength!==undefined&&(typeof o.splitLength!=='number'||!(o.splitLength>=satinLimits.split[0]&&o.splitLength<=satinLimits.split[1])))return false;
+    if(o.shortStitches!==undefined&&typeof o.shortStitches!=='boolean')return false;
     if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=.3&&o.spacing<=2)))return false;
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
     if(o.underlay!==undefined&&!underlayOptions(o.kind).includes(o.underlay))return false;

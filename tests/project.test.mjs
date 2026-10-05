@@ -75,3 +75,44 @@ test('SVG export carries resolved values and names inherited ones',()=>{
   assert.match(svg,/data-threadroom-underlay="edge-tatami"/);assert.match(svg,/data-threadroom-inherited="spacing underlay"/);
   assert.match(exportSVG(project({...o,spacing:.5,underlay:'none',pullCompensation:0})),/data-threadroom-inherited=""/);
 });
+
+test('Split length and short stitches default on wide kinds and are range-checked',()=>{
+  const {satinDefaults,satinLimits,usesShortStitches}=load('project');
+  const satin=object('Line',[line],'satin'),zigzag=object('Line',[line],'zigzag'),estitch=object('Line',[line],'e-stitch'),running=object('Line',[line],'running');
+  for(const k of ['splitLength','shortStitches'])assert.equal(k in satin,false,k);
+  assert.deepEqual(satinDefaults,{splitLength:7,shortStitches:true});assert.deepEqual(satinLimits.width,[.5,10]);
+  assert.deepEqual([resolve(satin,'woven').splitLength,resolve(satin,'woven').shortStitches],[7,true]);
+  assert.deepEqual([resolve(zigzag,'jersey').splitLength,resolve(zigzag,'jersey').shortStitches],[7,true]);
+  assert.deepEqual([resolve(estitch,'woven').splitLength,resolve(estitch,'woven').shortStitches],[7,false]);
+  assert.deepEqual([resolve(running,'woven').splitLength,resolve(running,'woven').shortStitches],[0,false]);
+  assert.equal(usesShortStitches('e-stitch'),false);
+  assert.equal(fromFabric('satin','splitLength'),false);assert.equal(fromFabric('satin','shortStitches'),false);
+  assert.deepEqual([resolve({...satin,splitLength:4.5,shortStitches:false},'woven').splitLength,resolve({...satin,shortStitches:false},'woven').shortStitches],[4.5,false]);
+  for(const v of [3,7,12])assert.ok(validProject(project({...satin,splitLength:v})),String(v));
+  for(const v of [2.9,12.1,NaN,'7',null,true])assert.equal(validProject(project({...satin,splitLength:v})),false,String(v));
+  for(const v of [true,false])assert.ok(validProject(project({...satin,shortStitches:v})));
+  for(const v of [1,'true',null])assert.equal(validProject(project({...satin,shortStitches:v})),false,String(v));
+  for(const v of [6.5,10])assert.ok(validProject(project({...satin,satinWidth:v})),String(v));
+  assert.equal(validProject(project({...satin,satinWidth:10.5})),false);
+  const saved=JSON.parse(JSON.stringify(project({...satin,splitLength:5,shortStitches:false})));
+  assert.ok(validProject(saved));assert.deepEqual([saved.objects[0].splitLength,saved.objects[0].shortStitches],[5,false]);
+  const [p]=geometryPayload(project({...satin,splitLength:5})).objects;assert.deepEqual([p.splitLength,p.shortStitches],[5,true]);
+});
+
+test('SVG export carries split length and short stitches for wide kinds',()=>{
+  const satin=object('Line',[line],'satin');
+  const svg=exportSVG(project({...satin,splitLength:5}));
+  assert.match(svg,/data-threadroom-split-length="5"/);assert.match(svg,/data-threadroom-short-stitches="true"/);
+  assert.match(svg,/data-threadroom-inherited="spacing underlay pull-compensation short-stitches"/);
+  assert.match(exportSVG(project({...object('Line',[line],'e-stitch'),shortStitches:false})),/data-threadroom-split-length="7"(?![^>]*short-stitches)/);
+  assert.doesNotMatch(exportSVG(project(object('Region',[square]))),/split-length|short-stitches/);
+});
+
+test('Satin text borders carry split and short-stitch defaults',()=>{
+  const o={...object('Text',[square]),text:{border:{kind:'satin',color:'#664538',width:4}}};
+  const [, border]=geometryPayload(project(o)).objects;
+  assert.deepEqual([border.kind,border.satinWidth,border.splitLength,border.shortStitches],['satin',4,7,true]);
+  const [, bean]=geometryPayload(project({...o,text:{border:{kind:'bean',color:'#664538',width:1}}})).objects;
+  assert.deepEqual([bean.splitLength,bean.shortStitches],[0,false]);
+  assert.match(exportSVG(project({...o,text:{...o.text,content:'A'}})),/border"[^>]*data-threadroom-split-length="7" data-threadroom-short-stitches="true"/);
+});
