@@ -96,6 +96,8 @@ test('Projects with text validate, and export sends nonzero letters plus a borde
   assert.equal(payload.objects.length,2,'empty text is skipped and the border is added');
   assert.equal(payload.objects[0].fillRule,'nonzero');assert.equal(payload.objects[0].text,undefined);
   assert.equal(payload.objects[1].kind,'satin');assert.equal(payload.objects[1].color,'#664538');
+  assert.equal(payload.objects[1].spacing,.4);assert.equal(payload.objects[1].underlay,'none');
+  assert.equal(geometryPayload({...project,fabric:'terry'}).objects[1].spacing,.38,'border density follows the fabric');
   for(const r of payload.objects[1].rings)assert.deepEqual(r[0],r.at(-1));
   const running=geometryPayload({...project,objects:[{...o,kind:'running',rings:layoutText(t,[latin],true).rings}]}).objects[0];
   const steps=running.rings[0].slice(1).map((p,i)=>Math.hypot(p[0]-running.rings[0][i][0],p[1]-running.rings[0][i][1]));

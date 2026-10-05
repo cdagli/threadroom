@@ -1,7 +1,7 @@
 'use client';
 import {useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
-import {bounds, demo, hoops, isFillKind, isWideKind, kindNames, object, palette, pathData, pullCompensation, validProject, type Compiled, type Kind, type Point, type Project, type StitchObject} from '@/lib/project';
+import {bounds, demo, fabrics, fromFabric, hoops, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, underlayNames, underlayOptions, usesPull, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {curvePoints, moveGeometry, simplifyPath, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint} from '@/lib/curves';
 import {clientToWorld, panViewport, viewportScale, zoomViewport, type Viewport} from '@/lib/viewport';
 import {traceArtwork} from '@/lib/trace';
@@ -101,7 +101,7 @@ export default function Studio() {
   const touchStart=useRef<{draft:Point[];project:Project}|null>(null);
   const touchNavigation=useRef(false);
   const pinch=useRef<{view:Viewport;anchor:Point;center:Point;distance:number}|null>(null);
-  const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected);
+  const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected), resolved=item&&resolve(item,project.fabric), fabric=fabrics[project.fabric];
   const size=bounds(project.objects);
   const viewWidth=hoop.width*1.18/zoom, viewHeight=hoop.height*1.18/zoom;
   const viewX=hoop.width/2-viewWidth/2+pan[0], viewY=hoop.height/2-viewHeight/2+pan[1];
@@ -163,7 +163,8 @@ export default function Studio() {
     // Typing and slider drags coalesce into one undo step per field.
     const now=performance.now(),same=!!merge&&lastMerge.current?.key===merge&&now-lastMerge.current.time<1500;
     lastMerge.current=merge?{key:merge,time:now}:null;
-    if(!same){setHistory(h=>[...h.slice(-29),current.current]);setFuture([]);}
+    // Read the previous state now: the updater may run after current.current changes.
+    const previous=current.current;if(!same){setHistory(h=>[...h.slice(-29),previous]);setFuture([]);}
     current.current=next;setProject(next);invalidate();setSaved(false);if(label)setMessage(label);
   }
   function invalidate(){revision.current++;setCompiled(null);setPlaying(false);setProgress(1);setView('artwork');setError('');}
@@ -189,7 +190,7 @@ export default function Studio() {
     if(patch.font||patch.content!==undefined)loadTextFonts(item.id,text);
   }
   function placeText(p:Point){
-    const text=defaultText(lastFont.current,p),o=layoutObject({...object('Your text',[],'fill',item?.color||palette[3]),underlay:true,underlayType:'edge',text});
+    const text=defaultText(lastFont.current,p),o=layoutObject({...object('Your text',[],'fill',item?.color||palette[3]),underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
     loadTextFonts(o.id,text);
     requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});
@@ -210,10 +211,10 @@ export default function Studio() {
   }
   function removeGuide(){if(!guide)return;commit({...project,objects:project.objects.filter(o=>o.id!==guide.id)});setGuide(null);}
   function drawTextPath(){if(!item?.text)return;const id=item.id;setCurveClosed(false);chooseTool('curve');setPathTarget(id);}
-  function updateObject(patch:Partial<StitchObject>){if(!item)return;let next={...item,...patch};
+  function updateObject(patch:Partial<StitchObject>){if(!item)return;let next={...item,...patch};for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}if(next.curve&&patch.kind==='manual'){next={...next,rings:[next.curve.points]};delete next.curve;}else if(next.curve&&patch.kind){next={...next,curve:{...next.curve,closed:isFillKind(patch.kind)},rings:[curvePoints(next.curve.points,isFillKind(patch.kind))]};}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
   function undo(){setActivePoint(null);if(draftRef.current.length){if(canUndoDraft)setDraft(d=>d.slice(0,-1));return;}if(!history.length)return;const before=history[history.length-1];setFuture(f=>[current.current,...f]);setHistory(history.slice(0,-1));setProject(before);setSelected(before.objects.some(o=>o.id===selected)?selected:before.objects[0]?.id||null);invalidate();setDraft([]);}
-  function redo(){setActivePoint(null);if(!future.length)return;setHistory(h=>[...h,current.current]);setProject(future[0]);setSelected(future[0].objects.some(o=>o.id===selected)?selected:future[0].objects[0]?.id||null);setFuture(future.slice(1));invalidate();}
+  function redo(){setActivePoint(null);if(!future.length)return;const previous=current.current;setHistory(h=>[...h,previous]);setProject(future[0]);setSelected(future[0].objects.some(o=>o.id===selected)?selected:future[0].objects[0]?.id||null);setFuture(future.slice(1));invalidate();}
   function closePanel(id:string){const panel=document.getElementById(id);if(panel?.matches(':popover-open'))panel.hidePopover();}
   function point(e:ReactPointerEvent<SVGSVGElement>):Point {
     return clientToWorld(viewport.current,[e.clientX,e.clientY],svg.current!.getBoundingClientRect(),hoop);
@@ -423,6 +424,7 @@ export default function Studio() {
   const needle=compiled?.commands[Math.max(0,Math.floor(compiled.commands.length*progress)-1)];
   const count=compiled?compiled.commands.slice(0,Math.floor(compiled.commands.length*progress)).filter(c=>c.type==='stitch').length:0;
 
+  const source=(key:Setting)=>!item?null:item[key]!==undefined?<button type="button" className="field-value reset" title="Reset to the fabric default" onClick={e=>{e.preventDefault();updateObject({[key]:undefined});}}>Reset</button>:<span className="field-value inherited">{fromFabric(item.kind,key)?'Fabric':'Default'}</span>;
   return <main className="studio" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
     <header className="topbar">
       <a className="brand" href="/" aria-label="Threadroom home"><span>threadroom<span className="brand-dot">.</span></span></a>
@@ -434,7 +436,8 @@ export default function Studio() {
       <div className="popover-heading"><h2 id="setup-title">Setup</h2><button className="icon-button" aria-label="Close settings" popoverTarget="setup-panel" popoverTargetAction="hide"><Icon name="close" size={16}/></button></div>
           <label>Machine<select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">Brother PR1X</option></select></label>
           <label>Hoop<select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{h.label}</option>)}</select></label>
-          <label>Fabric preset<select disabled={hasDraft} value={project.fabric} onChange={e=>commit({...project,fabric:e.target.value as Project['fabric'],objects:project.objects.map(o=>isFillKind(o.kind)?{...o,spacing:e.target.value==='jersey'?0.5:0.45}:o)})}><option value="woven">Woven cotton · 0.45 mm spacing · 0.2 mm pull</option><option value="jersey">Baby jersey · 0.50 mm spacing · 0.35 mm pull</option></select></label>
+          <label>Fabric<select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{f.label}</option>)}</select></label>
+          <p className="fabric-advice">Stabilizer: {fabric.stabilizer} · Topping: {fabric.topping}</p>
       <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?'Engine connected':apiState==='checking'?'Connecting…':'Engine offline'}</div>
     </div>
     <div id="artwork-panel" className="toolbar-popover artwork-popover" popover="auto" role="dialog" aria-labelledby="artwork-title">
@@ -522,13 +525,13 @@ export default function Studio() {
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
         {item&&<fieldset disabled={hasDraft} className="panel-section settings"><div className="settings-heading"><h2>{item.text?'Stitches':'Object settings'}</h2><button aria-label="Delete selected object" onClick={deleteSelected}><Icon name="trash" size={16}/></button></div>
           <label>Object name<input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
-          <StitchSelector value={item.kind} canFill={!item.rings.some(r=>r.length<3)} onChange={kind=>updateObject({kind,underlay:(isFillKind(kind)||kind==='satin')&&item.underlay,underlayType:'auto',...(kind==='zigzag'||kind==='e-stitch'||kind==='cross'?{spacing:1.5}:kind==='fill'||kind==='satin'?{spacing:project.fabric==='jersey'?.5:.45}:{})})}/>
+          <StitchSelector value={item.kind} canFill={!item.rings.some(r=>r.length<3)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
           <label>Thread colour<div className="colour-picker"><input type="color" aria-label="Thread colour" value={item.color} onChange={e=>updateObject({color:e.target.value})}/><span>{item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={`Use thread ${c}`} style={{background:c}} onClick={()=>updateObject({color:c})}/>)}</div></label>
-          <div className="setting-grid"><label>Length · mm<input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{(isFillKind(item.kind)||isWideKind(item.kind))&&<label>{item.kind==='cross'?'Cross size':'Spacing'} · mm<input type="number" min=".3" max="2" step=".05" value={item.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>
+          <div className="setting-grid"><label>Length · mm<input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input">{item.kind==='cross'?'Cross size':'Spacing'} · mm{source('spacing')}<input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>
           {isFillKind(item.kind)&&<label>Fill direction <span className="field-value">{item.angle}°</span><input type="range" min="-90" max="90" value={item.angle} onChange={e=>updateObject({angle:Number(e.target.value)})}/></label>}
           {isWideKind(item.kind)&&<label>Width · mm<input type="number" min=".5" max="6" step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=6)updateObject({satinWidth:n});}}/></label>}
-          {(isFillKind(item.kind)||isWideKind(item.kind))&&<label>Pull compensation · mm<input type="number" min="0" max="1" step=".05" value={pullCompensation(item,project.fabric)} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
-          {(isFillKind(item.kind)||item.kind==='satin')&&<label>Underlay<select value={item.underlay?(item.underlayType||'auto'):'none'} onChange={e=>updateObject({underlay:e.target.value!=='none',underlayType:e.target.value==='none'?'auto':e.target.value as NonNullable<StitchObject['underlayType']>})}><option value="none">None</option><option value="auto">Automatic</option>{isFillKind(item.kind)?<><option value="edge">Edge walk</option><option value="tatami">Light tatami</option></>:<><option value="center">Center walk</option><option value="edge">Edge walk</option><option value="zigzag">Light zigzag</option></>}</select></label>}
+          {usesPull(item.kind)&&<label htmlFor="pull-input">Pull compensation · mm{source('pullCompensation')}<input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
+          {underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input">Underlay{source('underlay')}<select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{underlayNames[u]}</option>)}</select></label>}
           <div className="reorder"><Button label="Sew earlier" size="sm" isDisabled={project.objects[0].id===item.id} onClick={()=>{const items=[...project.objects],i=items.findIndex(o=>o.id===item.id);[items[i-1],items[i]]=[items[i],items[i-1]];commit({...project,objects:items});}}/><Button label="Sew later" size="sm" isDisabled={project.objects.at(-1)?.id===item.id} onClick={()=>{const items=[...project.objects],i=items.findIndex(o=>o.id===item.id);[items[i+1],items[i]]=[items[i],items[i+1]];commit({...project,objects:items});}}/></div>
         </fieldset>}
         <section className="panel-section design-summary"><h2>Design</h2><div className="summary-grid"><div><span>Design size</span><strong>{(compiled?.stats.width||size.width).toFixed(1)} × {(compiled?.stats.height||size.height).toFixed(1)}<small> mm</small></strong></div><div><span>Stitches</span><strong>{compiled?compiled.stats.stitches.toLocaleString():'—'}</strong></div><div><span>Thread changes</span><strong>{compiled?compiled.stats.colorChanges:'—'}</strong></div></div>

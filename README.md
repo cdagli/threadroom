@@ -10,20 +10,37 @@ The existing `../pes-viewer` and original bear files are unchanged.
   flat colours into editable regions. Tracing runs locally in the browser.
 - Draw freehand strokes (finish on release), smooth curves, polygon fills, or individual stitch points. Curves retain draggable anchors in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
-  fill direction, constant-width satin, light underlay, and pull compensation.
+  fill direction, constant-width satin, underlay, and pull compensation.
 - PR1X hoop profiles: 100 × 100, 180 × 130, 300 × 200, and 60 × 40 mm. Select
   the hoop actually fitted to your machine. Profiles are limits, not a machine
-  connection. Woven/jersey presets set fill spacing and default pull compensation
-  (0.2 / 0.35 mm).
+  connection.
+- Fabric profiles (Setup) set fill and satin spacing, default underlay and pull
+  compensation, and recommend a stabilizer and topping:
+
+  | Fabric | Fill | Satin | Fill / satin underlay | Pull | Stabilizer · topping |
+  |---|---|---|---|---|---|
+  | Woven cotton | 0.42 | 0.40 | tatami / center | 0.20 | tear-away · none |
+  | Muslin / double gauze | 0.50 | 0.45 | edge + tatami / edge | 0.30 | cut-away mesh · water-soluble |
+  | Jersey / T-shirt knit | 0.48 | 0.42 | edge + tatami / edge | 0.35 | no-show mesh · none |
+  | Interlock / rib knit | 0.50 | 0.42 | edge + tatami / edge | 0.40 | no-show mesh · water-soluble on rib |
+  | Fleece / minky | 0.45 | 0.40 | edge + tatami / edge + zigzag | 0.40 | cut-away · water-soluble |
+  | Terry / towelling | 0.40 | 0.38 | edge + tatami / edge + zigzag | 0.35 | tear-away · water-soluble |
+  | Denim / twill | 0.40 | 0.38 | tatami / center | 0.15 | heavy tear-away · none |
+
+  Values are mm. Spacing, underlay and pull compensation are inherited unless set
+  on the object; object settings mark each as *Fabric* (or *Default* for fixed
+  zigzag/E-stitch/cross spacing) or offer *Reset*. Changing fabric never
+  overwrites set values. `fabrics` in `lib/project.ts` is the only table: the
+  compile payload carries resolved values and the Python compiler has no fabric
+  defaults. These are starting points; test-stitch on matching fabric.
 - Choose illustrated stitch styles: running/straight, bean, backstitch, satin,
   zigzag, appliqué E-stitch, tatami fill, cross-stitch fill, standalone underlay,
   and manual stitches. Each generates real paths in **PES v6 with custom RGB thread colours**.
 - Pull compensation (0–1 mm) widens satin, zigzag and E-stitch bites and
   lengthens tatami rows and cross diagonals by the amount, half per side.
-  Unset objects follow the fabric preset; explicit values are kept when it
-  changes. Underlay stays inset.
-- Add automatic, edge-walk or light-tatami underlay to fills, or center-walk,
-  edge-walk or light-zigzag underlay to satin lines.
+  Underlay stays inset.
+- Underlay: edge walk, light tatami or edge + tatami for fills; center walk,
+  edge walk, light zigzag or edge + zigzag for satin lines.
 - Preview the **exported PES after Python reads it back**, with playback and
   jumps. Preview existing PES/PEC files using an independent browser parser.
 - Save/load editable JSON projects, autosave locally, undo/redo, and export

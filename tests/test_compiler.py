@@ -4,6 +4,7 @@ import io
 import json
 import math
 from pathlib import Path
+import subprocess
 import unittest
 
 from pystitch import read_pes
@@ -13,7 +14,19 @@ from embroidery.compiler import compile_project, inside, satin_path
 def project(kind="fill", rings=None, **settings):
     return {"version": 1, "name": "Compiler test", "machine": "brother-pr1x", "hoop": "100x100",
             "objects": [{"name": "Region", "kind": kind, "color": "#c99d72",
-                         "rings": rings or [[[30,30],[60,30],[60,60],[30,60]]], **settings}]}
+                         "rings": rings or [[[30,30],[60,30],[60,60],[30,60]]],
+                         "spacing": .45, "underlay": "none", "pullCompensation": 0, **settings}]}
+
+
+def node(script, value):
+    """Runs editor code (tests/editor.mjs) so the tests use the one fabric table."""
+    out = subprocess.run(["node", "tests/editor.mjs", script], input=json.dumps(value), capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+def resolved(project):
+    """The compile payload the editor sends: fabric defaults resolved per object."""
+    return node("payload", project)
 
 
 class CompilerTests(unittest.TestCase):
@@ -34,7 +47,7 @@ class CompilerTests(unittest.TestCase):
     def test_hole_is_never_crossed_by_sewn_fill_or_underlay(self):
         rings = [[[25,25],[75,25],[75,75],[25,75]],[[40,40],[60,40],[60,60],[40,60]]]
         for angle in (0, 35, 90):
-            result = compile_project(project(rings=rings, angle=angle, underlay=True))
+            result = compile_project(project(rings=rings, angle=angle, underlay="tatami"))
             for c in result["commands"]:
                 if c["type"] != "stitch":
                     continue
@@ -45,7 +58,7 @@ class CompilerTests(unittest.TestCase):
 
     def test_separate_paths_jump_and_colours_follow_object_order(self):
         p=project("running", [[[20,20],[30,20]],[[70,70],[80,70]]])
-        p["objects"].append({"kind":"running","color":"#d8949b","rings":[[[50,50],[55,50]]]})
+        p["objects"].append({**p["objects"][0],"color":"#d8949b","rings":[[[50,50],[55,50]]]})
         result=compile_project(p)
         self.assertEqual(result["stats"]["colorChanges"],1)
         self.assertEqual([t["color"] for t in result["threads"]],["#c99d72","#d8949b"])
@@ -56,7 +69,7 @@ class CompilerTests(unittest.TestCase):
         line=[[[30,40],[40,45],[60,40]]]
         running=compile_project(project("running",line))
         bean=compile_project(project("bean",line))
-        satin=compile_project(project("satin",line,satinWidth=3,underlay=True))
+        satin=compile_project(project("satin",line,satinWidth=3,underlay="center"))
         self.assertGreater(bean["stats"]["stitches"],running["stats"]["stitches"]*2)
         self.assertGreater(satin["stats"]["stitches"],running["stats"]["stitches"])
         self.assertLessEqual(satin["stats"]["maxStitch"],3.15)
@@ -97,17 +110,18 @@ class CompilerTests(unittest.TestCase):
         line=[[[30,40],[60,40]]]
         base=compile_project(project("satin",line,satinWidth=3))
         variants=[]
-        for mode in ("center","edge","zigzag"):
-            result=compile_project(project("satin",line,satinWidth=3,underlay=True,underlayType=mode))
+        for mode in ("center","edge","zigzag","edge-zigzag"):
+            result=compile_project(project("satin",line,satinWidth=3,underlay=mode))
             self.assertGreater(result["stats"]["stitches"],base["stats"]["stitches"])
             variants.append(result["commands"])
         self.assertNotEqual(variants[0],variants[1])
         self.assertNotEqual(variants[1],variants[2])
-        for mode in ("edge","tatami"):
-            result=compile_project(project(underlay=True,underlayType=mode))
-            self.assertGreater(result["stats"]["stitches"],compile_project(project())["stats"]["stitches"])
-        for kind,mode in (("fill","zigzag"),("satin","tatami"),("running","edge"),("satin","unknown")):
-            with self.assertRaises(ValueError):compile_project(project(kind,underlay=True,underlayType=mode))
+        self.assertGreater(len(variants[3]),max(len(variants[1]),len(variants[2])))
+        counts={mode:compile_project(project(underlay=mode))["stats"]["stitches"] for mode in ("none","edge","tatami","edge-tatami")}
+        self.assertLess(counts["none"],min(counts["edge"],counts["tatami"]))
+        self.assertGreater(counts["edge-tatami"],max(counts["edge"],counts["tatami"]))
+        for kind,mode in (("fill","zigzag"),("satin","tatami"),("running","edge"),("zigzag","center"),("satin","unknown"),("satin",True),("fill",None)):
+            with self.assertRaises(ValueError):compile_project(project(kind,underlay=mode))
 
     def test_satin_density_does_not_depend_on_image_curve_resolution(self):
         coarse=[[30,40],[60,40]]
@@ -122,7 +136,7 @@ class CompilerTests(unittest.TestCase):
     def test_bad_projects_are_rejected_before_generation(self):
         for value in (None, [], {}, {"version":1,"machine":"other"}):
             with self.assertRaises(ValueError):compile_project(value)
-        for patch in ({"spacing":0},{"spacing":math.nan},{"length":math.inf},{"color":"red"},{"kind":"unknown"},{"rings":[[[30,30],[30,30]]]}):
+        for patch in ({"spacing":0},{"spacing":None},{"pullCompensation":None},{"spacing":math.nan},{"length":math.inf},{"color":"red"},{"kind":"unknown"},{"rings":[[[30,30],[30,30]]]}):
             p=project();p["objects"][0].update(patch)
             with self.assertRaises(ValueError):compile_project(p)
         p=project();p["objects"]*=81
@@ -143,12 +157,14 @@ class CompilerTests(unittest.TestCase):
     def test_stitch_library_fixture_for_independent_parser(self):
         p=project("running",[[[12,12],[42,12]]])
         p.update(name="Stitch sampler",fabric="woven")
+        # Saved projects: fabric-driven values are inherited except where set.
         p["objects"]=[]
         for i,kind in enumerate(("running","bean","backstitch","satin","zigzag","e-stitch","underlay","manual")):
-            p["objects"].append({"id":kind,"name":kind,"kind":kind,"color":"#c99d72","rings":[[[12,12+i*8],[27,14+i*8],[42,12+i*8]]],"spacing":1.5 if kind in ("zigzag","e-stitch") else .45,"length":2.5,"angle":0,"satinWidth":2,"underlay":False})
+            p["objects"].append({"id":kind,"name":kind,"kind":kind,"color":"#c99d72","rings":[[[12,12+i*8],[27,14+i*8],[42,12+i*8]]],"length":2.5,"angle":0,"satinWidth":2})
         for kind,y in (("fill",20),("cross",52)):
-            p["objects"].append({"id":kind,"name":kind,"kind":kind,"color":"#849984","rings":[[[58,y],[84,y],[84,y+20],[58,y+20]]],"spacing":1.5 if kind=="cross" else .45,"length":2.5,"angle":0,"satinWidth":2,"underlay":True,"underlayType":"edge"})
-        result=compile_project(p)
+            p["objects"].append({"id":kind,"name":kind,"kind":kind,"color":"#849984","rings":[[[58,y],[84,y],[84,y+20],[58,y+20]]],"length":2.5,"angle":0,"satinWidth":2,"underlay":"edge"})
+        p["objects"][3]["pullCompensation"]=.3
+        result=compile_project(resolved(p))
         Path("tests/stitch-library.pes").write_bytes(base64.b64decode(result["pes"]))
         Path("tests/stitch-library.json").write_text(json.dumps(result))
         Path("tests/stitch-library.project.json").write_text(json.dumps(p))
@@ -172,7 +188,7 @@ class FillRuleTests(unittest.TestCase):
 
     def test_nonzero_keeps_counter_wound_holes(self):
         hole = list(reversed([[40,40],[60,40],[60,60],[40,60]]))
-        result = compile_project(project(rings=[[[25,25],[75,25],[75,75],[25,75]], hole], angle=0, fillRule="nonzero", underlay=True, underlayType="edge"))
+        result = compile_project(project(rings=[[[25,25],[75,25],[75,75],[25,75]], hole], angle=0, fillRule="nonzero", underlay="edge"))
         self.assertEqual(self.sewn_in_overlap(result), 0)
         self.assertTrue(inside([30, 30], [self.a], "nonzero"))
         self.assertFalse(inside([50, 50], [[[25,25],[75,25],[75,75],[25,75]], hole], "nonzero"))
@@ -210,8 +226,8 @@ class PullCompensationTests(unittest.TestCase):
 
     def test_satin_underlay_stays_inset(self):
         line = [[[30,40],[60,40]]]
-        base = compile_project(project("satin", line, satinWidth=3, underlay=True, underlayType="edge"))
-        wide = compile_project(project("satin", line, satinWidth=3, underlay=True, underlayType="edge", pullCompensation=.4))
+        base = compile_project(project("satin", line, satinWidth=3, underlay="edge"))
+        wide = compile_project(project("satin", line, satinWidth=3, underlay="edge", pullCompensation=.4))
         rail = lambda r: sorted({round(c["y"], 2) for c in r["commands"][:20] if c["type"] == "stitch"})
         self.assertEqual(rail(base), rail(wide))
 
@@ -242,28 +258,71 @@ class PullCompensationTests(unittest.TestCase):
         for kind in ("running", "bean", "backstitch", "underlay", "manual"):
             base = compile_project(project(kind, line))
             self.assertEqual(base["commands"], compile_project(project(kind, line, pullCompensation=1))["commands"], kind)
-            p = project(kind, line); p["fabric"] = "jersey"
-            self.assertEqual(base["commands"], compile_project(p)["commands"], kind)
-
-    def test_fabric_default_applies_unless_set_explicitly(self):
-        line = [[[30,40],[60,40]]]
-        def height(fabric=None, **settings):
-            p = project("satin", line, satinWidth=3, **settings)
-            if fabric: p["fabric"] = fabric
-            return self.extent(compile_project(p))[1]
-        self.assertAlmostEqual(height("woven")-height(), .2, delta=.11)
-        self.assertAlmostEqual(height("jersey")-height(), .35, delta=.11)
-        self.assertAlmostEqual(height("jersey", pullCompensation=0), height(), delta=.01)
-        self.assertAlmostEqual(height("woven", pullCompensation=.6)-height(), .6, delta=.11)
 
     def test_fill_touching_the_hoop_edge_stays_inside(self):
         result = compile_project(project(rings=[[[0,0],[40,0],[40,40],[0,40]]], angle=0, pullCompensation=1))
         self.assertTrue(all(0 <= c["x"] <= 100 for c in result["commands"]))
 
-    def test_rejects_out_of_range_compensation_and_fabric(self):
-        for value in (-.1, 1.5, math.nan, "0.2", True):
+    def test_rejects_out_of_range_compensation(self):
+        for value in (-.1, 1.5, math.nan, "0.2", True, None):
             with self.assertRaises(ValueError):
                 compile_project(project(pullCompensation=value))
-        p = project(); p["fabric"] = "denim"
-        with self.assertRaises(ValueError):
-            compile_project(p)
+
+
+class FabricProfileTests(unittest.TestCase):
+    square = [[30,30],[60,30],[60,60],[30,60]]
+    line = [[30,40],[60,40]]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fabrics = node("profiles", None)
+
+    def editor(self, fabric, *objects):
+        return {"version": 1, "name": "Fabric", "machine": "brother-pr1x", "hoop": "100x100", "fabric": fabric,
+                "objects": [{"id": str(i), "name": "Region", "color": "#c99d72", "length": 2.5, "angle": 0, "satinWidth": 3, **o}
+                            for i, o in enumerate(objects)]}
+
+    def compile(self, fabric, *objects):
+        return compile_project(resolved(self.editor(fabric, *objects)))
+
+    def test_every_profile_compiles_with_its_values(self):
+        self.assertGreaterEqual(len(self.fabrics), 6)
+        for fabric, f in self.fabrics.items():
+            p = self.editor(fabric, {"kind": "fill", "rings": [self.square]}, {"kind": "satin", "rings": [[[30,70],[60,70]]]},
+                            {"kind": "zigzag", "rings": [[[30,80],[60,80]]]}, {"kind": "running", "rings": [[[30,90],[60,90]]]})
+            fill, satin, zigzag, running = resolved(p)["objects"]
+            self.assertEqual((fill["spacing"], fill["underlay"], fill["pullCompensation"]), (f["fill"], f["fillUnderlay"], f["pull"]), fabric)
+            self.assertEqual((satin["spacing"], satin["underlay"], satin["pullCompensation"]), (f["satin"], f["satinUnderlay"], f["pull"]), fabric)
+            self.assertEqual((zigzag["spacing"], zigzag["underlay"], running["underlay"], running["pullCompensation"]), (1.5, "none", "none", 0), fabric)
+            self.assertTrue(f["stabilizer"] and f["topping"])
+            result = compile_project(resolved(p))
+            self.assertGreater(result["stats"]["stitches"], 500, fabric)
+            self.assertLessEqual(result["stats"]["maxStitch"], 3.15, fabric)
+            self.assertEqual(base64.b64decode(result["pes"])[:8], b"#PES0060")
+
+    def test_profile_sets_fill_density(self):
+        fill = {"kind": "fill", "rings": [self.square], "underlay": "none", "pullCompensation": 0}
+        counts = {f: self.compile(f, fill)["stats"]["stitches"] for f in ("woven", "jersey", "terry")}
+        ratio = self.fabrics["jersey"]["fill"]/self.fabrics["woven"]["fill"]
+        self.assertAlmostEqual(counts["woven"]/counts["jersey"], ratio, delta=.05)
+        self.assertGreater(counts["terry"], counts["woven"])
+
+    def test_profile_sets_underlay(self):
+        fill = {"kind": "fill", "rings": [self.square], "spacing": .45, "pullCompensation": 0}
+        for fabric in ("woven", "jersey"):
+            mode = self.fabrics[fabric]["fillUnderlay"]
+            self.assertEqual(self.compile(fabric, fill)["commands"], self.compile(fabric, {**fill, "underlay": mode})["commands"])
+        self.assertGreater(self.compile("jersey", fill)["stats"]["stitches"], self.compile("woven", fill)["stats"]["stitches"])
+        satin = {"kind": "satin", "rings": [self.line], "spacing": .4, "pullCompensation": 0}
+        self.assertGreater(self.compile("fleece", satin)["stats"]["stitches"], self.compile("woven", satin)["stats"]["stitches"])
+
+    def test_profile_sets_pull_compensation(self):
+        satin = {"kind": "satin", "rings": [self.line], "spacing": .4, "underlay": "none"}
+        height = {f: PullCompensationTests.extent(None, self.compile(f, satin))[1] for f in ("denim", "rib")}
+        self.assertAlmostEqual(height["rib"]-height["denim"], self.fabrics["rib"]["pull"]-self.fabrics["denim"]["pull"], delta=.11)
+
+    def test_explicit_object_values_win(self):
+        objects = ({"kind": "fill", "rings": [self.square], "spacing": .6, "underlay": "edge", "pullCompensation": .1},
+                   {"kind": "satin", "rings": [[[30,70],[60,70]]], "spacing": .5, "underlay": "none", "pullCompensation": 0})
+        results = [self.compile(f, *objects)["commands"] for f in self.fabrics]
+        self.assertTrue(all(r == results[0] for r in results))

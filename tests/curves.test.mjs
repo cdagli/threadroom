@@ -68,8 +68,9 @@ test('Export uses stitch length rather than display tessellation density for cur
 test('Stitch library projects round-trip and validate compatible underlays',()=>{
   const p=JSON.parse(readFileSync(new URL('./stitch-library.project.json',import.meta.url)));
   assert.ok(validProject(p));
-  assert.equal(validProject({...p,objects:[{...p.objects[0],underlayType:'unknown'}]}),false);
-  assert.equal(validProject({...p,objects:[{...p.objects.find(o=>o.kind==='satin'),underlay:true,underlayType:'tatami'}]}),false);
+  assert.equal(validProject({...p,objects:[{...p.objects[0],underlay:'unknown'}]}),false);
+  assert.equal(validProject({...p,objects:[{...p.objects.find(o=>o.kind==='satin'),underlay:'tatami'}]}),false);
+  assert.equal(validProject({...p,objects:[{...p.objects.find(o=>o.kind==='running'),underlay:'edge'}]}),false);
   const o={...object('Curve',[curvePoints(anchors,false)],'backstitch'),curve:{points:anchors,closed:false}};
   const sampled=geometryPayload({...p,objects:[o]}).objects[0].rings[0];
   assert.ok(sampled.length<o.rings[0].length/4);

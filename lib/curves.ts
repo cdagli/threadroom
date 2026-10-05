@@ -1,4 +1,4 @@
-import type {Point, Project, StitchObject} from './project';
+import {fabrics, resolve, type Point, type Project, type Resolved, type StitchObject} from './project';
 import {mergedOutline, transformText} from './text';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
@@ -96,20 +96,21 @@ export function samplePath(points:Point[], length:number):Point[] {
   return result;
 }
 
-export function geometryPayload(project:Project):Omit<Project,'artwork'> {
-  const {artwork,...rest}=project;void artwork;
+export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'|'objects'>&{objects:Resolved[]} {
+  const {artwork,fabric,...rest}=project;void artwork;
   // Smooth display tessellation is finer than running stitches. Sample along
   // the whole curve so its visual resolution does not set the stitch density.
   // Text outlines are also finely tessellated; a text border is sent as a
   // separate object sewn after the letters. Empty text is skipped.
   const line=(kind:string)=>['running','bean','backstitch','underlay','manual'].includes(kind);
-  return {...rest,objects:rest.objects.filter(o=>o.rings.length).flatMap(o=>{
+  // Fabric defaults are resolved here; the compiler receives explicit values only.
+  return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>resolve(o,fabric)).flatMap(o=>{
     if(!o.text)return [o.curve&&line(o.kind)?{...o,rings:o.rings.map(r=>samplePath(r,o.length))}:o];
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
-    const letters:StitchObject={...plain,fillRule:'nonzero',rings:line(o.kind)?closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
+    const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
     if(!text.border||!(o.kind==='fill'||o.kind==='cross'))return [letters];
     const b=text.border,outline=mergedOutline(o.rings);
-    return [letters,{...plain,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:.4,underlay:false,underlayType:undefined,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
+    return [letters,{...plain,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
   })};
 }
 

@@ -6,6 +6,8 @@ Fill rows are grouped into sections (e.g. one per letter) and each section
 is sewn before the next. Text fills use the nonzero rule so overlapping glyph
 contours merge. Pull compensation widens satin bites and extends fill rows
 and cross diagonals along their stitch direction (half on each side).
+Spacing, underlay and pull compensation arrive resolved from the editor's
+fabric profile (lib/project.ts); the compiler has no fabric defaults.
 This is an experimental digitizer, not Ink/Stitch's production fill engine.
 """
 import base64
@@ -22,9 +24,8 @@ MAX_STITCHES = 100_000
 CONNECT_TOLERANCE = 0.1
 FILL_KINDS = ("fill", "cross")
 WIDE_KINDS = ("satin", "zigzag", "e-stitch")
-# Default pull compensation (mm) by fabric preset; projects without one get none.
-FABRIC_PULL = {"woven": 0.2, "jersey": 0.35}
 KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual")
+UNDERLAYS = {"fill": ("none", "edge", "tatami", "edge-tatami"), "satin": ("none", "center", "edge", "zigzag", "edge-zigzag")}
 
 
 def number(value, minimum, maximum, label):
@@ -44,8 +45,6 @@ def validate(project):
     if hoop not in HOOPS:
         raise ValueError("Choose a supported PR1X hoop.")
     width, height = HOOPS[hoop]
-    if project.get("fabric", "woven") not in FABRIC_PULL:
-        raise ValueError("Unknown fabric preset.")
     objects = project.get("objects")
     if not isinstance(objects, list) or not 1 <= len(objects) <= 80:
         raise ValueError("Add between 1 and 80 embroidery objects.")
@@ -69,18 +68,12 @@ def validate(project):
                     raise ValueError("Invalid path coordinate.")
                 number(point[0], 0, width, "X position")
                 number(point[1], 0, height, "Y position")
-        number(obj.get("spacing", 0.45), 0.3, 2, "Stitch spacing")
+        number(obj.get("spacing"), 0.3, 2, "Stitch spacing")
         number(obj.get("length", 2.5), 0.5, 3, "Stitch length")
         number(obj.get("angle", 0), -180, 180, "Fill angle")
         number(obj.get("satinWidth", 2), 0.5, 6, "Satin width")
-        number(obj.get("pullCompensation", 0), 0, 1, "Pull compensation")
-        if not isinstance(obj.get("underlay", False), bool):
-            raise ValueError("Underlay must be true or false.")
-        mode = obj.get("underlayType", "auto")
-        if mode not in ("auto", "center", "edge", "zigzag", "tatami"):
-            raise ValueError("Unknown underlay type.")
-        allowed = ("auto", "edge", "tatami") if obj["kind"] in FILL_KINDS else ("auto", "center", "edge", "zigzag") if obj["kind"] == "satin" else ("auto",)
-        if obj.get("underlay") and mode not in allowed:
+        number(obj.get("pullCompensation"), 0, 1, "Pull compensation")
+        if obj.get("underlay") not in UNDERLAYS.get("fill" if obj["kind"] in FILL_KINDS else obj["kind"], ("none",)):
             raise ValueError("Choose an underlay suited to this stitch style.")
         if obj.get("fillRule", "evenodd") not in ("evenodd", "nonzero"):
             raise ValueError("Unknown fill rule.")
@@ -324,31 +317,32 @@ def compile_project(project):
         elif previous is not None:
             pattern.add_command(TRIM)
         rings = obj["rings"]
-        spacing = obj.get("spacing", 0.45)
+        spacing = obj["spacing"]
+        underlay = obj["underlay"]
         length = obj.get("length", 2.5)
         kind = obj["kind"]
         rule = obj.get("fillRule", "evenodd")
-        pull = obj.get("pullCompensation", FABRIC_PULL.get(project.get("fabric"), 0)) if kind in (*FILL_KINDS, *WIDE_KINDS) else 0
+        pull = obj["pullCompensation"] if kind in (*FILL_KINDS, *WIDE_KINDS) else 0
         paths = []
+        foundation = 0
         if kind in FILL_KINDS:
-            if obj.get("underlay"):
-                if obj.get("underlayType") == "edge":
-                    paths.extend(line_path(ring+[ring[0]], length) for ring in rings)
-                else:
-                    paths.extend(fill_paths(rings, 2, obj.get("angle", 0)+90, length, rule))
+            if "edge" in underlay:
+                paths.extend(line_path(ring+[ring[0]], length) for ring in rings)
+            if "tatami" in underlay:
+                paths.extend(fill_paths(rings, 2, obj.get("angle", 0)+90, length, rule))
+            foundation = len(paths)
             top = cross_paths(rings, spacing, obj.get("angle", 0), rule, pull) if kind == "cross" else fill_paths(rings, spacing, obj.get("angle", 0), length, rule, pull)
             # Compensation may reach past a ring that touches the hoop edge.
             paths.extend([[min(max(x, 0), width), min(max(y, 0), height)] for x, y in path] for path in top)
         else:
             for ring in rings:
-                if obj.get("underlay") and kind == "satin":
-                    mode = obj.get("underlayType", "auto")
-                    if mode == "edge":
-                        paths.extend(rail_paths(ring, max(0.1, obj.get("satinWidth", 2)-0.5), length))
-                    elif mode == "zigzag":
-                        paths.append(satin_path(ring, 2, max(0.1, obj.get("satinWidth", 2)-0.5)))
-                    else:
-                        paths.append(line_path(ring, length))
+                inset = max(0.1, obj.get("satinWidth", 2)-0.5)
+                if underlay == "center":
+                    paths.append(line_path(ring, length))
+                if "edge" in underlay:
+                    paths.extend(rail_paths(ring, inset, length))
+                if "zigzag" in underlay:
+                    paths.append(satin_path(ring, 2, inset))
                 path = (satin_path(ring, spacing, obj.get("satinWidth", 2)+pull, kind) if kind in WIDE_KINDS
                         else ring if kind == "manual" else line_path(ring, length))
                 if kind == "bean":
@@ -367,10 +361,12 @@ def compile_project(project):
                 paths.append(path)
         # Never connect disconnected spans with a sewn line through a hole.
         object_previous = None
-        for path in paths:
+        for index, path in enumerate(paths):
             if len(path) < 2:
                 continue
-            connect = kind == "fill" and object_previous is not None and math.dist(object_previous, path[0]) <= 3
+            # Underlay rows are 2 mm apart, so their turns are longer; the top fill hides them.
+            reach = 6 if kind == "fill" and index < foundation else 3
+            connect = kind == "fill" and object_previous is not None and math.dist(object_previous, path[0]) <= reach
             if connect:
                 # Connectors may graze a concave edge by a hidden fraction of a millimetre.
                 connect = all(inside(p, rings, rule, CONNECT_TOLERANCE+pull/2) for p in interpolate(object_previous, path[0], 0.1))
