@@ -1,6 +1,6 @@
 # Threadroom TODO
 
-Gaps against standard embroidery software (Wilcom EmbroideryStudio, Brother PE-Design 11, Hatch, Ink/Stitch), ordered from most to least important for PR1X stitch-outs on baby clothing. Researched 2026-10-05.
+Gaps against standard embroidery software (Wilcom EmbroideryStudio, Brother PE-Design 11, Hatch, Ink/Stitch), ordered from most to least important for PR1X stitch-outs on baby clothing. Researched 2026-10-05; Stitch Slop ideas added 2026-10-06. Only the PR1X (PES) is supported, so other machine formats are out of scope.
 
 Each item must work end to end: editor UI, project validation, compiler, PES export, and SVG export.
 
@@ -11,9 +11,11 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 - [x] **Short stitches on inner curves, plus automatic satin splitting** for columns too wide to stitch safely.
 - [x] **Entry and exit points.** Let the user choose where each object starts and ends, so travel stitches get shorter.
 - [x] **Lock stitches and trims.** Expose the tie-in/tie-off type and size, and let the user set the jump length at which a trim is used instead.
+- [ ] **Design check and travel view.** Before export, flag problems in plain language and point to them on the canvas: shapes too small or too thin to stitch, stitches too short or too long, dense overlaps, long travel, and too many trims. Each warning explains how to fix it. A toggle shows every travel and jump path.
 
 ## 2. Digitizing tools
 
+- [ ] **More stitch types**, in this order: redwork (a running outline that sews every line twice with no trims), meander, braid, satin fill for wide areas, and fur/sketch. Contour and motif fills are in the fill styles item below.
 - [ ] **Two-rail satin columns** with direction lines, for borders and lettering.
 - [ ] **Shape tools:** union, cut and offset (for outlines and appliqué allowances), plus rectangle, ellipse and star shapes.
 - [ ] **Fill styles:** turning or guided fills, contour/spiral fills, radial fills, gradient (varying density) fills, and motif/pattern fills.
@@ -36,6 +38,5 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 
 ## 5. Import, export and automation
 
-- [ ] **Import other stitch formats** to edit them: DST, EXP, JEF and VP3, beyond the current PES preview.
 - [ ] **Auto-digitizing** of colored regions (like PE-Design's Auto Punch), plus photo stitch and cross-stitch wizards.
 - [ ] **Sending designs to the machine directly** over WiFi or USB. On the PR1X this usually means a USB stick.
