@@ -11,7 +11,7 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 - [x] **Short stitches on inner curves, plus automatic satin splitting** for columns too wide to stitch safely.
 - [x] **Entry and exit points.** Let the user choose where each object starts and ends, so travel stitches get shorter.
 - [x] **Lock stitches and trims.** Expose the tie-in/tie-off type and size, and let the user set the jump length at which a trim is used instead.
-- [ ] **Design check and travel view.** Before export, flag problems in plain language and point to them on the canvas: shapes too small or too thin to stitch, stitches too short or too long, dense overlaps, long travel, and too many trims. Each warning explains how to fix it. A toggle shows every travel and jump path.
+- [x] **Design check and travel view.** Before export, flag problems in plain language and point to them on the canvas: shapes too small or too thin to stitch, stitches too short or too long, dense overlaps, long travel, and too many trims. Each warning explains how to fix it. A toggle shows every travel and jump path.
 
 ## 2. Digitizing tools
 

@@ -94,10 +94,47 @@ The existing `../pes-viewer` and original bear files are unchanged.
   rows passes through cell centres along cross legs (covered or doubled by
   them), never across empty cells; only unreachable parts trim.
 - Preview the **exported PES after Python reads it back**, with playback and
-  jumps. Preview existing PES/PEC files using an independent browser parser.
+  a travel view. Preview existing PES/PEC files using an independent browser parser.
 - Save/load editable JSON projects, autosave locally, undo/redo, and export
   millimetre-sized SVG artwork. SVG retains shapes; JSON retains all editor
   settings. SVG import is rendered as artwork and traced, not native path import.
+
+## Design check and travel view
+
+The toolbar badge shows the number of issues (or **Ready to stitch**); click it
+for the list. Shape checks run a moment after each edit; stitch checks run on a
+background compile about a second after you stop editing (and on Stitches or
+Export). Each warning has a title, why it matters and one fix, marked **Will
+likely fail** or **Worth checking**. Clicking one selects the object, pans to
+it and rings the problem on the canvas; where it is safe a button fixes it
+(Use running / bean stitch, Split at 7 mm, Make 6 mm tall, Move inside, Sew
+earlier / Sew others later, Trim above 3 mm). Export is never blocked; a red
+pill shows how many issues will likely fail.
+
+| Check | Where | Worth checking | Will likely fail |
+|---|---|---|---|
+| Fill too small | editor | under 6 mm² | under 3 mm² |
+| Fill too thin (widest part) | editor | under 2 mm (no underlay) | under 1 mm (cross: 2 / 1 cells) |
+| Thin parts in a fill | editor | ≥ 1 mm² thinner than 1 mm | — |
+| Satin, zigzag, E-stitch width | editor | over 7 mm (split) | under 1 mm; bites over 7 mm unsplit |
+| Text height | editor | fill 6, satin 5, outline 4 mm | under two-thirds of that |
+| Hoop | editor | within 3 mm of the edge | outside (incl. satin half-width) |
+| Same colour sewn twice | editor | any colour sewn, left and resumed | — |
+| Stitches under 0.3 mm | compiler | 3 in one 2 mm square | 10 % of an object, or 12 clustered |
+| Sewn stitches over 7 mm | compiler | any (satin bites excluded) | — |
+| Density (3 × 3 mm windows) | compiler | 7 holes/mm² or 3 thread layers | 10 holes/mm² or 5 layers |
+| Same-colour jump between objects | compiler | over 30 mm | — |
+| Trims | compiler | more than 25 | — |
+
+A layer is sewn thread per mm² × 0.42 mm, so one woven fill is about one
+layer: two stacked fills pass, three are worth checking, three with full
+underlay or four fail. The compile result has `warnings` (`code`,
+`objectId`, `bounds` [x0, y0, x1, y1] mm, `severity`, `values`); preview
+commands carry `trim` and `travel` flags.
+
+In **Stitches**, **Travel** dims the stitches and shows jumps (blue dashes),
+sewn connecting stitches (orange) and trims (red ✕ at the cut), with counts.
+The bear sample and the stitch-library fixture have no warnings on woven cotton.
 
 ## Text
 
@@ -248,6 +285,7 @@ automatic and explicit entry/exit points (fills, closed outlines, open paths),
 hidden travel and underlay staying inside, underlay inset and narrow-object
 skipping, the bear's trim count, tie-in/tie-off types and sizes around trims,
 trim thresholds, trims read back from the PEC flags, cross-stitch routing,
+every design-check code (compiler and editor), one-click fixes, warning copy,
 one undo step per drag,
 curve-resolution-independent satin density, short stitches on tight arcs,
 staggered satin splitting with pull compensation, stitch lengths, hoop checks,

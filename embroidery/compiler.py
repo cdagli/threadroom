@@ -990,6 +990,124 @@ def plan_object(obj, at, target):
     return route_lines(obj, at, entry, exit, exit or target)
 
 
+# Design check thresholds (mm). Stitches under SHORT_STITCH fray or break the thread; a warning needs
+# SHORT_CLUSTER of them within one SHORT_CELL square (a few at fill row tips are normal), or SHORT_MANY of
+# the object's stitches. Sewn stitches over LONG_STITCH (satin's default split) snag; planned satin
+# bites, jumps and landings are excluded. Density is averaged over DENSE_WINDOW mm squares: needle
+# penetrations per mm2 and thread layers (sewn thread per mm2 x the woven fill spacing, so one fill is
+# ~1 layer). Two stacked woven fills stay below the check level, three reach it and four (or three with
+# full underlay) fail; clusters smaller than 4 mm2 at the check level are noise. Same-colour jumps
+# between objects over LONG_JUMP (reordering can shorten them) and more than MANY_TRIMS trims (each
+# slows the machine and leaves a tail that can pull out) are worth checking.
+SHORT_STITCH, SHORT_CELL, SHORT_CLUSTER, SHORT_MANY, LONG_STITCH = .3, 2, 3, .1, 7
+DENSE_HITS, DENSE_LAYERS, LAYER_SPACING, LONG_JUMP, MANY_TRIMS = (7, 10), (3, 5), .42, 30, 25
+DENSE_WINDOW = 3
+
+
+def design_check(trace, cuts, objects):
+    """Warnings from the stitches as written: [{code, objectId, bounds [x0, y0, x1, y1], severity, values}]."""
+    ident = lambda i: str(objects[i].get("id", i))
+    def box(points, pad=0):
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        return [round(min(xs)-pad, 2), round(min(ys)-pad, 2), round(max(xs)+pad, 2), round(max(ys)+pad, 2)]
+    warnings, short, long_, sewn, hits, thread = [], {}, {}, {}, {}, {}
+    def add(grid, x, y, i, n):
+        cell = grid.setdefault((int(x//1), int(y//1)), {})
+        cell[i] = cell.get(i, 0)+n
+    for a, b in zip(trace, trace[1:]):
+        if b[3] == "jump":
+            continue
+        add(hits, b[0], b[1], b[2], 1)
+        if b[3] == "land":
+            continue
+        sewn[b[2]] = sewn.get(b[2], 0)+1
+        d = math.dist(a[:2], b[:2])
+        for p in interpolate(a[:2], b[:2], .5):
+            add(thread, p[0], p[1], b[2], d/max(1, math.ceil(d/.5)))
+        if d < SHORT_STITCH-.01 and b[3] != "lock":
+            short.setdefault(b[2], []).append((d, a, b))
+        elif d > LONG_STITCH and b[3] != "bite":
+            long_.setdefault(b[2], []).append((d, a, b))
+    for i, found in short.items():
+        cells = {}
+        for item in found:
+            cells.setdefault((int(item[2][0]//SHORT_CELL), int(item[2][1]//SHORT_CELL)), []).append(item)
+        hot = [item for group in cells.values() if len(group) >= SHORT_CLUSTER for item in group]
+        share = len(found)/sewn[i]
+        if hot or share >= SHORT_MANY:
+            hot = hot or found
+            warnings.append({"code": "short-stitches", "objectId": ident(i), "bounds": box([p[:2] for _, a, b in hot for p in (a, b)], .5),
+                             "severity": "fail" if share >= SHORT_MANY or len(hot) >= 4*SHORT_CLUSTER else "check",
+                             "values": {"count": len(found), "shortest": round(min(d for d, _, _ in found), 2), "limit": SHORT_STITCH, "share": round(share*100, 1)}})
+    for i, found in long_.items():
+        warnings.append({"code": "long-stitches", "objectId": ident(i), "bounds": box([p[:2] for _, a, b in found for p in (a, b)]),
+                         "severity": "check", "values": {"count": len(found), "longest": round(max(d for d, _, _ in found), 1), "limit": LONG_STITCH}})
+    # Density: 2 x 2 mm windows over 1 mm cells, credited to the object with the most penetrations there.
+    dense = {}
+    for cx, cy in hits:
+        for k in ((cx-u, cy-v) for u in range(DENSE_WINDOW) for v in range(DENSE_WINDOW)):
+            if k in dense:
+                continue
+            window = [(k[0]+u, k[1]+v) for u in range(DENSE_WINDOW) for v in range(DENSE_WINDOW)]
+            n = sum(sum(hits.get(c, {}).values()) for c in window)/DENSE_WINDOW**2
+            layers = sum(sum(thread.get(c, {}).values()) for c in window)/DENSE_WINDOW**2*LAYER_SPACING
+            level = 2 if n >= DENSE_HITS[1] or layers >= DENSE_LAYERS[1] else 1 if n >= DENSE_HITS[0] or layers >= DENSE_LAYERS[0] else 0
+            if level:
+                owners = {}
+                for c in window:
+                    for i, m in hits.get(c, {}).items():
+                        owners[i] = owners.get(i, 0)+m
+                dense[k] = (level, n, layers, max(owners, key=owners.get), len(owners))
+            else:
+                dense[k] = None
+    flagged, seen = {k: v for k, v in dense.items() if v}, set()
+    for start in flagged:
+        if start in seen:
+            continue
+        group, stack = [], [start]
+        seen.add(start)
+        while stack:
+            k = stack.pop()
+            group.append(k)
+            for n in ((k[0]+u, k[1]+v) for u in range(-3, 4) for v in range(-3, 4)):
+                if n in flagged and n not in seen:
+                    seen.add(n)
+                    stack.append(n)
+        values = [flagged[k] for k in group]
+        if len(group) < 4 and all(v[0] < 2 for v in values):
+            continue
+        owners = {}
+        for k in group:
+            for c in ((k[0]+u, k[1]+v) for u in range(DENSE_WINDOW) for v in range(DENSE_WINDOW)):
+                for i, m in hits.get(c, {}).items():
+                    owners[i] = owners.get(i, 0)+m
+        warnings.append({"code": "dense", "objectId": ident(max(owners, key=owners.get)), "severity": "fail" if any(v[0] == 2 for v in values) else "check",
+                         "bounds": box([(k[0]+u, k[1]+v) for k in group for u in (0, DENSE_WINDOW) for v in (0, DENSE_WINDOW)]),
+                         "values": {"hits": round(max(v[1] for v in values), 1), "layers": round(max(v[2] for v in values), 1), "hitLimit": DENSE_HITS[0],
+                                    "layerLimit": DENSE_LAYERS[0], "area": len(group), "objects": max(v[4] for v in values)}})
+    # Jumps: from each trim to the next landing, between objects sewn in the same colour.
+    lands = {}
+    for t in trace:
+        if t[3] == "land":
+            lands.setdefault(t[2], t)
+    for point, before, after, changes in cuts:
+        if after is None or after == before or changes:
+            continue
+        d = math.dist(point, lands[after][:2])
+        if d > LONG_JUMP:
+            warnings.append({"code": "long-jump", "objectId": ident(after), "bounds": box([point, lands[after][:2]]), "severity": "check",
+                             "values": {"length": round(d, 1), "limit": LONG_JUMP}, "fromId": ident(before)})
+    trims = [c for c in cuts if c[2] is not None]
+    if len(trims) > MANY_TRIMS:
+        per = {}
+        for _, before, _, _ in trims:
+            per[before] = per.get(before, 0)+1
+        worst = max(per, key=per.get)
+        warnings.append({"code": "many-trims", "objectId": ident(worst), "bounds": box([c[0] for c in trims if c[1] == worst], 1), "severity": "check",
+                         "values": {"count": len(trims), "limit": MANY_TRIMS, "objectCount": per[worst]}})
+    return warnings
+
+
 def compile_project(project):
     started = time.perf_counter()
     width, height, trim_jump, objects = validate(project)
@@ -1001,7 +1119,10 @@ def compile_project(project):
     total = 0
     previous = None
 
-    def move(command, point):
+    # Every needle move as written (0.1 mm units): (x, y, object index, role) for the design check.
+    trace, owner = [], 0
+
+    def move(command, point, role="run"):
         nonlocal total, previous
         x, y = point
         if not math.isfinite(x+y) or not (-0.001 <= x <= width+0.001 and -0.001 <= y <= height+0.001):
@@ -1009,15 +1130,17 @@ def compile_project(project):
         total += 1
         if total > MAX_STITCHES:
             raise ValueError("This prototype supports up to 100,000 stitch commands. Reduce the size or increase spacing.")
-        pattern.add_stitch_absolute(command, round((x-width/2)*10), round((y-height/2)*10))
+        qx, qy = round((x-width/2)*10), round((y-height/2)*10)
+        pattern.add_stitch_absolute(command, qx, qy)
+        trace.append((qx/10+width/2, qy/10+height/2, owner, role if command == STITCH else "jump"))
         previous = point
 
-    def sew_to(point, limit=3):
+    def sew_to(point, limit=3, role="run"):
         if previous is None:
             move(JUMP, point)
         elif math.dist(previous, point) > 1e-6:
             for p in interpolate(previous, point, limit):
-                move(STITCH, p)
+                move(STITCH, p, role)
 
     def lock(points, kind, size):
         """Lock stitches at points[0], where the needle is, heading along the
@@ -1035,7 +1158,7 @@ def compile_project(project):
             return
         n = [-(q[1]-a[1])/2, (q[0]-a[0])/2]
         for p in [q, a, q, a] if kind == "tack" else [[q[0]+n[0], q[1]+n[1]], [q[0]-n[0], q[1]-n[1]], a]:
-            sew_to([min(max(p[0], 0), width), min(max(p[1], 0), height)])
+            sew_to([min(max(p[0], 0), width), min(max(p[1], 0), height)], role="lock")
 
     # Runs: stitch paths that each start after a jump in the plan.
     runs, at = [], None
@@ -1045,20 +1168,22 @@ def compile_project(project):
         for chunks in plan_object(obj, at, target):
             chunks = [([[min(max(x, 0), width), min(max(y, 0), height)] for x, y in points] if clamp else points, limit) for points, limit in chunks]
             points = [p for chunk, _ in chunks for p in chunk]
-            runs.append((obj, chunks, points))
+            runs.append((index, obj, chunks, points))
             at = points[-1]
     # A run that changes colour or starts more than trim_jump away trims: tie
     # off, trim, jump, tie in. Nearer runs join with one connecting stitch and
     # no ties: pystitch writes every PEC jump after the first with the trim flag
     # (0x20) and drops TRIM itself, so a jump that must not trim is a stitch.
-    color, last, trims = None, None, 0
-    for obj, chunks, points in runs:
+    color, last, trims, cuts = None, None, 0, []
+    for index, obj, chunks, points in runs:
         changes = obj["color"].lower() != color
         trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump)
         if trim:
             lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
             pattern.add_command(TRIM)
             trims += 1
+            cuts.append((previous, owner, index, changes))
+        owner = index
         if changes:
             if color is not None:
                 pattern.add_command(COLOR_CHANGE)
@@ -1071,14 +1196,18 @@ def compile_project(project):
         if last is None or trim:
             # Land with a stitch: pystitch encodes the first stitch after a trim as
             # trim-jump + penetration. A JUMP here would add a second trim-jump.
-            move(STITCH, points[0])
+            move(STITCH, points[0], "land")
             lock(points, obj["tieIn"], obj["lockSize"])
         for k, (chunk, limit) in enumerate(chunks):
             for i, point in enumerate(chunk):
-                sew_to(point, limit if i else 3 if k or last is None or trim else trim_jump+.01)
+                if i:
+                    sew_to(point, limit, "bite" if limit == SATIN_MAX else "run")
+                else:
+                    sew_to(point, 3 if k or last is None or trim else trim_jump+.01, "run" if k or last is None or trim else "connect")
         last = (obj, points)
     if last:
         lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
+        cuts.append((previous, owner, None, False))
     pattern.add_command(TRIM)
     pattern.add_command(END)
     output = io.BytesIO()
@@ -1087,10 +1216,11 @@ def compile_project(project):
     # Preview the file that was actually written, including quantisation and
     # format normalisation. This also detects writer/reader disagreement.
     decoded = read_pes(io.BytesIO(data))
+    connectors = {(round(a[0], 1), round(a[1], 1), round(b[0], 1), round(b[1], 1)) for a, b in zip(trace, trace[1:]) if b[3] == "connect"}
     commands, threads = [], []
     for thread in decoded.threadlist:
         threads.append({"color": thread.hex_color(), "name": thread.description or "Thread"})
-    block = 0
+    block, cut = 0, False
     last = [width/2, height/2]
     sewn = []
     max_length = 0
@@ -1107,11 +1237,14 @@ def compile_project(project):
             continue
         if flag == TRIM:
             counts["trims"] += 1
+            cut = True
             continue
         if flag not in (STITCH, JUMP):
             continue
         kind = "stitch" if flag == STITCH else "jump"
-        commands.append({"x": p[0], "y": p[1], "fromX": last[0], "fromY": last[1], "type": kind, "block": block})
+        commands.append({"x": p[0], "y": p[1], "fromX": last[0], "fromY": last[1], "type": kind, "block": block, "trim": cut and flag == JUMP,
+                         "travel": flag == STITCH and (round(last[0], 1), round(last[1], 1), round(p[0], 1), round(p[1], 1)) in connectors})
+        cut = cut and flag != JUMP
         counts["stitches" if flag == STITCH else "jumps"] += 1
         if flag == JUMP and commands[1:]:
             jump_length += math.dist(last, p)
@@ -1129,4 +1262,5 @@ def compile_project(project):
             "jumpLength": round(jump_length, 1), "width": round(max(xs)-min(xs), 1), "height": round(max(ys)-min(ys), 1),
             "maxStitch": round(max_length, 2), "bytes": len(data),
             "durationMs": round((time.perf_counter()-started)*1000)},
+            "warnings": design_check(trace, cuts, objects),
             "engine": "threadroom-poc+pystitch", "pesVersion": "6"}

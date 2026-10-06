@@ -744,3 +744,71 @@ class CrossStitchTests(unittest.TestCase):
         cross = resolved({**p, "objects": [o for o in p["objects"] if o["kind"] == "cross"]})
         self.assertLessEqual(compile_project(cross)["stats"]["trims"], 2)
         self.assertLessEqual(compile_project(resolved(p))["stats"]["trims"], 15)  # was 905
+
+
+class DesignCheckTests(unittest.TestCase):
+    def codes(self, p):
+        result = compile_project(p)
+        for w in result["warnings"]:
+            self.assertEqual(set(w), {"code", "objectId", "bounds", "severity", "values"} | ({"fromId"} if w["code"] == "long-jump" else set()))
+            self.assertIn(w["severity"], ("fail", "check"))
+            self.assertTrue(w["bounds"][0] <= w["bounds"][2] and w["bounds"][1] <= w["bounds"][3])
+        return {w["code"]: w for w in result["warnings"]}
+
+    def lines(self, *rings, trim_jump=3, colours=None):
+        p = objects_project(*({"id": f"o{i}", "kind": "running", "rings": [r], "color": (colours or ["#c99d72"]*len(rings))[i]} for i, r in enumerate(rings)))
+        p["trimJump"] = trim_jump
+        return p
+
+    def test_clean_projects_have_no_warnings(self):
+        self.assertEqual(self.codes(project()), {})
+        self.assertEqual(self.codes(self.lines([[20,20],[40,20]], [[20,24],[40,24]])), {})
+
+    def test_short_stitches(self):
+        p = project("manual", [[[20+i*.15, 30] for i in range(40)]])
+        w = self.codes(p)["short-stitches"]
+        self.assertEqual(w["severity"], "fail")
+        self.assertLess(w["values"]["shortest"], .3)
+        self.assertLessEqual(w["bounds"][0], 20.5)
+
+    def test_long_stitches_exclude_satin_bites(self):
+        w = self.codes(self.lines([[20,20],[40,20]], [[48,20],[60,20]], trim_jump=10))["long-stitches"]
+        self.assertEqual((w["objectId"], w["severity"]), ("o1", "check"))
+        self.assertAlmostEqual(w["values"]["longest"], 8, delta=.15)
+        self.assertNotIn("long-stitches", self.codes(project("satin", [[[20,40],[60,40]]], satinWidth=10, splitLength=12)))
+
+    def test_dense_stacked_fills(self):
+        square = [[[30,30],[60,30],[60,60],[30,60]]]
+        stack = lambda n, u="tatami": objects_project(*({"id": f"f{i}", "kind": "fill", "rings": square, "angle": i*45, "underlay": u} for i in range(n)))
+        self.assertNotIn("dense", self.codes(stack(2, "edge-tatami")))
+        self.assertEqual(self.codes(stack(3))["dense"]["severity"], "check")
+        w = self.codes(stack(3, "edge-tatami"))["dense"]
+        self.assertEqual((w["severity"], w["values"]["objects"]), ("fail", 3))
+        self.assertGreaterEqual(w["values"]["layers"], 5)
+        self.assertEqual(self.codes(stack(4))["dense"]["severity"], "fail")
+
+    def test_long_jump_between_objects_of_one_colour(self):
+        w = self.codes(self.lines([[10,10],[20,10]], [[60,60],[70,60]]))["long-jump"]
+        self.assertEqual((w["objectId"], w["fromId"]), ("o1", "o0"))
+        self.assertGreater(w["values"]["length"], 30)
+        self.assertNotIn("long-jump", self.codes(self.lines([[10,10],[20,10]], [[60,60],[70,60]], colours=("#c99d72", "#526b57"))))
+
+    def test_many_trims(self):
+        rings = [[[10+(i % 6)*15, 10+(i//6)*15], [14+(i % 6)*15, 10+(i//6)*15]] for i in range(30)]
+        w = self.codes(project("running", rings))["many-trims"]
+        self.assertGreater(w["values"]["count"], 25)
+        self.assertNotIn("many-trims", self.codes(project("running", rings[:10])))
+
+    def test_preview_marks_trims_and_travel(self):
+        result = compile_project(self.lines([[20,20],[40,20]], [[42,20],[60,20]], [[20,60],[40,60]]))
+        self.assertEqual(sum(c["trim"] for c in result["commands"]), result["stats"]["trims"])
+        self.assertTrue(all(c["type"] == "jump" for c in result["commands"] if c["trim"]))
+        travel = [c for c in result["commands"] if c["travel"]]
+        self.assertEqual(len(travel), 1)
+        self.assertAlmostEqual(math.dist((travel[0]["fromX"], travel[0]["fromY"]), (travel[0]["x"], travel[0]["y"])), 2, delta=.15)
+
+    def test_bear_and_library_on_woven_have_no_likely_failures(self):
+        bear = compile_project(node("demo", None))["warnings"]
+        self.assertEqual([w for w in bear if w["severity"] == "fail"], [])
+        library = compile_project(resolved(json.loads(Path("tests/stitch-library.project.json").read_text())))["warnings"]
+        self.assertEqual([w for w in library if w["severity"] == "fail"], [])

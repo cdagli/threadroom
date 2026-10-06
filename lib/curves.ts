@@ -132,6 +132,9 @@ export function withEnd(o:StitchObject,key:'entry'|'exit',p:Point|undefined):Sti
   return next;
 }
 
+// Line kinds need each outline closed (first point repeated); fills don't.
+export const reclose=(rings:Point[][],closed:boolean)=>rings.map(r=>{const shut=r.length>1&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1];return closed&&!shut?[...r,r[0]]:!closed&&shut?r.slice(0,-1):r;});
+
 export function samplePath(points:Point[], length:number):Point[] {
   if(!Number.isFinite(length)||length<=0)throw new Error('Choose a positive stitch length.');
   if(points.length<2)return points;

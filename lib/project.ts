@@ -22,8 +22,13 @@ export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
   fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; artwork?: Artwork;
 };
-export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number};
+// trim: a jump that starts with a thread cut; travel: an untrimmed connecting stitch between runs.
+export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; trim?: boolean; travel?: boolean};
+export type Severity = 'fail' | 'check';
+// A compiler design-check finding; bounds [x0, y0, x1, y1] in mm (see lib/check.ts).
+export type RawWarning = {code: string; objectId: string | null; bounds: [number, number, number, number]; severity: Severity; values: Record<string, number>; fromId?: string};
 export type Compiled = {
+  warnings?: RawWarning[];
   pes: string; filename: string; commands: Command[]; threads: {color: string; name: string}[];
   stats: {stitches: number; jumps: number; jumpLength: number; trims: number; colorChanges: number; width: number; height: number; maxStitch: number; bytes: number; durationMs: number};
   engine: string; pesVersion: string;
