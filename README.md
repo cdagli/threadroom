@@ -136,6 +136,39 @@ In **Stitches**, **Travel** dims the stitches and shows jumps (blue dashes),
 sewn connecting stitches (orange) and trims (red ✕ at the cut), with counts.
 The bear sample and the stitch-library fixture have no warnings on woven cotton.
 
+## Thread preview
+
+**Stitches** opens in **Thread** view: a simulation of the sewn design on the
+project's fabric. **Lines** (next to it in the toolbar) shows the thin needle
+paths for checking order.
+
+- Each sewn stitch is a rounded thread 0.4 mm wide at true scale, in its thread
+  colour, with darker flanks, a sheen along its length (light from the top
+  left, stopping short of the needle holes) and a small shadow. Satin reads as
+  glossy and directional; fill shows its rows. Later stitches lie on top.
+  Zoomed out, a thread stays at least 0.7 px wide and drops its shading.
+- Jumps and trims are hidden; **Travel** dims the thread and overlays them.
+- The background is the hoop and a light texture per fabric profile (plain
+  weave, gauze, jersey and rib knit, fleece, terry loops, denim twill), shown
+  once a repeat is at least 8 device pixels.
+- Playback draws only the new stitches each frame and marks the needle.
+  Zoom and pan work as in the editor. Imported PES files render the same way.
+- *Simulation: fabric pull and puckering aren't shown.*
+
+Rendering is Canvas 2D (`lib/thread.ts`, `app/thread-view.tsx`; no new
+dependency) under the transparent SVG overlay. Stitches of one colour are
+stroked together per shading pass in batches of up to 240; a stitch that
+crosses one already in the batch (satin over its centre walk, top fill over
+underlay) starts a new batch so it lies on top. Batch breaks are computed once
+per design. When a full redraw takes over 12 ms, pan and zoom scale the last
+render and redraw sharp 120 ms after the view settles. Measured in Chrome
+(Apple Silicon, device pixel ratio 2): bear (3,432 stitches) full redraw
+4.8 ms in a 900 × 620 benchmark, 6.3 ms in the 1,440 px editor (with satin
+eyes, 3,475 stitches); a
+32,171-stitch design 48 ms at fit and 15 ms at 400 % (benchmark), 42–44 ms in
+the editor, with 0.2 ms scaled frames while zooming; playback frames 0.1 ms
+median, 1.3 ms p95; batch breaks once: 5 ms (bear), 75 ms (32k).
+
 ## Text
 
 Choose **Text** (T) and click the hoop. Type in the Text panel; the canvas
@@ -286,7 +319,8 @@ hidden travel and underlay staying inside, underlay inset and narrow-object
 skipping, the bear's trim count, tie-in/tie-off types and sizes around trims,
 trim thresholds, trims read back from the PEC flags, cross-stitch routing,
 every design-check code (compiler and editor), one-click fixes, warning copy,
-one undo step per drag,
+one undo step per drag, thread shading and fabric-look mapping, batch
+breaks for crossing stitches,
 curve-resolution-independent satin density, short stitches on tight arcs,
 staggered satin splitting with pull compensation, stitch lengths, hoop checks,
 malformed input, request limits, and independent PES decoding. Tests use the
@@ -346,8 +380,9 @@ sewing order. Traced pixel boundaries still produce more trims than drawn
 shapes (the traced bear: 185 trims, down from 763). Counts are shown in the preview.
 
 Resizing editable objects regenerates stitches. Imported PES is a stitch
-preview; it cannot recover original editable regions. A thread simulation
-does not predict fabric distortion. **Test-stitch on matching scrap fabric
+preview; it cannot recover original editable regions. The thread preview does
+not model fabric pull, puckering, thread tension, sinking into pile (terry,
+fleece) or thread flattening; shading uses one fixed light direction. **Test-stitch on matching scrap fabric
 before using the output on baby clothing.**
 
 ## Layout
@@ -356,6 +391,7 @@ before using the output on baby clothing.**
 app/                 Next.js/Astryx interface and SVG editor
 lib/project.ts       Editable, millimetre-based project model
 lib/trace.ts         Browser colour tracing with holes
+lib/thread.ts        Thread preview shading, fabric textures and Canvas renderer
 lib/pes-parser.js    Independent PES/PEC reader (shared from the existing viewer)
 embroidery/          Headless experimental Python stitch compiler
 api/export.py        Vercel Function / local HTTP handler

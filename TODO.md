@@ -15,7 +15,7 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 
 ## 2. Digitizing tools
 
-- [ ] **Realistic 3D thread preview** in the Stitches view, with playback, so beginners can see how the stitches will look on fabric.
+- [x] **Realistic 3D thread preview** in the Stitches view, with playback, so beginners can see how the stitches will look on fabric.
 - [ ] **More stitch types**, in this order: redwork (a running outline that sews every line twice with no trims), meander, braid, satin fill for wide areas, and fur/sketch. Contour and motif fills are in the fill styles item below.
 - [ ] **Two-rail satin columns** with direction lines, for borders and lettering.
 - [ ] **Shape tools:** union, cut and offset (for outlines and appliqué allowances), plus rectangle, ellipse and star shapes.

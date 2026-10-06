@@ -62,3 +62,5 @@
 @media(max-width:1150px){.check-popover{right:275px}}
 @media(max-width:850px){.check-popover{right:16px}}
 @media(max-width:570px){.editor-toolbar .tools{flex-basis:100%}.check-popover{right:12px}.check-badge{padding:0 8px;height:30px}.export-risk{padding:0 7px}.export-risk span{display:none}.travel-toggle span{display:none}.issue-callout{top:6px}.travel-legend{top:6px;left:6px;font-size:9px;gap:3px 9px}}
+.thread-canvas{position:absolute;pointer-events:none;display:block}.design-canvas{position:relative}.look-switch{display:flex;padding:2px;border:1px solid #d6ddcc;border-radius:5px;background:#e7eadf;flex-shrink:0}.look-switch button{border:0;background:none;border-radius:4px;padding:5px 8px;font-size:10px;color:#6d7866;min-height:24px}.look-switch button[aria-pressed=true]{background:#fffef9;color:#425f47;box-shadow:0 1px 2px #87967a25}.canvas-topline{gap:10px}.sim-hint{color:#8a7f69;text-align:right}
+@media(max-width:570px){.sim-hint{font-size:8px!important}.stitch-playback{gap:6px}}

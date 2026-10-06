@@ -13,6 +13,7 @@ import {defaultText, layoutText, mergedOutline, type TextSpec} from '@/lib/text'
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
 import StitchSelector from './stitch-selector';
 import TextPanel from './text-panel';
+import ThreadView from './thread-view';
 
 type Tool = 'select' | 'freehand' | 'curve' | 'region' | 'points' | 'text' | 'pan';
 const tools: {id:Tool;icon:string;label:string;key:string;hint:string}[]=[
@@ -82,7 +83,7 @@ export default function Studio() {
   const canFinish=draft.length>=(closedDraft?3:2);
   const hasDraft=draft.length>0;
   const [colours,setColours]=useState(5), [ignoreBg,setIgnoreBg]=useState(true);
-  const [showImage,setShowImage]=useState(true), [showTravel,setShowTravel]=useState(false);
+  const [showImage,setShowImage]=useState(true), [showTravel,setShowTravel]=useState(false), [look,setLook]=useState<'lines'|'thread'>('thread');
   const [designIssues,setDesignIssues]=useState<Warning[]>([]),[checkError,setCheckError]=useState(''),[focusKey,setFocusKey]=useState<string|null>(null);
   const [editPoints,setEditPoints]=useState(false);
   const [pointMode,setPointMode]=useState<'move'|'add'|'remove'>('move'),[activePoint,setActivePoint]=useState<[number,number]|null>(null);
@@ -448,14 +449,14 @@ export default function Studio() {
   // Stitches per thread block; travel view adds jumps, sewn connectors and trim (thread cut) points.
   const stitchPaths=useMemo(()=>{
     const result={blocks:[] as {stitch:string;jump:string}[],travel:'',trims:[] as Point[],travelCount:0,jumpCount:0};
-    if(!compiled)return result;const n=Math.floor(compiled.commands.length*progress);result.blocks=compiled.threads.map(()=>({stitch:'',jump:''}));
+    if(!compiled||(look==='thread'&&!showTravel))return result;const n=Math.floor(compiled.commands.length*progress);result.blocks=compiled.threads.map(()=>({stitch:'',jump:''}));
     for(const c of compiled.commands.slice(0,n)){
       const b=result.blocks[c.block];if(!b)continue;const segment=`M${c.fromX} ${c.fromY}L${c.x} ${c.y}`;
       if(c.type==='jump'){b.jump+=segment;result.jumpCount++;if(c.trim)result.trims.push([c.fromX,c.fromY]);}
       else{b.stitch+=segment;if(c.travel){result.travel+=segment;result.travelCount++;}}
     }
     return result;
-  },[compiled,progress]);
+  },[compiled,progress,look,showTravel]);
   const outside=project.objects.some(o=>o.rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height));
   const imported=compiled?.engine==='Imported PES';
   const stitchIssues=useMemo(()=>imported?[]:compiled?stitchWarnings(compiled.warnings,project):checkError?[engineWarning(checkError,project)]:[],[compiled,checkError,project,imported]);
@@ -476,7 +477,7 @@ export default function Studio() {
   const objectName=(id:string|null)=>project.objects.find(o=>o.id===id)?.name||'Whole design';
   const badge=issues.length?`${issues.length} issue${issues.length>1?'s':''}`:stitchState==='pending'?'Checking…':stitchState==='offline'?'Shapes OK':'Ready to stitch';
   const needle=compiled?.commands[Math.max(0,Math.floor(compiled.commands.length*progress)-1)];
-  const count=compiled?compiled.commands.slice(0,Math.floor(compiled.commands.length*progress)).filter(c=>c.type==='stitch').length:0;
+  const sewn=compiled?Math.floor(compiled.commands.length*progress):0,count=compiled?compiled.commands.slice(0,sewn).filter(c=>c.type==='stitch').length:0,thread=view==='stitches'&&look==='thread'&&!!compiled;
 
   const source=(key:Setting)=>!item?null:item[key]!==undefined?<button type="button" className="field-value reset" title={isLockSetting(key)?'Reset to the Setup value':fromFabric(item.kind,key)?'Reset to the fabric default':'Reset to the default'} onClick={e=>{e.preventDefault();updateObject({[key]:undefined});}}>Reset</button>:<span className="field-value inherited">{isLockSetting(key)?'Setup':fromFabric(item.kind,key)?'Fabric':'Default'}</span>;
   const lockOptions=Object.entries(lockNames).map(([k,v])=><option key={k} value={k}>{v}</option>);
@@ -536,6 +537,7 @@ export default function Studio() {
             <button className="play-button" aria-label={playing?'Pause playback':'Play stitches'} title={playing?'Pause':'Play'} onClick={()=>{if(progress>=1)setProgress(0);setPlaying(p=>!p);}}><Icon name={playing?'pause':'play'} size={16}/></button>
             <input className="playback" type="range" aria-label="Stitch playback" min="0" max="1" step=".001" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false);}}/>
             <span className="stitch-counter">{count.toLocaleString()} / {compiled.stats.stitches.toLocaleString()}</span>
+            <div className="look-switch" role="group" aria-label="Preview style"><button aria-pressed={look==='lines'} title="Lines: thin needle paths, best for checking stitch order" onClick={()=>setLook('lines')}>Lines</button><button aria-pressed={look==='thread'} title="Thread: how the stitches should look sewn on your fabric (a simulation)" onClick={()=>setLook('thread')}>Thread</button></div>
             <button className="travel-toggle" aria-pressed={showTravel} title="Travel view: show jumps, thread cuts and connecting stitches" onClick={()=>setShowTravel(v=>!v)}><Icon name="route" size={16}/><span>Travel</span></button>
           </div>}
           <div className="toolbar-end">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title="Design check: problems that could spoil the stitch-out" aria-label={`Design check: ${badge}`}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span></button>}<button className="tool settings-tool" aria-label="Machine settings" title="Machine, hoop and fabric" popoverTarget="setup-panel" disabled={hasDraft}><Icon name="settings"/></button><div className="view-switch"><button aria-pressed={view==='artwork'} onClick={()=>{setView('artwork');setPlaying(false);}}>Design</button><button aria-label="Stitches" aria-busy={busy} title="Generate stitch preview" aria-pressed={view==='stitches'} onClick={()=>void generate()} disabled={hasDraft||busy||outside||(!project.objects.length&&!compiled)}>{busy?'Working…':'Stitches'}</button></div></div>
@@ -553,16 +555,17 @@ export default function Studio() {
           {tool==='select'&&item&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{setView('artwork');if(editPoints)finishEditing();else editObject();}}>{editPoints?'Done editing':'Edit points'}</button>}
           {tool==='select'&&item?.text&&<button className="edit-points-button" onClick={focusText}>Edit text</button>}
         </div>}
-        <div className="canvas-topline"><span><span className="status-dot"/> {hoop.label} hoop</span></div>
+        <div className="canvas-topline"><span><span className="status-dot"/> {hoop.label} hoop</span>{thread&&<span className="sim-hint" title="Thread is drawn about 0.4 mm wide at true scale. Real fabric stretches, so test-stitch on matching scrap first.">Simulation on {fabric.label.toLowerCase()} · fabric pull and puckering aren’t shown</span>}</div>
         <div className="canvas-wrap">
+          {thread&&<ThreadView compiled={compiled!} count={sewn} fabric={project.fabric} hoop={hoop} view={[viewX,viewY,viewWidth,viewHeight]} svg={svg} dimmed={showTravel}/>}
           <svg ref={svg} className={`design-canvas tool-${view==='stitches'||spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label="Embroidery canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current)endDrag();}} onPointerLeave={()=>setHover(null)} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object');if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
             <defs><pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="#d7d0c2" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="#c8bba4" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#8d8068" floodOpacity=".15"/></filter></defs>
-            <rect x="-1000" y="-1000" width="3000" height="3000" fill="#f0ede5"/>
+            {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="#f0ede5"/>
             <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="#d9c9aa" filter="url(#hoop-shadow)"/>
             <rect x="0" y="0" width={hoop.width} height={hoop.height} rx="3" fill="#faf7ee" stroke="#b6a583" strokeWidth=".35"/>
             <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#cloth)" pointerEvents="none"/>
             <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>
-            <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="#b2aa9b" strokeWidth=".15" pointerEvents="none"/>
+            <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="#b2aa9b" strokeWidth=".15" pointerEvents="none"/></>}
             {showImage&&project.artwork&&view==='artwork'&&<image href={project.artwork.src} x={project.artwork.x} y={project.artwork.y} width={project.artwork.width} height={project.artwork.height} opacity={imageOpacity} pointerEvents="none"/>}
             {view==='artwork'?project.objects.filter(o=>o.id!==continuation?.id).map(o=><g key={o.id} data-object={o.id}>{o.text?.layout==='path'&&o.text.path&&selected===o.id&&<path d={pathData([o.text.path],false)} fill="none" stroke="#7b9670" strokeWidth={1/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`} pointerEvents="none"/>}<path d={pathData(o.rings,isFillKind(o.kind))} fill={isFillKind(o.kind)?o.color:'none'} fillRule={o.text?'nonzero':'evenodd'} stroke={isFillKind(o.kind)?(selected===o.id?'#4d6853':'none'):o.color} strokeWidth={isWideKind(o.kind)?o.satinWidth:selected===o.id?.35:.5} strokeLinejoin="round" strokeLinecap="round" style={{cursor:tool==='select'&&!editing?'move':undefined}}/>{o.text?.border&&isFillKind(o.kind)&&<path d={pathData(mergedOutline(o.rings),false)} fill="none" stroke={o.text.border.color} strokeWidth={o.text.border.kind==='satin'?o.text.border.width:o.text.border.kind==='bean'?.45:.3} strokeLinejoin="round" pointerEvents="none"/>}<path d={pathData(o.rings,isFillKind(o.kind))} fill={o.text?'transparent':'none'} fillRule="nonzero" stroke="transparent" strokeWidth="2"/>{editing&&selected===o.id&&<>
               {pointMode!=='remove'&&handles.filter(h=>{const anchors=o.curve?o.curve.points:o.rings[h.ring];return [anchors[(h.index-1)%anchors.length],anchors[h.index%anchors.length]].every(p=>Math.hypot(p[0]-h.point[0],p[1]-h.point[1])*canvasScale>24);}).map(h=><g className="insertion-handle" key={`insert-${h.ring}-${h.index}`} data-ring={h.ring} data-insert={h.index} role="button" tabIndex={0} aria-label={`Add point on segment ${h.index}`} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();addPoint(h.ring,h.index,h.point);}}}><circle cx={h.point[0]} cy={h.point[1]} r={11/canvasScale} fill="transparent"/><circle cx={h.point[0]} cy={h.point[1]} r={5/canvasScale} fill="#fffef9" stroke="#7b9670" strokeWidth={1/canvasScale}/><path d={`M${h.point[0]-2.5/canvasScale} ${h.point[1]}h${5/canvasScale}M${h.point[0]} ${h.point[1]-2.5/canvasScale}v${5/canvasScale}`} stroke="#64805e" strokeWidth={1/canvasScale} pointerEvents="none"/><title>Add point</title></g>)}
@@ -571,7 +574,7 @@ export default function Studio() {
                 else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();e.stopPropagation();removePoint([ri,i]);}
                 else if(e.key===' '){e.preventDefault();e.stopPropagation();setActivePoint([ri,i]);}
               }}><circle cx={x} cy={y} r={12/canvasScale} fill="transparent"/><circle cx={x} cy={y} r={5/canvasScale} fill={activePoint?.[0]===ri&&activePoint?.[1]===i?'#526b57':'white'} stroke="#4d6853" strokeWidth={1.5/canvasScale} pointerEvents="none"/><title>{pointMode==='remove'?'Click to remove':'Drag to move · Delete to remove'}</title></g>))}
-            </>}</g>):<>{stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" opacity={showTravel?.35:1}/>)}
+            </>}</g>):<>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" opacity={showTravel?.35:1}/>)}
               {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="#2f6fd6" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="#e0761f" strokeWidth={2/canvasScale} strokeLinecap="round"/>
                 <path d={stitchPaths.trims.map(([x,y])=>{const a=3.5/canvasScale;return `M${x-a} ${y-a}L${x+a} ${y+a}M${x-a} ${y+a}L${x+a} ${y-a}`;}).join('')} stroke="#c4453a" strokeWidth={1.8/canvasScale} strokeLinecap="round"/></g>}</>}
             {focus&&(()=>{const [x0,y0,x1,y1]=focus.bounds,pad=1+4/canvasScale,width=Math.max(x1-x0+2*pad,28/canvasScale),height=Math.max(y1-y0+2*pad,28/canvasScale),x=(x0+x1)/2-width/2,y=(y0+y1)/2-height/2,rx=Math.min(width,height,40/canvasScale)/2;
@@ -580,7 +583,7 @@ export default function Studio() {
               return <g key={k} className="end-handle" data-end={k} role="button" tabIndex={0} aria-label={label} onKeyDown={e=>{if((e.key==='Delete'||e.key==='Backspace')&&item&&!ends.auto[k]){e.preventDefault();e.stopPropagation();updateObject({[k]:undefined});}}}><circle cx={x} cy={y} r={(k==='exit'&&same?6:12)/canvasScale} fill="transparent"/><circle cx={x} cy={y} r={(k==='entry'&&same?6.5:4.5)/canvasScale} fill={ends.auto[k]?'#fffef9':c} stroke={c} strokeWidth={1.6/canvasScale} pointerEvents="none"/><title>{`${label} · drag along the outline${ends.auto[k]?'':' · Delete to reset'}`}</title></g>;})}
             {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="#e4ecda" stroke="#526b57" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
             {draft.length>0&&<><path d={pathData([displayDraft],closedDraft)} fill={closedDraft?'#84998433':'none'} stroke="#526b57" strokeWidth=".4"/>{hover&&!drawing&&<path d={pathData([[draft[draft.length-1],hover]],false)} fill="none" stroke="#526b57" strokeWidth=".3" strokeDasharray="1 .6" pointerEvents="none"/>}{tool!=='freehand'&&draft.map(([x,y],i)=><g key={i} data-draft-point={i}><circle cx={x} cy={y} r={(i===0&&closedDraft?6:4)/canvasScale} fill={i===0&&closedDraft?'white':'#526b57'} stroke="#526b57" strokeWidth={1.5/canvasScale}/><circle cx={x} cy={y} r={12/canvasScale} fill="transparent"><title>{i===0&&closedDraft&&canFinish?'Click to close shape · drag to move point':'Drag to adjust point'}</title></circle></g>)}</>}
-            {view==='stitches'&&progress<1&&needle&&<circle cx={needle.x} cy={needle.y} r="1" fill="#fff" stroke="#526b57" strokeWidth=".5"/>}
+            {view==='stitches'&&progress<1&&needle&&<g className="needle-marker" pointerEvents="none"><circle cx={needle.x} cy={needle.y} r={Math.max(.6,7/canvasScale)} fill="#ffffff66" stroke="#fff" strokeWidth={3.2/canvasScale}/><circle cx={needle.x} cy={needle.y} r={Math.max(.6,7/canvasScale)} fill="none" stroke="#2d3b30" strokeWidth={1.6/canvasScale}/><circle cx={needle.x} cy={needle.y} r={1.6/canvasScale} fill="#2d3b30"/><title>Needle position</title></g>}
           </svg>
           {!project.objects.length&&!project.artwork&&view==='artwork'&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>Import artwork or draw a path.</p></div>}
           {!focus&&!(showTravel&&view==='stitches')&&<div className="canvas-navigation-hint">Scroll to zoom · Space / right-drag to pan</div>}
