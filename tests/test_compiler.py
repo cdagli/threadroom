@@ -49,6 +49,28 @@ class CompilerTests(unittest.TestCase):
         self.assertLess(result["stats"]["trims"], 5)
         self.assertTrue(all(c["x"]>=29.9 and c["y"]>=29.9 for c in result["commands"] if c["type"]=="stitch"))
 
+    def test_preview_owners_follow_objects_even_with_same_colour_and_repeated_holes(self):
+        p = objects_project({"id": "a", "kind": "bean", "rings": [[[20,20],[25,20],[20,20]]]},
+                            {"id": "b", "kind": "bean", "rings": [[[60,60],[65,60],[60,60]]]},
+                            {"id": "a-border", "kind": "running", "rings": [[[20,20],[25,20],[20,20]]]})
+        result = compile_project(p)
+        owners = [c["objectIndex"] for c in result["commands"] if c["type"] == "stitch"]
+        self.assertEqual(sorted(set(owners)), [0, 1, 2])
+        self.assertEqual(owners, sorted(owners))
+        for i, obj in enumerate(p["objects"]):
+            expected = compile_project({**p, "objects": [obj]})
+            stitches = [c for c in result["commands"] if c["type"] == "stitch" and c["objectIndex"] == i]
+            self.assertEqual([(c["x"], c["y"]) for c in stitches], [(c["x"], c["y"]) for c in expected["commands"] if c["type"] == "stitch"])
+            self.assertTrue(all(c["objectId"] == obj["id"] for c in stitches))
+        jumps = [c for c in result["commands"] if c["type"] == "jump"]
+        self.assertEqual([c["objectId"] for c in jumps], ["a", "b", "a-border"])
+        self.assertEqual([c["fromObjectId"] for c in jumps[1:]], ["a", "b"])
+        hidden = copy.deepcopy(p)
+        hidden["objects"][0]["hidden"] = True
+        other = compile_project(hidden)
+        self.assertEqual(result["pes"], other["pes"])
+        self.assertEqual(result["commands"], other["commands"])
+
     def test_hole_is_never_crossed_by_sewn_fill_or_underlay(self):
         rings = [[[25,25],[75,25],[75,75],[25,75]],[[40,40],[60,40],[60,60],[40,60]]]
         for angle in (0, 35, 90):

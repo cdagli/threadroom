@@ -1,4 +1,4 @@
-import {defaultTrimJump, hoops, isFillKind, isWideKind, kindNames, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
+import {defaultTrimJump, hoops, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
 import {moveGeometry, reclose} from './curves';
 
 // Design check: fast geometry checks run in the editor; stitch checks (short/long stitches, density,
@@ -215,7 +215,7 @@ export function fixFor(w: Warning, p: Project): Fix | null {
       const clear = (group: number[]) => group.every(i => between.every(j => !overlaps(area(i), area(j))));
       const reorder = (q: Project, group: Set<number>, after: number) => {
         const items = q.objects.filter((_, i) => !group.has(i)), at = items.indexOf(q.objects[after])+1;
-        return {...q, objects: [...items.slice(0, at), ...q.objects.filter((_, i) => group.has(i)), ...items.slice(at)]};
+        return normalizeGroups({...q, objects: [...items.slice(0, at), ...q.objects.filter((_, i) => group.has(i)), ...items.slice(at)]});
       };
       if (clear(block.objects)) return {label: 'Sew earlier', title: 'Sew it right after the earlier objects of this colour; nothing it passes overlaps it', apply: q => reorder(q, moved, blocks[m].objects.at(-1)!)};
       if (between.length && clear(blocks[m].objects)) return {label: 'Sew others later', title: 'Sew the earlier objects of this colour just before this one; nothing they pass overlaps them', apply: q => reorder(q, earlier, Math.max(...between))};

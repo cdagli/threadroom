@@ -1226,6 +1226,10 @@ def compile_project(project):
     max_length = 0
     counts = {"stitches": 0, "jumps": 0, "trims": 0, "colorChanges": 0}
     jump_length = 0
+    # PES inserts jumps at landings. Sewn destinations retain trace order, including
+    # repeated holes; coordinate maps would misattribute overlapping same-colour objects.
+    stitch_trace = [t for t in trace if t[3] != "jump"]
+    trace_at, last_owner = 0, stitch_trace[0][2] if stitch_trace else 0
     for x, y, command in decoded.stitches:
         flag = command & COMMAND_MASK
         p = [x/10+width/2, y/10+height/2]
@@ -1242,8 +1246,14 @@ def compile_project(project):
         if flag not in (STITCH, JUMP):
             continue
         kind = "stitch" if flag == STITCH else "jump"
-        commands.append({"x": p[0], "y": p[1], "fromX": last[0], "fromY": last[1], "type": kind, "block": block, "trim": cut and flag == JUMP,
+        t = stitch_trace[min(trace_at, len(stitch_trace)-1)]
+        owner = t[2]
+        commands.append({"objectIndex": owner, "objectId": str(objects[owner].get("id", owner)), "fromObjectId": str(objects[last_owner].get("id", last_owner)), "x": p[0], "y": p[1], "fromX": last[0], "fromY": last[1], "type": kind, "block": block, "trim": cut and flag == JUMP,
                          "travel": flag == STITCH and (round(last[0], 1), round(last[1], 1), round(p[0], 1), round(p[1], 1)) in connectors})
+        if flag == STITCH:
+            if abs(p[0]-t[0]) < .001 and abs(p[1]-t[1]) < .001:
+                trace_at += 1
+            last_owner = owner
         cut = cut and flag != JUMP
         counts["stitches" if flag == STITCH else "jumps"] += 1
         if flag == JUMP and commands[1:]:

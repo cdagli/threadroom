@@ -8,7 +8,7 @@ The existing `../pes-viewer` and original bear files are unchanged.
 
 - Import PNG/JPG/WebP/SVG reference artwork, size it in millimetres, and trace
   flat colours into editable regions. Tracing runs locally in the browser.
-- Draw freehand strokes (finish on release), smooth curves, polygon fills, or individual stitch points. Curves retain draggable anchors in saved JSON projects. Move objects
+- Draw open and closed shapes with corner and curve points, satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
   fill direction, constant-width satin, underlay, and pull compensation.
 - PR1X hoop profiles: 100 × 100, 180 × 130, 300 × 200, and 60 × 40 mm. Select
@@ -101,9 +101,9 @@ The existing `../pes-viewer` and original bear files are unchanged.
 
 ## Design check and travel view
 
-The toolbar badge shows the number of issues (or **Ready to stitch**); click it
+The badge at the top right shows the number of issues (or **Ready to stitch**); click it
 for the list. Shape checks run a moment after each edit; stitch checks run on a
-background compile about a second after you stop editing (and on Stitches or
+background compile about a second after you stop editing (and on Play, Realistic view or
 Export). Each warning has a title, why it matters and one fix, marked **Will
 likely fail** or **Worth checking**. Clicking one selects the object, pans to
 it and rings the problem on the canvas; where it is safe a button fixes it
@@ -132,15 +132,25 @@ underlay or four fail. The compile result has `warnings` (`code`,
 `objectId`, `bounds` [x0, y0, x1, y1] mm, `severity`, `values`); preview
 commands carry `trim` and `travel` flags.
 
-In **Stitches**, **Travel** dims the stitches and shows jumps (blue dashes),
+**Travel** in the playback bar dims the stitches and shows jumps (blue dashes),
 sewn connecting stitches (orange) and trims (red ✕ at the cut), with counts.
 The bear sample and the stitch-library fixture have no warnings on woven cotton.
 
 ## Thread preview
 
-**Stitches** opens in **Thread** view: a simulation of the sewn design on the
-project's fabric. **Lines** (next to it in the toolbar) shows the thin needle
-paths for checking order.
+The editor always shows compiled stitches. **Lines** is the default: thin needle
+paths in the thread colour. **Realistic view** (the eye in the toolbar) toggles
+Lines ↔ **Thread**, a simulation of the sewn design on the project's fabric.
+Selection, drawing, dragging, point editing and entry/exit handles work in both
+looks. The toggle only changes the stitch rendering.
+
+A background compile runs 350 ms after edits settle and supplies both the view
+and design check. Stale requests are aborted and their revisions ignored; export
+shares the same request. While stitches are out of date, shapes appear faintly
+in their thread colours, with transparent shape hit targets always available.
+If the engine is offline, normal shapes and a small note remain visible. The bear
+sample compiled in 179–196 ms (five Python runs; median 182.4 ms) when choosing
+this debounce.
 
 - Each sewn stitch is a rounded thread 0.4 mm wide at true scale, in its thread
   colour, with darker flanks, a sheen along its length (light from the top
@@ -197,37 +207,97 @@ updates as you type, and each field coalesces into one undo step.
 
 ## Drawing and tracing
 
-Machine, hoop, and fabric settings are behind the toolbar settings icon.
-Switch to **Stitches** to generate a preview; play/pause and the playback slider
-appear in the toolbar in that mode. There is no left sidebar or bottom preview bar.
+The canvas fills the window and the controls float over it: the project name
+and menu (import, samples, save project, SVG export) top left; the design check
+and **Export PES** top right; the current tool's name, hint and actions (Undo
+point, Cancel, Done, point editing) top centre; zoom and undo/redo bottom left;
+the toolbar at the bottom. While an object is selected its settings (and, for
+text, the text panel) float at the left; the arrow collapses them to a header and
+the bin deletes the object. The side panel's rail opens **Layers** (the object
+list with previews, selection, visibility, reordering and groups), **Artwork**,
+**Setup** (machine, hoop, fabric, ties and trims) and **Info** (size, stitch
+counts, design width, engine status); the last rail button hides the panel.
 
-Open **Artwork** on the toolbar to import an image, then choose **Auto trace** for colour regions, **Trace outline**
-for a curved fill, or **Trace line** for a curved running-stitch path. Import fits
-the image automatically; use **Reference opacity** to see your tracing clearly.
+Toolbar, left to right (shortcut in brackets), as in Ember:
+
+| Tool | | |
+|---|---|---|
+| Select (S or V) | Pan (H, or hold Space) | Measure (M): drag to read a distance in mm; cleared when you change tools |
+| Open shape (1) | Closed shape (2) | Blocks (3): an open shape sewn as a satin column |
+| Freehand (4) | Points (P) | Text (T) |
+| Shapes (R) | Play | Realistic view |
+
+**Play** shows the timeline and plays the stitch-out from the start in the
+current look; click it again to hide the bar and return to full progress. The
+bar has play/pause, a slider, the stitch counter and **Travel**, which works in
+both looks. Any edit stops playback and restores full progress.
+
+The **Layers** panel shows sew-order numbers, small shape previews, names and
+stitch types. Click to select, Ctrl/⌘-click to add or remove an object, and
+Shift-click to select a range. Ctrl/⌘-click also toggles objects on the canvas;
+dragging a selected object moves the entire selection as one undo step.
+Double-click a layer name to rename it (Enter or blur saves; Escape cancels).
+Drag a row at least 5 px to reorder; the insertion line shows the destination,
+and dragging a selected row moves all selected rows. Footer buttons move the
+selection to the top, up, down or bottom, or delete it. With several objects
+selected, the left overlay offers a shared thread colour, Group/Ungroup and
+Delete.
+
+**Group** (Ctrl/⌘ G) gathers the selection into one contiguous block;
+**Ungroup** (Ctrl/⌘ Shift G) releases selected members. Groups have one level:
+click a header to select its members, double-click its name to rename it (up to
+40 characters), use its arrow to collapse its rows, or drag the header to move
+the whole block. Drop objects between a group's rows to join it, or outside its
+rows to leave it; the insertion line identifies the destination group. Collapse
+state stays in the UI. Groups, names, order and visibility are saved in project
+JSON, autosave and undo/redo; group membership is normalized on load and edits.
+
+An eye hides an object, or all members of a group, from the canvas and hit
+testing in both Lines and Thread. **Hidden is view-only:** hidden objects still
+compile, contribute to stitch counts and design checks, and export. Preview
+commands carry object indices and IDs so shapes, stitches and connecting travel
+can be filtered together, including text borders.
+
+Open **Artwork** in the side panel to import an image, then choose **Auto trace** for colour regions, **Trace outline**
+(closed shape) or **Trace line** (open shape) to trace by hand. Import fits
+the image automatically and starts a closed shape; use **Reference opacity** to see your tracing clearly.
 Colour count and background removal are under **Trace settings**.
 
-- **Curve / Fill / Points:** click to place points, drag to adjust, then **Done**
-  or **Close shape**. Enter also finishes. Clicking the first point closes a fill.
+- **Open shape / Closed shape / Blocks:** left-click plots a corner (straight
+  lines meet sharply); right-click, or double-click, plots a curve point (the path
+  bends smoothly through it). Drag draft points to adjust; Enter or **Done** /
+  **Close shape** finishes, and clicking the first point closes a closed shape.
+  Corners show as squares, curve points as circles. Closed shapes are fills, open
+  shapes running stitch and blocks satin; change the stitch style afterwards.
+- **Shapes:** pick circle, rectangle, star, triangle, diamond, hexagon or heart
+  above the toolbar (the last one is remembered). Rectangle: click one corner,
+  then the opposite corner (hold Ctrl/⌘ for a square). The others: click the
+  centre, then click again to set the size. Press-drag-release also works, and
+  Escape cancels. The preview shows the outline and the radius; shapes stop at
+  the hoop edge. Each becomes an ordinary editable closed curve with a fill.
+- **Points:** click to place stitch points, then **Done**.
 - **Freehand:** draw and release to save the stroke; tiny jitter is simplified.
 - **Undo point / Backspace:** remove the last draft point. **Cancel / Escape:**
   discard the unfinished path. Exports wait until the path is finished.
 - **Select:** move an object. **Edit points** or double-click the object exposes
-  draggable anchors. Finished curves enter this mode automatically. Drag points
+  draggable anchors. Drag points
   to reshape; click a small **+** between points or choose **Add point** and click
   the curve. **Remove** lets you click points to delete them; Delete/Backspace
-  removes the selected point. Arrow keys nudge a focused point (Shift for larger
+  removes the selected point. Double-click a point, or select it and use
+  **Corner / Curve**, to switch it between a sharp corner and a smooth curve
+  point. Arrow keys nudge a focused point (Shift for larger
   steps). **Done editing** or Enter/Escape exits without deleting the curve.
 - **Continue:** extend an open curve from its last point, or select its first point
   to extend that end. Done updates the existing object. Cancel restores the
   original curve; undoing the extension restores its previous anchors.
 - **Pan:** drag the canvas. During a trace, toggle Pan and toggle it again to
-  continue with the same points, or click Curve to resume. Space-drag, right-drag
-  and middle-drag pan without changing tools. Scroll zooms around the cursor;
+  continue with the same points, or click the drawing tool to resume. Space-drag
+  and middle-drag pan without changing tools, and so does right-drag except in
+  the shape tools, where right-click plots a curve point. Scroll zooms around the cursor;
   horizontal scroll, Alt-scroll and Shift-scroll pan. Trackpad pinch or
   Ctrl/⌘-scroll zooms. Two-finger touch gestures pan and pinch-zoom without adding
   drawing points. The zoom buttons and +/− keys work during a trace as well.
-- Shortcuts: **V** select, **B** freehand, **C** curve, **F** fill, **P** points,
-  **T** text, **H** pan; Ctrl/⌘ Z undo and Ctrl/⌘ Shift Z redo. Text fields keep normal typing.
+- Ctrl/⌘ Z undo and Ctrl/⌘ Shift Z redo. Text fields keep normal typing.
 
 Curve previews use fine samples; running/bean PES exports sample the curve at
 the selected stitch length. Resizing and moving keep anchors and geometry in sync.
@@ -294,8 +364,8 @@ Next.js: the static build plus the Python Function are intentional.
 After the preview deployment is ready:
 
 1. Visit `/api/export`; expect `{"ok":true,"engine":"threadroom-poc+pystitch","python":true}`.
-2. Open the editor, choose **Bear sample**, then **Stitches**.
-3. Check that the status says **Engine connected**.
+2. Open the editor, choose **Bear sample**, then **Realistic view** (the eye in the toolbar).
+3. Check that **Info** in the side panel says **Engine connected**.
 4. Download **Export PES** and reopen it in the editor or another PES viewer.
 5. Import an image, trace it, change a region's stitch style, and export again.
 

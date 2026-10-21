@@ -18,7 +18,7 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 - [x] **Realistic 3D thread preview** in the Stitches view, with playback, so beginners can see how the stitches will look on fabric.
 - [ ] **More stitch types**, in this order: redwork (a running outline that sews every line twice with no trims), meander, braid, satin fill for wide areas, and fur/sketch. Contour and motif fills are in the fill styles item below.
 - [ ] **Two-rail satin columns** with direction lines, for borders and lettering.
-- [ ] **Shape tools:** union, cut and offset (for outlines and appliqué allowances), plus rectangle, ellipse and star shapes.
+- [ ] **Shape tools:** union, cut and offset (for outlines and appliqué allowances). Ready-made shapes are done (circle, rectangle, star, triangle, diamond, hexagon, heart).
 - [ ] **Fill styles:** turning or guided fills, contour/spiral fills, radial fills, gradient (varying density) fills, and motif/pattern fills.
 - [ ] **Editing individual stitches** after generating: insert, move or delete a stitch point.
 - [ ] **Appliqué workflow:** placement line, stop, tack-down, stop, then cover satin.

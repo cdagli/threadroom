@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 
 import {readFileSync} from 'node:fs';
 import {load} from './load-lib.mjs';
@@ -8,6 +9,55 @@ const {zoomViewport,panViewport,clientToWorld,viewportScale}=load('viewport');
 const {object,validProject}=load('project');
 const anchors=[[20,40],[35,20],[55,30],[65,50]];
 const near=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1])<1e-8;
+
+test('Unset corners retain the original open and closed tessellation exactly',()=>{
+  const paths=[false,true].map(closed=>curvePoints(anchors,closed));
+  assert.equal(createHash('sha256').update(JSON.stringify(paths)).digest('hex'),'3c33aee05618b0f4a178c025b86a9aeadae9a29c800a90cda51da3fecf2599ee');
+  for(const closed of [false,true])assert.deepEqual(curvePoints(anchors,closed),curvePoints(anchors,closed,anchors.map(()=>false)));
+});
+
+test('Corner tangents follow their own segment and two corners form a straight line',()=>{
+  const {curveSegments}=load('curves'),points=[[10,10],[30,10],[30,30],[10,30]],corners=[true,true,true,true];
+  const segments=curveSegments(points,true,corners);
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length];
+    assert.deepEqual(segments[i][0],a);assert.deepEqual(segments[i].at(-1),b);
+    for(const p of segments[i])assert.ok(Math.abs((p[0]-a[0])*(b[1]-a[1])-(p[1]-a[1])*(b[0]-a[0]))<1e-8);
+  }
+  const smooth=curveSegments(points,true),corner=curveSegments(points,true,[true,false,false,false]);
+  assert.ok(smooth[0][1][1]<10);assert.ok(corner[0][1][1]>smooth[0][1][1]);
+  const derivative=(path,start)=>{const a=start?path[0]:path.at(-2),b=start?path[1]:path.at(-1);return [b[0]-a[0],b[1]-a[1]];};
+  const incoming=derivative(segments.at(-1),false),outgoing=derivative(segments[0],true);
+  assert.equal(incoming[0],0);assert.equal(outgoing[1],0);assert.ok(incoming[1]<0&&outgoing[0]>0);
+  assert.deepEqual(curveSegments([[1,2]],false,[true]),[]);
+  assert.deepEqual(curvePoints([[1,2],[3,4]],false,[true,true]),[[1,2],[3,4]]);
+});
+
+test('Corner flags stay aligned through toggling, insertion, removal and movement',()=>{
+  const {curveRing,setCorner}=load('curves'),curve={points:anchors,closed:true,corners:[true,false,true,false]};
+  const o={...object('Corners',[curveRing(curve)]),curve};
+  const changed=setCorner(o,1,true);
+  assert.deepEqual(changed.curve.corners,[true,true,true,false]);assert.deepEqual(changed.rings,[curveRing(changed.curve)]);
+  assert.deepEqual(o.curve.corners,[true,false,true,false]);
+  const plain={...o,curve:{points:anchors,closed:true}},first=setCorner(plain,2,true);
+  assert.deepEqual(first.curve.corners,[false,false,true,false]);
+  assert.equal(setCorner(o,-1,true),o);assert.equal(setCorner(o,4,true),o);assert.equal(setCorner(o,.5,true),o);
+  assert.equal(setCorner(object('Line',[anchors],'running'),0,true).curve,undefined);
+  for(const index of [0,2,4]){
+    const added=insertGeometryPoint(o,0,index,[40,40]);
+    assert.deepEqual(added.curve.corners,[...curve.corners.slice(0,index),false,...curve.corners.slice(index)]);
+    assert.deepEqual(added.rings,[curveRing(added.curve)]);
+    const removed=removeGeometryPoint(added,0,index);
+    assert.deepEqual(removed.curve,curve);assert.deepEqual(removed.rings,o.rings);
+  }
+  const moved=moveGeometry(o,([x,y])=>[2*x+3,2*y+4]);
+  assert.deepEqual(moved.curve.corners,curve.corners);assert.deepEqual(moved.rings,[curveRing(moved.curve)]);
+  assert.equal(insertGeometryPoint(plain,0,2,[40,40]).curve.corners,undefined);
+  const handles=insertionHandles(changed),hit=closestInsertion(changed,handles[0].point);
+  assert.equal(hit.index,1);assert.ok(hit.distance<1e-8);
+  const payload=geometryPayload({version:1,name:'Corners',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[moved]});
+  assert.deepEqual(payload.objects[0].curve,moved.curve);assert.deepEqual(payload.objects[0].rings,moved.rings);
+});
 
 test('Curve passes through anchors and preserves open endpoints',()=>{
   const curve=curvePoints(anchors,false);

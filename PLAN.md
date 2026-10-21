@@ -1,0 +1,121 @@
+# Ember-style editor layout
+
+Goal: more canvas space and an editor laid out like Ember (emberdesign.net): floating overlays, a layers
+panel with previews, hiding, drag reordering and one level of groups, Ember's tool set and Ember's shape
+drawing. Keep Threadroom's light sage/cream look; copy the layout, not Ember's dark theme.
+
+Decisions:
+- **Hidden objects are view-only.** Hiding is for working over a background image: a hidden object is not
+  drawn or hit-tested in either editing look (Lines/Thread), but it is still compiled, counted,
+  checked and exported, like Ember (its "hidden" is transparency 0).
+- **Blocks = satin along a line** (an open shape whose stitch starts as satin, constant width). Variable
+  width satin blocks are the separate "Two-rail satin columns" TODO item.
+
+Desktop only (~99% of use): no mobile optimisation. Each phase ships on its own: typecheck, `npm test`,
+README/TODO updated, and checked in the real app at desktop widths.
+
+## Phase 0: model and geometry (lib only, no UI)
+- `curve.corners?: boolean[]` (same length as `points`; unset = all smooth). Catmull–Rom stays sharp at a
+  corner (the neighbour is replaced by the corner itself), so a run of corners is straight. Kept through
+  insert/remove point, move, continue curve, text paths, validation and `geometryPayload`.
+- `lib/shapes.ts`: Ember's node layouts in mm, as `{points, corners}` closed curves:
+  circle (12 smooth; Ember uses 8, but Catmull–Rom through 8 shows flats), rectangle from two corners (Ctrl/⌘: square), star (10 corners, inner 0.382 · r,
+  point up), triangle (point up), diamond, hexagon (point up), heart (8 nodes; tip and dip are corners).
+  Plus the largest size that keeps a shape centred at a point inside the hoop.
+- Groups: `project.groups?: {id, name}[]`, `object.group?: string`, `object.hidden?: boolean`.
+  Members of a group are contiguous in sew order. `normalizeGroups` (objects outside a group's first run
+  leave it; empty groups are dropped), `moveObjects` (move a block of objects to an index, optionally into
+  a group), group/ungroup helpers. Validation for all new fields.
+- Tests for each of these.
+
+## Phase 1: full-screen layout
+- No top bar; the canvas fills the window. Overlays:
+  - top-left project chip: name, save dot, ▾ menu (Import file, Bear sample, Blank canvas, Save project
+    JSON, Export SVG);
+  - top-right: design-check badge, "likely to fail" pill, Export PES;
+  - top-centre tool banner: tool name + one-line hint; Undo point / Cancel / Done and the point-edit
+    actions live here; issue callout sits below it;
+  - bottom-left: zoom (−, %, +, fit) and undo/redo; messages as a toast above the toolbar;
+  - right: collapsible panel with an icon rail and tabs Layers, Artwork (was the popover), Setup (was the
+    popover), Info (design size, stitches, thread changes, jumps/trims, design width, engine state).
+- Phone width: the right panel is a drawer; overlays stack; no horizontal page scroll.
+
+## Phase 2: object settings overlay
+Status: done. Floating left panel (collapse, delete in the header); Sew earlier/later moved to the Layers tab until Phase 5.
+- Selecting an object opens today's settings (and the text panel) as a floating left panel: scrolls,
+  collapses to its header, delete in the header. No selection, no panel.
+- Sew earlier/later leave the panel (reordering is in Layers).
+
+## Phase 3: bottom toolbar, Ember's tool set
+Status: done. Tools, keys, Play and Realistic view as below; the Design/Stitches switch is gone; Corner/Curve toggle and double-click in point editing.
+| Key | Tool | Behaviour |
+|---|---|---|
+| S (V) | Select | as now |
+| H / Space | Pan | as now |
+| M | Measure | drag to show the distance in mm; not saved |
+| 1 | Open shape | left-click corner point, right-click or double-click curve point, Enter finishes |
+| 2 | Closed shape | same, closed, creates a fill |
+| 3 | Blocks | open shape whose stitch starts as satin |
+| 4 | Freehand | as now |
+| P | Points | kept (not in Ember) |
+| T | Text | as now |
+| R | Shapes ▾ | Phase 4 |
+| | ▶ Play | builds stitches if needed, plays from the start |
+| | 👁 Realistic view | toggles design ↔ thread preview |
+
+- Open/closed shape replace Curve and Fill. Double-click a point while editing toggles corner/curve.
+- Thread preview: a bar above the toolbar with playback slider, counter, Lines/Thread and Travel.
+- Artwork tab's Trace outline / Trace line start Closed / Open shape.
+
+## Phase 4: shape drawing like Ember
+Status: done. Flyout above the toolbar while Shapes is active; click-click or press-drag; Esc cancels.
+- Flyout: circle, rectangle, star, triangle, diamond, hexagon, heart.
+- Rectangle: click a corner, click the opposite corner (Ctrl/⌘: square). Others: click the centre, click
+  again for the size. Click-drag-release also works. Live outline and radius line; Esc cancels.
+- Clamped inside the hoop. The result is an ordinary editable closed curve with a fill.
+
+## Phase 4b: lines and realistic views (like Ember)
+Status: implemented. One stitch editing view, Lines by default; independent Thread toggle and playback bar. Shared revision-guarded compile requests, 350 ms debounce (bear median 182.4 ms), faint pending shapes and offline fallback. Desktop interaction check pending.
+- There is one editing view. It always shows the design as stitches: **Lines** (thin needle paths in the
+  thread colour) by default; the 👁 **Realistic view** toggle switches it to **Thread** (the 3D thread
+  render). The toggle only changes how stitches are drawn; tools, selection and editing keep working.
+- ▶ **Play** doesn't change the view either: it shows the timeline bar (play/pause, slider, counter) and the
+  Travel overlay toggle, and plays the needle over the current view; closing it hides the bar.
+- Stitches come from the background compile, made faster after edits. While an object's stitches are out
+  of date (just drawn, moved or changed), its shape is drawn faintly in its colour so editing never waits;
+  shapes stay the hit targets for selecting and dragging. Imported PES files show in the same view.
+- Remove the separate Design/Stitches mode (`view`), keeping its uses (playback, travel, thread canvas)
+  working in the single view.
+
+## Phase 5: layers panel
+Status: implemented. Ordered multi-selection, previews, rename, visibility, pointer reordering, footer actions and shared selection settings. Hidden stitch filtering uses compiler object IDs, including text borders. Desktop interaction check pending.
+- Row: sew-order number, SVG preview in the thread colour, name and stitch type, eye toggle.
+  Double-click to rename.
+- Click selects; Ctrl/⌘-click toggles; Shift-click selects a range. Ctrl/⌘-click on the canvas adds to the
+  selection; dragging a selected object on the canvas moves the whole selection.
+- Pointer-based drag reordering (works on touch); dragging a selected row moves all selected rows.
+- Footer: Group (⌘G), Ungroup (⇧⌘G), top / up / down / bottom, delete.
+- Several selected: the settings overlay shows "N objects" with a shared thread colour, Group/Ungroup and
+  Delete.
+
+## Phase 6: groups (one level)
+Status: implemented. Collapsible group rows, rename, visibility, member selection, block moves and membership drops. Group normalization on load and commits; JSON, autosave and undo/redo retain groups and hidden flags. Desktop interaction check pending.
+- Group row: collapse arrow, name (double-click to rename), member count, eye toggle (all members).
+  Drag a group as a block; drag objects in and out. Clicking a group selects its members.
+- Saved in JSON and autosave, part of undo; `normalizeGroups` runs on load and after every commit.
+
+## Phase 7: higher-contrast theme
+- Overlays, panels and the canvas background currently blend together. Keep the sage/cream character but
+  give clear separation: a darker workspace behind the hoop, opaque overlays with visible borders and
+  shadows, stronger text and icon colours (WCAG AA for text, ≥ 3:1 for controls and focus rings), clearer
+  selected/hover/pressed states for tools, rows and tabs.
+- Colours become tokens on `:root` (surface, panel, border, text, muted, accent, danger, warning…) and the
+  stylesheet uses them instead of literal hex values.
+
+## Phase 8: Turkish UI with a TR/EN switch
+- Turkish by default; a language switch in the project menu, remembered per browser.
+- `lib/i18n.ts`: a small typed dictionary (`tr`, `en`) and `t(key, values)`, no dependency. Every UI
+  string moves there: buttons, hints, banners, settings, stitch/fabric/underlay/lock names and hints,
+  design-check titles, reasons and fixes, errors and messages, aria labels and titles.
+- Number formatting follows the language (decimal comma in Turkish). README stays English.
+- Runs last, once the UI strings from the other phases are stable.

@@ -8,12 +8,13 @@ export type Locks = {tieIn: Lock; tieOff: Lock; lockSize: number};
 // Fabric-driven values are optional: unset values follow the project's fabric profile.
 export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
+  hidden?: boolean; group?: string;
   length: number; angle: number; satinWidth: number;
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
   entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
   tieIn?: Lock; tieOff?: Lock; lockSize?: number; // unset follows the project's locks
-  curve?: {points: Point[]; closed: boolean};
+  curve?: {points: Point[]; closed: boolean; corners?: boolean[]};
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
 };
@@ -21,9 +22,10 @@ export type Artwork = {src: string; name: string; x: number; y: number; width: n
 export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
   fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; artwork?: Artwork;
+  groups?: {id: string; name: string}[];
 };
 // trim: a jump that starts with a thread cut; travel: an untrimmed connecting stitch between runs.
-export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; trim?: boolean; travel?: boolean};
+export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; objectIndex?: number; objectId?: string; fromObjectId?: string; trim?: boolean; travel?: boolean};
 export type Severity = 'fail' | 'check';
 // A compiler design-check finding; bounds [x0, y0, x1, y1] in mm (see lib/check.ts).
 export type RawWarning = {code: string; objectId: string | null; bounds: [number, number, number, number]; severity: Severity; values: Record<string, number>; fromId?: string};
@@ -133,6 +135,51 @@ export function demo(): Project {
 export function pathData(rings: Point[][], closed: boolean) {
   return rings.map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ')+(closed?' Z':'')).join(' ');
 }
+
+const withGroup=(o:StitchObject,group?:string):StitchObject=>{
+  if(o.group===group)return o;
+  const next={...o};delete next.group;return group===undefined?next:{...next,group};
+};
+export function normalizeGroups(p:Project):Project {
+  const known=new Set(p.groups?.map(g=>g.id)),seen=new Set<string>();let previous:string|undefined;
+  const objects=p.objects.map(o=>{
+    const g=o.group,keep=g!==undefined&&known.has(g)&&(g===previous||!seen.has(g));
+    previous=keep?g:undefined;
+    if(keep){seen.add(g);return o;}
+    return withGroup(o);
+  });
+  const groups=p.groups?.filter(g=>seen.has(g.id));
+  return objects.every((o,i)=>o===p.objects[i])&&groups?.length===p.groups?.length?p:{...p,objects,...(groups&&{groups})};
+}
+
+// The insertion index refers to the original order, even when the moved block precedes it.
+export function moveObjects(p:Project,ids:string[],index:number,group?:string|null):Project {
+  const selected=new Set(ids),block=p.objects.filter(o=>selected.has(o.id)).map(o=>withGroup(o,group??undefined));
+  if(!block.length)return normalizeGroups(p);
+  const at=p.objects.slice(0,Math.max(0,Math.min(p.objects.length,index))).filter(o=>!selected.has(o.id)).length;
+  const rest=p.objects.filter(o=>!selected.has(o.id));
+  return normalizeGroups({...p,objects:[...rest.slice(0,at),...block,...rest.slice(at)]});
+}
+export function groupObjects(p:Project,ids:string[],name?:string):{project:Project;groupId:string|null} {
+  const selected=new Set(ids),members=p.objects.filter(o=>selected.has(o.id));
+  if(members.length<2)return {project:p,groupId:null};
+  let n=1;while(p.groups?.some(g=>g.name===`Group ${n}`))n++;
+  const groupId=crypto.randomUUID(),groups=[...(p.groups??[]),{id:groupId,name:name??`Group ${n}`}];
+  return {project:moveObjects({...p,groups},members.map(o=>o.id),p.objects.indexOf(members[0]),groupId),groupId};
+}
+export function ungroupObjects(p:Project,ids:string[]):Project {
+  const selected=new Set(ids),objects=p.objects.map(o=>selected.has(o.id)?withGroup(o):o);
+  return normalizeGroups(objects.every((o,i)=>o===p.objects[i])?p:{...p,objects});
+}
+export function ungroup(p:Project,groupId:string):Project {
+  return ungroupObjects(p,p.objects.filter(o=>o.group===groupId).map(o=>o.id));
+}
+export function moveGroup(p:Project,groupId:string,index:number):Project {
+  const target=p.objects[index]?.group;
+  if(target!==undefined&&target!==groupId)while(index>0&&p.objects[index-1].group===target)index--;
+  return moveObjects(p,p.objects.filter(o=>o.group===groupId).map(o=>o.id),index,groupId);
+}
+
 const validLock=(v:unknown)=>typeof v==='string'&&Object.hasOwn(lockNames,v);
 const validSize=(v:unknown)=>typeof v==='number'&&v>=lockLimits.size[0]&&v<=lockLimits.size[1];
 const validPoint=(pt:unknown)=>Array.isArray(pt)&&pt.length===2&&pt.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000);
@@ -141,11 +188,14 @@ export function validProject(value: unknown): value is Project {
   const p = value as Project;
   if (p.version !== 1 || p.machine !== 'brother-pr1x' || !hoops[p.hoop] || !Object.hasOwn(fabrics,p.fabric) || typeof p.name !== 'string') return false;
   if (!Array.isArray(p.objects) || p.objects.length > 80) return false;
+  if(p.groups!==undefined&&(!Array.isArray(p.groups)||p.groups.length>80||Array.from(p.groups).some(g=>!g||typeof g.id!=='string'||typeof g.name!=='string'||g.name.length>40)||new Set(p.groups.map(g=>g.id)).size!==p.groups.length))return false;
+  const groups=new Set(p.groups?.map(g=>g.id));
   if (!p.locks || typeof p.locks !== 'object' || !validLock(p.locks.tieIn) || !validLock(p.locks.tieOff) || !validSize(p.locks.lockSize)) return false;
   if (typeof p.trimJump !== 'number' || !(p.trimJump >= lockLimits.trim[0] && p.trimJump <= lockLimits.trim[1])) return false;
   let count=0;
   for (const o of p.objects) {
     if (!o || typeof o.id !== 'string' || typeof o.name !== 'string' || !Object.hasOwn(kindNames,o.kind) || !/^#[0-9a-f]{6}$/i.test(o.color) || !Array.isArray(o.rings) || (!o.rings.length && !o.text)) return false;
+    if(o.hidden!==undefined&&typeof o.hidden!=='boolean'||o.group!==undefined&&(typeof o.group!=='string'||!groups.has(o.group)))return false;
     if (o.text !== undefined && (!validText(o.text) || o.curve)) return false;
     for (const r of o.rings) {
       if (!Array.isArray(r) || r.length < (isFillKind(o.kind) ? 3 : 2)) return false;
@@ -164,6 +214,7 @@ export function validProject(value: unknown): value is Project {
     if(o.curve){
       if(typeof o.curve.closed!=='boolean'||!Array.isArray(o.curve.points)||o.curve.points.length<(o.curve.closed?3:2)||o.curve.points.length>200) return false;
       if(!o.curve.points.every(validPoint))return false;
+      if(o.curve.corners!==undefined&&(!Array.isArray(o.curve.corners)||o.curve.corners.length!==o.curve.points.length||Array.from(o.curve.corners).some(c=>typeof c!=='boolean')))return false;
     }
   }
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;

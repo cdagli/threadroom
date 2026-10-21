@@ -3,14 +3,14 @@ import {mergedOutline, transformText} from './text';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
 // The compiler receives flattened millimetre geometry; projects retain anchors.
-export function curveSegments(points: Point[], closed: boolean): Point[][] {
+export function curveSegments(points: Point[], closed: boolean, corners?: boolean[]): Point[][] {
   if(points.length<2)return [];
   if(points.length===2)return [[...points.map(p=>[...p] as Point)]];
   const result:Point[][]=[];
   const at=(i:number)=>points[closed?(i+points.length)%points.length:Math.max(0,Math.min(points.length-1,i))];
   for(let i=0;i<(closed?points.length:points.length-1);i++) {
     const segment:Point[]=[];
-    const a=at(i-1),b=at(i),c=at(i+1),d=at(i+2);
+    const b=at(i),c=at(i+1),a=corners?.[i]?b:at(i-1),d=corners?.[(i+1)%points.length]?c:at(i+2);
     const steps=Math.max(4,Math.ceil((Math.hypot(c[0]-b[0],c[1]-b[1])+Math.hypot(b[0]-a[0],b[1]-a[1])+Math.hypot(d[0]-c[0],d[1]-c[1]))/0.5));
     for(let j=0;j<steps;j++) {
       const t=j/steps,t2=t*t,t3=t2*t;
@@ -21,16 +21,23 @@ export function curveSegments(points: Point[], closed: boolean): Point[][] {
   return result;
 }
 
-export function curvePoints(points:Point[],closed:boolean):Point[] {
+export function curvePoints(points:Point[],closed:boolean,corners?:boolean[]):Point[] {
   if(points.length<3)return points.map(p=>[...p]);
-  const result=curveSegments(points,closed).flatMap(s=>s.slice(0,-1));
+  const result=curveSegments(points,closed,corners).flatMap(s=>s.slice(0,-1));
   if(!closed)result.push([...points[points.length-1]]);
   return result;
+}
+export const curveRing=(curve:NonNullable<StitchObject['curve']>)=>curvePoints(curve.points,curve.closed,curve.corners);
+
+export function setCorner(o:StitchObject,index:number,corner:boolean):StitchObject {
+  if(!o.curve||!Number.isInteger(index)||index<0||index>=o.curve.points.length)return o;
+  const curve={...o.curve,corners:o.curve.points.map((_,i)=>i===index?corner:o.curve!.corners?.[i]??false)};
+  return {...o,curve,rings:[curveRing(curve)]};
 }
 
 export type PointInsertion={ring:number;index:number;point:Point;distance:number};
 function editableSegments(o:StitchObject) {
-  if(o.curve)return curveSegments(o.curve.points,o.curve.closed).map((path,i)=>({ring:0,index:i+1,path}));
+  if(o.curve)return curveSegments(o.curve.points,o.curve.closed,o.curve.corners).map((path,i)=>({ring:0,index:i+1,path}));
   const closed=o.kind==='fill'||o.kind==='cross';
   return o.rings.flatMap((r,ri)=>Array.from({length:closed?r.length:r.length-1},(_,i)=>({ring:ri,index:i+1,path:[r[i],r[(i+1)%r.length]]})));
 }
@@ -60,13 +67,21 @@ export function insertGeometryPoint(o:StitchObject,ring:number,index:number,p:Po
   if(!source||index<0||index>source.length||!p.every(Number.isFinite))return o;
   if(o.curve&&source.length>=200)return o;
   const points=[...source.slice(0,index),[...p] as Point,...source.slice(index)];
-  return o.curve?{...o,curve:{...o.curve,points},rings:[curvePoints(points,o.curve.closed)]}:{...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
+  if(o.curve){
+    const corners=o.curve.corners,curve={...o.curve,points,...(corners&&{corners:[...corners.slice(0,index),false,...corners.slice(index)]})};
+    return {...o,curve,rings:[curveRing(curve)]};
+  }
+  return {...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
 }
 export function removeGeometryPoint(o:StitchObject,ring:number,index:number):StitchObject {
   const source=o.curve?o.curve.points:o.rings[ring],closed=o.curve?.closed||o.kind==='fill'||o.kind==='cross';
   if(!source||source.length<=(closed?3:2)||index<0||index>=source.length)return o;
   const points=source.filter((_,i)=>i!==index);
-  return o.curve?{...o,curve:{...o.curve,points},rings:[curvePoints(points,o.curve.closed)]}:{...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
+  if(o.curve){
+    const corners=o.curve.corners,curve={...o.curve,points,...(corners&&{corners:corners.filter((_,i)=>i!==index)})};
+    return {...o,curve,rings:[curveRing(curve)]};
+  }
+  return {...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
 }
 
 // Entry/exit points and text specs move as ring -1, so dragging one anchor leaves them in place.
@@ -74,8 +89,8 @@ export function moveGeometry(o:StitchObject, move:(p:Point,ring:number,index:num
   const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)})};
   if(o.text)return {...o,...ends,text:transformText(o.text,p=>move(p,-1,-1)),rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
   if(o.curve){
-    const points=o.curve.points.map((p,i)=>move(p,0,i));
-    return {...o,...ends,curve:{...o.curve,points},rings:[curvePoints(points,o.curve.closed)]};
+    const curve={...o.curve,points:o.curve.points.map((p,i)=>move(p,0,i))};
+    return {...o,...ends,curve,rings:[curveRing(curve)]};
   }
   return {...o,...ends,rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
 }

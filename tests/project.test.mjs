@@ -8,6 +8,41 @@ const {geometryPayload}=load('curves');
 const project=(o,fabric='woven')=>({version:1,name:'Fabric',machine:'brother-pr1x',hoop:'100x100',fabric,locks:{...defaultLocks},trimJump:defaultTrimJump,objects:[o]});
 const square=[[30,30],[60,30],[60,60],[30,60]],line=[[30,40],[60,40]];
 
+test('Corner flags are optional boolean arrays aligned with the editable anchors',()=>{
+  const o={...object('Curve',[square]),curve:{points:square,closed:true}};
+  assert.ok(validProject(project(o)));
+  const saved=JSON.parse(JSON.stringify(project({...o,curve:{...o.curve,corners:[true,false,true,false]}})));
+  assert.ok(validProject(saved));assert.deepEqual(saved.objects[0].curve.corners,[true,false,true,false]);
+  for(const corners of [null,true,{},'true',[true],Array(4),[true,false,true,false,false],[true,false,1,false],[true,false,null,false]])
+    assert.equal(validProject(project({...o,curve:{...o.curve,corners}})),false,JSON.stringify(corners));
+});
+
+test('Hidden flags and group references validate and survive JSON without requiring contiguous members',()=>{
+  const o=object('Region',[square]),groups=[{id:'g',name:'Group 1'}];
+  for(const hidden of [undefined,true,false])assert.ok(validProject(project({...o,hidden})));
+  for(const hidden of [null,0,1,'true',{},[]])assert.equal(validProject(project({...o,hidden})),false,JSON.stringify(hidden));
+  const p={...project(o),groups,objects:[{...o,group:'g',hidden:true},{...o,id:'b'},{...o,id:'c',group:'g'}]};
+  assert.ok(validProject(p));assert.ok(validProject(JSON.parse(JSON.stringify(p))));
+  for(const group of [null,1,true,'missing',{}])assert.equal(validProject({...p,objects:[{...o,group}]}),false,JSON.stringify(group));
+  assert.equal(validProject(project({...o,group:'g'})),false);
+  for(const bad of [null,{},true,[null],Array(1),[{}],[{id:1,name:'A'}],[{id:'g',name:1}],[{id:'g',name:'x'.repeat(41)}],[...groups,...groups],Array.from({length:81},(_,i)=>({id:String(i),name:'A'}))])
+    assert.equal(validProject({...project(o),groups:bad}),false,JSON.stringify(bad));
+  assert.ok(validProject({...project(o),groups:[]}));
+  assert.ok(validProject({...project(o),groups:Array.from({length:80},(_,i)=>({id:String(i),name:'x'.repeat(40)}))}));
+  assert.ok(validProject({...project(o),groups:[{id:'g',name:'Same'},{id:'h',name:'Same'}]}));
+});
+
+test('Hidden objects still compile, export and receive design checks',()=>{
+  const {checkProject}=load('check');
+  const o={...object('Hidden',[square]),hidden:true,group:'g'},p={...project(o),groups:[{id:'g',name:'Group 1'}]};
+  const payload=geometryPayload(p);
+  assert.equal(payload.objects.length,1);assert.equal(payload.objects[0].id,o.id);assert.deepEqual(payload.objects[0].rings,[square]);
+  const svg=exportSVG(p);assert.match(svg,/inkscape:label="Hidden"/);assert.match(svg,/M30 30 L60 30 L60 60 L30 60 Z/);
+  assert.equal(svg,exportSVG({...p,objects:[{...o,hidden:false}]}));
+  const edge={...o,rings:[square.map(([x,y])=>[x-40,y])]};
+  assert.ok(checkProject({...p,objects:[edge]}).some(w=>w.code==='outside-hoop'));
+});
+
 test('Fabric profiles are complete and within the editor limits',()=>{
   const keys=Object.keys(fabrics);
   for(const k of ['woven','jersey','rib','fleece','terry','denim'])assert.ok(keys.includes(k),k);
