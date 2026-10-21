@@ -14,3 +14,21 @@ test('Each drag yields exactly one undo step, even when pointer-up is lost',()=>
   h.begin(a);h.update(b);assert.equal(h.cancel(),a);assert.equal(h.end(),null); // cancel restores, no step
   h.update(c);assert.equal(h.end(),null); // moves after the drag ended are ignored
 });
+
+const {frameQueue}=load('drag');
+function scheduler(){let id=0;const frames=new Map();return {frames,request:fn=>{frames.set(++id,fn);return id;},cancel:n=>frames.delete(n),tick(){const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn());}};}
+test('Moves coalesce per animation frame and the final pending move flushes into one undo step',()=>{
+  const s=scheduler(),q=frameQueue(s.request,s.cancel),h=dragHistory(),a={n:0};let current=a,updates=0;
+  h.begin(a);
+  const move=n=>q.push(()=>{current={n};updates++;h.update(current);});
+  move(1);move(2);move(3);assert.equal(s.frames.size,1);assert.equal(updates,0);
+  s.tick();assert.equal(updates,1);assert.deepEqual(current,{n:3});
+  move(4);q.flush();assert.equal(updates,2);assert.deepEqual(current,{n:4});assert.equal(s.frames.size,0);
+  assert.equal(h.end(),a);q.flush();assert.equal(h.end(),null);assert.equal(updates,2);
+});
+test('Cancelling or unmounting drops queued work; flushing a click adds no undo step',()=>{
+  const s=scheduler(),q=frameQueue(s.request,s.cancel),h=dragHistory(),a={n:0};let current=a;
+  h.begin(a);q.flush();assert.equal(h.end(),null);
+  h.begin(a);q.push(()=>{current={n:1};h.update(current);});q.cancel();current=h.cancel();s.tick();assert.equal(current,a);assert.equal(h.end(),null);
+  q.push(()=>assert.fail('unmounted update'));q.cancel();q.cancel();s.tick();assert.equal(s.frames.size,0);
+});

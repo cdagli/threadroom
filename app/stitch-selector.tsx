@@ -1,6 +1,7 @@
 'use client';
 import {useId, useRef, useState, type KeyboardEvent} from 'react';
-import {isFillKind, kindHints, kindNames, type Kind} from '@/lib/project';
+import {kindHints, kindNames, type Kind} from '@/lib/project';
+import {type StitchGroup} from '@/lib/curves';
 
 const samples: Record<Kind,string> = {
   running:'M3 14h7m3 0h7m3 0h7m3 0h8',
@@ -18,10 +19,11 @@ export function StitchIcon({kind}: {kind:Kind}) {
   return <svg className={`stitch-icon stitch-icon-${kind}`} width="42" height="28" viewBox="0 0 42 28" fill="none" stroke="currentColor" strokeWidth={kind==='bean'?1.8:1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={samples[kind]}/>{kind==='manual'&&[[4,21],[13,5],[23,18],[38,8]].map(([x,y])=><circle key={x} cx={x} cy={y} r="2" fill="currentColor" stroke="none"/>)}</svg>;
 }
 
-export default function StitchSelector({value, canFill, onChange}: {value:Kind;canFill:boolean;onChange:(value:Kind)=>void}) {
+export default function StitchSelector({value, groups, onChange}: {value:Kind;groups:StitchGroup[];onChange:(value:Kind)=>void}) {
   const id=useId(), button=useRef<HTMLButtonElement>(null), menu=useRef<HTMLDivElement>(null);
   const [open,setOpen]=useState(false),[position,setPosition]=useState({left:0,top:0,width:260,maxHeight:400});
-  const kinds=Object.keys(kindNames) as Kind[];
+  const currentOnly=!groups.some(g=>g.kinds.includes(value));
+  const shown=currentOnly?[{label:'Current',kinds:[value]},...groups]:groups;
   function place(){
     const rect=button.current!.getBoundingClientRect(),width=Math.min(310,window.innerWidth-24);
     const below=window.innerHeight-rect.bottom-12,above=rect.top-12;
@@ -47,7 +49,7 @@ export default function StitchSelector({value, canFill, onChange}: {value:Kind;c
     <span id={`${id}-label`} className="stitch-label">Stitch style</span>
     <button ref={button} type="button" className="stitch-selector-button" aria-label={`Stitch style: ${kindNames[value]}`} aria-haspopup="menu" aria-expanded={open} aria-controls={id} popoverTarget={id} onClick={place} onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();place();menu.current?.showPopover();}}}><StitchIcon kind={value}/><span>{kindNames[value]}</span><span className="stitch-chevron" aria-hidden="true">⌄</span></button>
     <div ref={menu} id={id} className="stitch-menu" popover="auto" role="menu" aria-labelledby={`${id}-label`} style={position} onKeyDown={navigate} onToggle={e=>{const shown=e.currentTarget.matches(':popover-open');setOpen(shown);if(shown)requestAnimationFrame(()=>menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus());}}>
-      {kinds.map(kind=><button key={kind} type="button" role="menuitemradio" data-name={kindNames[kind]} aria-checked={kind===value} disabled={isFillKind(kind)&&!canFill} title={isFillKind(kind)&&!canFill?'Needs a shape with at least three points':kindHints[kind]} onClick={()=>select(kind)}><StitchIcon kind={kind}/><span><strong>{kindNames[kind]}</strong><small>{kindHints[kind]}</small></span><span className="stitch-check" aria-hidden="true">{kind===value?'✓':''}</span></button>)}
+      {shown.map(group=><div key={group.label} role="group" aria-label={group.label}><h3 className="stitch-group-heading">{group.label}</h3>{group.kinds.map(kind=><button key={kind} type="button" role="menuitemradio" data-name={kindNames[kind]} aria-checked={kind===value} title={kindHints[kind]} onClick={()=>{if(kind===value)close();else select(kind);}}><StitchIcon kind={kind}/><span><strong>{kindNames[kind]}{currentOnly&&kind===value?' · Current':''}</strong><small>{currentOnly&&kind===value?'Saved style · choose a line style to change it':kindHints[kind]}</small></span><span className="stitch-check" aria-hidden="true">{kind===value?'✓':''}</span></button>)}</div>)}
     </div>
   </div>;
 }

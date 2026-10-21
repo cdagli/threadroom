@@ -119,3 +119,24 @@ Status: implemented. Collapsible group rows, rename, visibility, member selectio
   design-check titles, reasons and fixes, errors and messages, aria labels and titles.
 - Number formatting follows the language (decimal comma in Turkish). README stays English.
 - Runs last, once the UI strings from the other phases are stable.
+
+## Queued after Phase 7
+- **Single design-check pill** (done). Merge the issue-count badge and the "likely to fail" pill into one pill
+  (red with the likely-to-fail count when any fail, amber for warnings only, green when ready).
+- **Editor performance** (done). Moving or editing one object currently re-renders everything. Memoised canvas
+  objects, layer rows and previews; derived data cached per object; drag updates batched per animation
+  frame; only the edited object goes faint while the others keep their stitches until the compile
+  returns. Measure before/after on the bear sample and a large traced design.
+- **Ember open/filled mechanics and fill settings.** Spec in `docs/ember-fill-spec.md` (research from
+  Ember's client bundle): Outlined/Filled for open and closed shapes, run types, and Ember's fill panel —
+  pattern, stitch angle (with a canvas angle picker), row space, stitch length, pull compensation, hand
+  stitch, underpath, gradient, density control (row shortening, density trigger) and a list of
+  underlays (angle, row, length, inset each). Implemented in small steps from the spec.
+- **Stitch styles by shape** (done). Fill styles (tatami, cross stitch) only for closed shapes; open paths offer only
+  line stitches. The stitch menu is grouped: "Fill" and "Outline" for closed shapes, "Line" for open ones.
+  Switching a closed shape between fill and outline keeps it closed (the outline sews the closing segment).
+  This deliberately differs from Ember, which can fill an open path.
+- **Image colour picker** (done). An eyedropper beside the thread colour samples the reference image's original
+  pixels at the clicked point, ignoring the reference opacity on screen.
+- **Reference image always at the bottom** (done). In Realistic view the image is drawn into the thread canvas
+  between the fabric and the threads (not in the SVG above it), so stitches always cover it at any opacity.

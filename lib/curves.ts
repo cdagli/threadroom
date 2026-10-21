@@ -1,4 +1,4 @@
-import {fabrics, isFillKind, profileDefault, resolve, type Point, type Project, type Resolved, type StitchObject} from './project';
+import {fabrics, isFillKind, profileDefault, resolve, type Kind, type Point, type Project, type Resolved, type StitchObject} from './project';
 import {mergedOutline, transformText} from './text';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
@@ -27,12 +27,35 @@ export function curvePoints(points:Point[],closed:boolean,corners?:boolean[]):Po
   if(!closed)result.push([...points[points.length-1]]);
   return result;
 }
-export const curveRing=(curve:NonNullable<StitchObject['curve']>)=>curvePoints(curve.points,curve.closed,curve.corners);
+export const curveRing=(curve:NonNullable<StitchObject['curve']>,outline=false)=>{
+  const ring=curvePoints(curve.points,curve.closed,curve.corners);return outline&&curve.closed?reclose([ring],true)[0]:ring;
+};
+
+export function isClosedShape(o:StitchObject):boolean {
+  if(o.text)return true;
+  if(o.curve)return o.curve.closed;
+  if(o.kind==='manual'||!o.rings.length)return false;
+  return o.rings.every(r=>r.length>=3&&(isFillKind(o.kind)||r.length>3&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1]));
+}
+export type StitchGroup={label:string;kinds:Kind[]};
+export function stitchGroups(o:StitchObject):StitchGroup[] {
+  const line:Kind[]=['running','bean','backstitch','satin','zigzag','e-stitch','underlay'];
+  return isClosedShape(o)?[{label:'Fill',kinds:['fill','cross']},{label:'Outline',kinds:line}]:[{label:'Line',kinds:[...line,'manual']}];
+}
+// Text is relaid out by the editor; manual curves become their anchor stitches.
+export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
+  if(kind===o.kind)return o;
+  if(isFillKind(kind)&&!isClosedShape(o))return o;
+  if(o.text)return {...o,kind:kind==='manual'?'running':kind};
+  if(o.curve&&kind==='manual'){const {curve,...plain}=o;return {...plain,kind,rings:[curve.points]};}
+  if(o.curve)return {...o,kind,rings:[curveRing(o.curve,!isFillKind(kind))]};
+  return {...o,kind,rings:isClosedShape(o)?reclose(o.rings,!isFillKind(kind)):o.rings};
+}
 
 export function setCorner(o:StitchObject,index:number,corner:boolean):StitchObject {
   if(!o.curve||!Number.isInteger(index)||index<0||index>=o.curve.points.length)return o;
   const curve={...o.curve,corners:o.curve.points.map((_,i)=>i===index?corner:o.curve!.corners?.[i]??false)};
-  return {...o,curve,rings:[curveRing(curve)]};
+  return {...o,curve,rings:[curveRing(curve,!isFillKind(o.kind))]};
 }
 
 export type PointInsertion={ring:number;index:number;point:Point;distance:number};
@@ -69,7 +92,7 @@ export function insertGeometryPoint(o:StitchObject,ring:number,index:number,p:Po
   const points=[...source.slice(0,index),[...p] as Point,...source.slice(index)];
   if(o.curve){
     const corners=o.curve.corners,curve={...o.curve,points,...(corners&&{corners:[...corners.slice(0,index),false,...corners.slice(index)]})};
-    return {...o,curve,rings:[curveRing(curve)]};
+    return {...o,curve,rings:[curveRing(curve,!isFillKind(o.kind))]};
   }
   return {...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
 }
@@ -79,7 +102,7 @@ export function removeGeometryPoint(o:StitchObject,ring:number,index:number):Sti
   const points=source.filter((_,i)=>i!==index);
   if(o.curve){
     const corners=o.curve.corners,curve={...o.curve,points,...(corners&&{corners:corners.filter((_,i)=>i!==index)})};
-    return {...o,curve,rings:[curveRing(curve)]};
+    return {...o,curve,rings:[curveRing(curve,!isFillKind(o.kind))]};
   }
   return {...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
 }
@@ -90,13 +113,13 @@ export function moveGeometry(o:StitchObject, move:(p:Point,ring:number,index:num
   if(o.text)return {...o,...ends,text:transformText(o.text,p=>move(p,-1,-1)),rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
   if(o.curve){
     const curve={...o.curve,points:o.curve.points.map((p,i)=>move(p,0,i))};
-    return {...o,...ends,curve,rings:[curveRing(curve)]};
+    return {...o,...ends,curve,rings:[curveRing(curve,!isFillKind(o.kind))]};
   }
   return {...o,...ends,rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
 }
 
 // Entry and exit sit on the outline; on open line paths only at an end, where they set the direction.
-const closedRing=(o:StitchObject,r:Point[])=>isFillKind(o.kind)||r.length>3&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])<1e-6;
+const closedRing=(o:StitchObject,r:Point[])=>!!o.curve?.closed||isFillKind(o.kind)||r.length>3&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])<1e-6;
 export const openPath=(o:StitchObject)=>o.rings.length>0&&o.rings.every(r=>!closedRing(o,r));
 export function snapEnd(o:StitchObject,p:Point):Point|null {
   let best:Point|null=null,distance=Infinity;
@@ -178,7 +201,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
   return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
-    if(!o.text)return [o.curve&&line(o.kind)?{...o,rings:o.rings.map(r=>samplePath(r,o.length))}:o];
+    if(!o.text){const rings=o.curve?.closed&&!isFillKind(o.kind)?reclose(o.rings,true):o.rings;return [o.curve&&line(o.kind)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
     const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
     if(!text.border||!(o.kind==='fill'||o.kind==='cross'))return [letters];

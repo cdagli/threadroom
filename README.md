@@ -108,8 +108,8 @@ Export). Each warning has a title, why it matters and one fix, marked **Will
 likely fail** or **Worth checking**. Clicking one selects the object, pans to
 it and rings the problem on the canvas; where it is safe a button fixes it
 (Use running / bean stitch, Split at 7 mm, Make 6 mm tall, Move inside, Sew
-earlier / Sew others later, Trim above 3 mm). Export is never blocked; a red
-pill shows how many issues will likely fail.
+earlier / Sew others later, Trim above 3 mm). Export is never blocked; the check
+pill turns red and shows how many issues will likely fail.
 
 | Check | Where | Worth checking | Will likely fail |
 |---|---|---|---|
@@ -140,7 +140,8 @@ The bear sample and the stitch-library fixture have no warnings on woven cotton.
 
 The editor always shows compiled stitches. **Lines** is the default: thin needle
 paths in the thread colour. **Realistic view** (the eye in the toolbar) toggles
-Lines ↔ **Thread**, a simulation of the sewn design on the project's fabric.
+Lines ↔ **Thread**, a simulation of the sewn design on the project's fabric. The reference image
+always sits under the stitches, at any opacity: in Thread it is painted between the fabric and the threads.
 Selection, drawing, dragging, point editing and entry/exit handles work in both
 looks. The toggle only changes the stitch rendering.
 
@@ -263,6 +264,15 @@ Open **Artwork** in the side panel to import an image, then choose **Auto trace*
 the image automatically and starts a closed shape; use **Reference opacity** to see your tracing clearly.
 Colour count and background removal are under **Trace settings**.
 
+For thread colour, use the colour input or palette in the object settings. The
+**eyedropper** beside it picks from the reference image: click the image to apply
+its original RGB colour, regardless of reference opacity or stitches drawn over
+it. It averages a small neighbourhood at the image’s original resolution and
+ignores fully transparent pixels. With several objects selected it colours all
+of them in one undo step. Clicking outside the image keeps the picker active;
+Escape, the eyedropper button, or choosing a tool cancels. Import reference
+artwork first to enable the button.
+
 - **Open shape / Closed shape / Blocks:** left-click plots a corner (straight
   lines meet sharply); right-click, or double-click, plots a curve point (the path
   bends smoothly through it). Drag draft points to adjust; Enter or **Done** /
@@ -303,8 +313,13 @@ Curve previews use fine samples; running/bean PES exports sample the curve at
 the selected stitch length. Resizing and moving keep anchors and geometry in sync.
 
 The stitch selector includes a small path preview beside every style. Use arrow
-keys to browse, Enter to select, and Escape to close. Fill styles need at least
-three points. Running and straight stitching share one style because both use
+keys to browse (skipping group headings), type a letter to jump to a style,
+Enter to select, and Escape to close. Closed shapes and text offer **Fill**
+(tatami and cross stitch) and **Outline** groups. Open paths offer **Line**
+stitches, including manual needle points. Switching a closed shape to an outline
+sews its closing segment; switching back to fill keeps the shape closed. Older
+projects with an open fill still load and show that saved style as **Current**
+until you choose a line style. Running and straight stitching share one style because both use
 a single sequence of needle positions. Underlay can be a standalone foundation
 line or a layer sewn before a fill or satin object. For cross stitch, **Cross size**
 sets the grid cell size; incomplete crosses at edges or holes are omitted.

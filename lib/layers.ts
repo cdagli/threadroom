@@ -9,13 +9,15 @@ export function selectIds(order:string[],ids:string[],id:string,mode:'replace'|'
 }
 
 // Keep original command indices so hiding layers does not change the playback clock or counts.
-export function visibleCommands(commands:Command[],objects:StitchObject[]){
-  const hidden=new Set(objects.filter(o=>o.hidden).flatMap(o=>[o.id,...(o.text?.border?[`${o.id}-border`]:[])]));
+const visibilityCache=new WeakMap<Command[],Map<string,{commands:Command[];indices:number[]}>>();
+export function visibleCommands(commands:Command[],objects:StitchObject[],excluded:ReadonlySet<string>=new Set()){
+  const hidden=new Set([...excluded,...objects.filter(o=>o.hidden).flatMap(o=>[o.id,...(o.text?.border?[`${o.id}-border`]:[])])]);
+  const key=JSON.stringify([...hidden].sort()),cache=visibilityCache.get(commands)??new Map<string,{commands:Command[];indices:number[]}>(),cached=cache.get(key);if(cached)return cached;
   const indices:number[]=[],visible=commands.filter((c,i)=>{
     if(c.objectId!==undefined&&hidden.has(c.objectId)||(c.type==='jump'||c.travel)&&c.fromObjectId!==undefined&&hidden.has(c.fromObjectId))return false;
     indices.push(i);return true;
   });
-  return {commands:visible.length===commands.length?commands:visible,indices};
+  const value={commands:visible.length===commands.length?commands:visible,indices};if(cache.size>=4)cache.delete(cache.keys().next().value!);cache.set(key,value);visibilityCache.set(commands,cache);return value;
 }
 
 export type LayerRow={key:string;type:'object'|'group';index:number;end:number;name:string;ids:string[];group?:string;object?:StitchObject;collapsed?:boolean};

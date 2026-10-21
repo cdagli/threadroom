@@ -61,15 +61,15 @@ function tile(pattern:FabricPattern,yarn:string,size:number){
 function roundRect(c:Ctx,x:number,y:number,w:number,h:number,r:number){c.beginPath();c.roundRect(x,y,w,h,r);}
 // Workspace, hoop frame and textured fabric; ctx is already in mm with pxPerMm device pixels per mm.
 export function drawFabric(c:Ctx,fabric:Fabric,hoop:{width:number;height:number},pxPerMm:number,view:[number,number,number,number]){
-  const look=fabricLooks[fabric],{width:w,height:h}=hoop;
-  c.fillStyle='#ece8de';c.fillRect(view[0],view[1],view[2]-view[0],view[3]-view[1]);
-  c.save();c.shadowColor='rgba(110,95,70,.25)';c.shadowBlur=1.5*pxPerMm;c.shadowOffsetY=.6*pxPerMm;roundRect(c,-2.4,-2.4,w+4.8,h+4.8,5);c.fillStyle='#d9c9aa';c.fill();c.restore();
+  const look=fabricLooks[fabric],{width:w,height:h}=hoop,theme=getComputedStyle(c.canvas);
+  c.fillStyle=theme.getPropertyValue('--bg-workspace').trim();c.fillRect(view[0],view[1],view[2]-view[0],view[3]-view[1]);
+  c.save();c.shadowColor=theme.getPropertyValue('--hoop-shadow').trim();c.shadowBlur=1.5*pxPerMm;c.shadowOffsetY=.6*pxPerMm;roundRect(c,-2.4,-2.4,w+4.8,h+4.8,5);c.fillStyle=theme.getPropertyValue('--hoop-rim').trim();c.fill();c.restore();
   roundRect(c,0,0,w,h,3);c.fillStyle=look.base;c.fill();
   c.save();c.clip();
   const px=look.period*pxPerMm;
   if(px>=8){const size=Math.min(128,Math.max(16,Math.round(px/8)*8)),p=c.createPattern(tile(look.pattern,look.yarn,size),'repeat')!;p.setTransform(new DOMMatrix([look.period/size,0,0,look.period/size,0,0]));c.globalAlpha=Math.min(.75,(px-8)/10+.3);c.fillStyle=p;c.fillRect(Math.max(0,view[0]),Math.max(0,view[1]),Math.min(w,view[2])-Math.max(0,view[0]),Math.min(h,view[3])-Math.max(0,view[1]));c.globalAlpha=1;}
   c.lineWidth=1.6;c.strokeStyle='rgba(90,75,50,.08)';roundRect(c,0,0,w,h,3);c.stroke();c.restore();
-  c.lineWidth=.35;c.strokeStyle='#b6a583';roundRect(c,0,0,w,h,3);c.stroke();
+  c.lineWidth=.35;c.strokeStyle=theme.getPropertyValue('--hoop-border').trim();roundRect(c,0,0,w,h,3);c.stroke();
 }
 const orient=(ax:number,ay:number,bx:number,by:number,cx:number,cy:number)=>(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
 const opposite=(p:number,q:number)=>(p>1e-9&&q<-1e-9)||(p<-1e-9&&q>1e-9);
