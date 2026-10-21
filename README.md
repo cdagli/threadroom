@@ -59,7 +59,7 @@ Existing project names, layer names and text are preserved; new objects use the 
   continuous. Both are per-object settings with fixed defaults (*Default* /
   *Reset*); text satin borders use the defaults.
 - Underlay: edge walk, light tatami or edge + tatami for fills; center walk,
-  edge walk, light zigzag or edge + zigzag for satin lines. Fill underlay stays
+  edge walk, light zigzag or edge + zigzag for satin lines. Default fill underlay stays
   0.4 mm inside the edge (around holes too, and on nonzero text fills), so it
   never shows past the top stitches. Parts of a fill narrower than 2 mm get no
   underlay; satin narrower than 1.5 mm gets at most a centre walk.
@@ -104,6 +104,67 @@ Existing project names, layer names and text are preserved; new objects use the 
 - Save/load editable JSON projects, autosave locally, undo/redo, and export
   millimetre-sized SVG artwork. SVG retains shapes; JSON retains all editor
   settings. SVG import is rendered as artwork and traced, not native path import.
+
+## Fill and run settings
+
+Closed shapes offer fills; open paths offer line stitches. Switching a closed shape
+between fill and outline keeps its topology. The object panel has collapsible
+**Fill settings** and **Underlays (n)** sections. Spacing and pull still follow the
+fabric profile until edited, with the existing **Fabric / Reset** markers.
+
+- **Stitch tolerance** (`tolerance`, 0.1–1 mm) is available for running, bean and
+  backstitch. Lower values follow curves more closely; higher values permit more
+  corner cutting on smooth parts. Turns sharper than 45° stay needle points.
+  Explicit tolerance uses equal arc divisions with a deviation check. Unset keeps
+  the previous sampling exactly; the suggested starting tolerance is 0.2 mm.
+- **Fill pattern** (`fillPattern`): Even preserves the previous equal row division.
+  Tatami staggers penetrations over four rows; Original aligns columns; Columns
+  alternates two offsets; Offset columns switches every six rows by 6 mm; Triangle
+  rises and falls over six rows; Walk uses seven offsets; Waves uses sinusoidal
+  offsets. `patternParams` sets Waves steps (1–100, initially 20) and amplitude
+  (0–10 mm, initially 2). New drawn shapes and text start with Tatami; existing
+  projects and traced regions with no setting stay Even. Pattern rows and
+  penetrations share an area-centroid anchor across separate parts. Both ends of
+  every row remain penetrations; tiny end fragments are merged and long gaps split.
+  The JSON table in `embroidery/fill-patterns.json` drives both the compiler and
+  SVG thumbnail grid; offset patterns can be added there as data. Hearts are
+  deferred because the source spec gives tile sizes but no exact heart curve.
+- **Stitch angle** uses the existing −180…180° field, with a number input and a
+  draggable circular dial. Arrow keys adjust the focused dial by 1°. Zero follows
+  the x axis; positive angles rotate clockwise on the canvas.
+- **Fill stitch length** (`fillLength`, 1–6 mm) changes cover stitches independently
+  of the run length. Unset uses the object's existing `length`, including legacy
+  values below 1 mm. Underlays retain their own length. The design check warns
+  above 5 mm on jersey, rib and fleece.
+- **Pull compensation** keeps Threadroom's total extension, half per side. Ember
+  specifies extension per side: convert with **Threadroom = 2 × Ember**.
+- **Underlays** (`fillUnderlays`) holds up to three ordered row passes, each with
+  relative angle (−180…180°), row space (1–4 mm), length (1–5 mm) and inset (0–2 mm).
+  Angles remain relative when the cover angle changes. Add uses +90°, +45°, +135°
+  by index, row space 2 mm and inset 0.4 mm. Delete removes a pass; an empty list
+  disables row underlay. Reset returns to the current underlay preset, marked
+  **From fabric** while inherited. Edge walk is a separate flag in the existing
+  `underlay` setting and sews first. The unset row preset is exactly the previous
+  perpendicular tatami (2 mm rows, run length, 0.4 mm inset); no preset silently
+  changes existing PES output. Thin parts still skip underlay.
+- **Hand stitch** (`handStitch`, integer 0–5) adds deterministic sideways jitter to
+  cover-row interior penetrations, keyed by shape ID and stitch index. It uses
+  the spec's intensity/length formula with a correct perpendicular direction,
+  reduces displacement near holes, and keeps row ends and underlays fixed.
+  Zero and unset give identical output.
+- **Gradient** (`gradient`) varies row spacing perpendicular to the cover angle.
+  Ramp uses Start/End percentages, including reversed ramps; Plateau uses Center
+  and Width percentages, with base spacing in the plateau and linear ramps to
+  End row space (0.3–4 mm) at the edges. Disabling removes the setting. Gradient
+  lanes step by local spacing from the minimum edge instead of the centroid.
+
+All fields are optional, validated by both editor and API, retained in JSON,
+autosave and undo/redo, and exported as `data-threadroom-*` SVG attributes when
+set (structured values use JSON). Unset fields preserve existing PES bytes.
+**Underpath off is deferred:** the current interior raster router and the compiler's
+short-jump joining rule cannot guarantee edge-only travel around holes and narrow
+parts. A faithful toggle needs both a boundary travel graph and corresponding
+jump handling; interior routing remains the current behaviour.
 
 ## Design check and travel view
 
@@ -446,7 +507,7 @@ binding is unavailable; its transport fixtures are excluded from deployment.
 
 This is an experimental compiler, not an Ink/Stitch integration or a production
 auto-digitizer. The first deployable version proves the browser/Python boundary.
-It has basic scanline fill, sparse perpendicular fill underlay, constant-width
+It has straight patterned scanline fills, ordered sparse fill underlays, constant-width
 satin foundations, cross-fill grids, and tie stitches. An untrimmed connector
 (shorter than the trim threshold) is a straight stitch even where it crosses a
 hole or sewn stitches; do not set the threshold above a float you would accept.

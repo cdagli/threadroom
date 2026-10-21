@@ -153,3 +153,12 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
 - **Ember drawing mechanics.** Draw open/closed shapes exactly like Ember: right-click creates a curve
   segment the way Ember does, and a closed shape's draft is drawn open (no closing edge or fill) until
   it is completed. Details in `docs/ember-drawing-spec.md`.
+
+- **Ember fill settings (done)**. Steps 2–7: optional run tolerance; data-driven fill
+  patterns and thumbnail picker; angle input/dial; ordered relative-angle underlays
+  with fabric presets; seeded hand stitch; independent fill length; ramp/plateau
+  gradients; validation, SVG metadata and regression tests. Open paths remain line-only.
+  Hearts await curve data; Underpath off awaits boundary routing and jump handling.
+  Desktop browser interaction check remains pending.
+  Decisions taken overnight (review): Escape still discards a drawing draft and draft points stay
+  draggable while drawing — both differ from Ember, which has neither.

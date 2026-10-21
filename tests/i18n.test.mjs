@@ -57,3 +57,40 @@ test('Parser, engine and asynchronous errors have Turkish UI messages',()=>{
   const copy=explain(warning,demo(),'The embroidery engine could not export this design.',translate);
   assert.equal(copy.title,'Dikişler oluşturulamıyor');assert.equal(copy.why,'Nakış motoru bu tasarımı dışa aktaramadı.');
 });
+test('Fill pattern names translate without changing saved pattern IDs or geometry',()=>{
+  const {fillPatterns,patternPreview}=load('fill-patterns');
+  const names={even:'Düz',tatami:'Tatami',original:'Orijinal',columns:'Sütunlar','offset-columns':'Kaydırılmış sütunlar',triangle:'Üçgen',walk:'Yürüyüş',waves:'Dalgalar'};
+  assert.deepEqual(fillPatterns.map(p=>p.id),Object.keys(names));
+  for(const pattern of fillPatterns){
+    assert.equal(createT('tr')(pattern.name),names[pattern.id]);
+    assert.equal(createT('en')(pattern.name),pattern.name);
+    assert.equal(patternPreview(pattern.id).length,12);
+  }
+});
+test('Long knit fill warnings explain the length and fix in the selected language',()=>{
+  const p={...demo(),fabric:'jersey',objects:[{...object('Dolgu',[[[30,30],[60,30],[60,60],[30,60]]]),fillLength:5.5}]};
+  const warning=checkProject(p).find(w=>w.code==='fill-long');assert.ok(warning);
+  assert.deepEqual(explain(warning,p,'',createT('tr')),{
+    title:'Örme kumaşta uzun dolgu dikişleri',why:'5,5 mm uzunluğundaki dolgu dikişleri esnek kumaşta takılabilir veya kayabilir.',fix:'Dolgu dikişi uzunluğunu 5 mm veya altına indir.'
+  });
+  assert.equal(explain(warning,p,'',createT('en')).why,'Fill stitches of 5.5 mm can snag or shift on stretchy fabric.');
+  assert.ok(!checkProject({...p,fabric:'woven'}).some(w=>w.code==='fill-long'));
+  assert.ok(!checkProject({...p,objects:[{...p.objects[0],fillLength:5}]}).some(w=>w.code==='fill-long'));
+});
+test('Fill compiler validation messages retain actionable details in Turkish',()=>{
+  const translate=createT('tr'),fallback='The stitch engine rejected this design.';
+  const labels={fillLength:'Dolgu dikişi uzunluğu',handStitch:'El dikişi','Gradient end spacing':'Gradyan bitiş sıra aralığı','Gradient start':'Gradyan başlangıcı','Gradient end':'Gradyan bitişi','Gradient center':'Gradyan merkezi','Gradient width':'Gradyan genişliği','Underlay angle':'Alt dikiş açısı','Underlay spacing':'Alt dikiş sıra aralığı','Underlay length':'Alt dikiş uzunluğu','Underlay inset':'Alt dikiş içe mesafesi','Wave steps':'Dalga adımları','Wave amplitude':'Dalga genliği','Stitch tolerance':'Dikiş toleransı'};
+  for(const [label,turkish] of Object.entries(labels)){
+    assert.equal(errorText(`${label} must be a finite number.`,translate,fallback),`${turkish} sonlu bir sayı olmalıdır.`);
+    assert.equal(errorText(`${label} must be between -0.3 and 4.`,translate,fallback),`${turkish}, -0,3 ile 4 arasında olmalıdır.`);
+  }
+  assert.equal(errorText('fillLength must be between 1 and 6.',createT('en'),fallback),'Fill stitch length must be between 1 and 6.');
+  assert.equal(errorText('Unknown fill pattern.',translate,fallback),'Bilinmeyen dolgu deseni.');
+  assert.equal(errorText('Hand stitch must be an integer.',translate,fallback),'El dikişi değeri tam sayı olmalıdır.');
+  assert.equal(errorText('Wave steps must be an integer.',translate,fallback),'Dalga adımı sayısı tam sayı olmalıdır.');
+  assert.equal(errorText('Choose a ramp or plateau gradient.',translate,fallback),'Rampa veya plato gradyanı seç.');
+  assert.equal(errorText('Choose up to three fill underlays.',translate,fallback),'En fazla üç dolgu alt dikişi seç.');
+  assert.equal(errorText('Invalid fill underlay.',translate,fallback),'Geçersiz dolgu alt dikişi.');
+  assert.equal(errorText('Invalid fill pattern parameters.',translate,fallback),'Geçersiz dolgu deseni parametreleri.');
+  assert.equal(errorText('Unknown field must be a finite number.',translate,fallback),translate(fallback));
+});

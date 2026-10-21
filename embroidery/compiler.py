@@ -24,6 +24,10 @@ import math
 import re
 import heapq
 import time
+import json
+from pathlib import Path
+
+FILL_PATTERNS = {p["id"]: p for p in json.loads(Path(__file__).with_name("fill-patterns.json").read_text())}
 
 from pystitch import (EmbPattern, EmbThread, STITCH, JUMP, TRIM,
                       COLOR_CHANGE, END, COMMAND_MASK, read_pes, write_pes)
@@ -93,6 +97,39 @@ def validate(project):
                 number(point[1], 0, height, "Y position")
         number(obj.get("spacing"), 0.3, 2, "Stitch spacing")
         number(obj.get("length", 2.5), 0.5, 3, "Stitch length")
+        for key, lo, hi in (("fillLength", 1, 6), ("handStitch", 0, 5)):
+            if key in obj:
+                v = number(obj[key], lo, hi, key)
+                if key == "handStitch" and not v.is_integer():
+                    raise ValueError("Hand stitch must be an integer.")
+        if "gradient" in obj:
+            g = obj["gradient"]
+            if not isinstance(g, dict) or g.get("mode") not in ("ramp", "plateau"):
+                raise ValueError("Choose a ramp or plateau gradient.")
+            number(g.get("endSpacing"), .3, 4, "Gradient end spacing")
+            for key in (("start", "end") if g["mode"] == "ramp" else ("center", "width")):
+                number(g.get(key), 0, 1, "Gradient "+key)
+        if "fillUnderlays" in obj:
+            underlays = obj["fillUnderlays"]
+            if not isinstance(underlays, list) or len(underlays) > 3:
+                raise ValueError("Choose up to three fill underlays.")
+            for u in underlays:
+                if not isinstance(u, dict):
+                    raise ValueError("Invalid fill underlay.")
+                for key, lo, hi in (("angle", -180, 180), ("spacing", 1, 4), ("length", 1, 5), ("inset", 0, 2)):
+                    number(u.get(key), lo, hi, "Underlay "+key)
+        if "fillPattern" in obj and (not isinstance(obj["fillPattern"], str) or obj["fillPattern"] not in FILL_PATTERNS):
+            raise ValueError("Unknown fill pattern.")
+        if "patternParams" in obj:
+            params = obj["patternParams"]
+            if not isinstance(params, dict) or set(params)-{"steps", "amplitude"}:
+                raise ValueError("Invalid fill pattern parameters.")
+            if "steps" in params and not number(params["steps"], 1, 100, "Wave steps").is_integer():
+                raise ValueError("Wave steps must be an integer.")
+            if "amplitude" in params:
+                number(params["amplitude"], 0, 10, "Wave amplitude")
+        if "tolerance" in obj:
+            number(obj["tolerance"], .1, 1, "Stitch tolerance")
         number(obj.get("angle", 0), -180, 180, "Fill angle")
         number(obj.get("satinWidth", 2), 0.5, 10, "Satin width")
         number(obj.get("pullCompensation"), 0, 1, "Pull compensation")
@@ -146,6 +183,48 @@ def line_path(ring, length):
     for a, b in zip(ring, ring[1:]):
         result.extend(interpolate(a, b, length))
     return result
+
+
+def tolerant_path(ring, length, tolerance):
+    """Keep sharp corners; divide each smooth piece equally by arc length.
+    Bisect intervals whose skipped points stray outside the tolerance tube."""
+    points = [ring[0]]
+    for p in ring[1:]:
+        if math.dist(points[-1], p) > 1e-9:
+            points.append(p)
+    cuts = [0]
+    for i in range(1, len(points)-1):
+        a, b, c = points[i-1:i+2]
+        dot = sum((b[k]-a[k])*(c[k]-b[k]) for k in (0, 1))
+        if dot/(math.dist(a, b)*math.dist(b, c)) < math.cos(math.pi/4):
+            cuts.append(i)
+    cuts.append(len(points)-1)
+    out = [points[0]]
+    for start, end in zip(cuts, cuts[1:]):
+        piece = points[start:end+1]
+        distances = [0]
+        for a, b in zip(piece, piece[1:]):
+            distances.append(distances[-1]+math.dist(a, b))
+        total = distances[-1]
+        if not total:
+            continue
+        def at(d):
+            i = next((i for i in range(1, len(distances)) if distances[i] >= d-1e-9), len(piece)-1)
+            t = (d-distances[i-1])/(distances[i]-distances[i-1])
+            return [piece[i-1][k]+t*(piece[i][k]-piece[i-1][k]) for k in (0, 1)]
+        def interval(lo, hi):
+            a, b = at(lo), at(hi)
+            error = max((segment_distance(p, a, b) for p, d in zip(piece, distances) if lo < d < hi), default=0)
+            if error > tolerance and hi-lo > 1e-6:
+                mid = (lo+hi)/2
+                interval(lo, mid)
+                interval(mid, hi)
+            else:
+                out.append(b)
+        n = math.ceil(total/length)
+        for i in range(n):
+            interval(total*i/n, total*(i+1)/n)
+    return out
 
 
 def sample_path(ring, spacing):
@@ -205,12 +284,23 @@ def eroded_spans(rotated, y, rule, inset):
     return [(a+inset, b-inset) for a, b in spans if b-a > 2*inset]
 
 
-def fill_sections(rotated, spacing, rule, pull=0, inset=0):
+def gradient_spacing(g, t, spacing):
+    if g["mode"] == "ramp":
+        a, b = g["start"], g["end"]
+        # A reversed ramp runs from end spacing at the low edge to base at the high edge.
+        u = (t-a)/(b-a) if abs(b-a) > 1e-9 else (1 if t >= a else 0)
+    else:
+        lo, hi = max(0, g["center"]-g["width"]/2), min(1, g["center"]+g["width"]/2)
+        u = (lo-t)/lo if t < lo and lo > 0 else (t-hi)/(1-hi) if t > hi and hi < 1 else 0
+    return spacing+(g["endSpacing"]-spacing)*max(0,min(1,u))
+
+
+def fill_sections(rotated, spacing, rule, pull=0, inset=0, anchor=None, gradient=None):
     """Groups scan-line spans into sections that can be sewn back and forth
     without leaving the shape: a span continues a section only when the two
     overlap exclusively. Letters, and parts split by holes, become sections."""
     ys = [p[1] for r in rotated for p in r]
-    y = min(ys) + spacing/2
+    y = min(ys)+spacing/2 if anchor is None or gradient else anchor+math.ceil((min(ys)-anchor)/spacing)*spacing
     sections, active = [], []
     while y < max(ys):
         row = eroded_spans(rotated, y, rule, inset) if inset else scan_spans(rotated, y, rule)
@@ -227,7 +317,7 @@ def fill_sections(rotated, spacing, rule, pull=0, inset=0):
                 sections.append(section)
                 following.append(section)
         active = following
-        y += spacing
+        y += gradient_spacing(gradient, (y-min(ys))/max(1e-9,max(ys)-min(ys)), spacing) if gradient else spacing
     return sections
 
 
@@ -442,13 +532,77 @@ class Grid:
         return result
 
 
+def hand_stitch(path, angle, length, intensity, shape_id, index=0, region=None):
+    if not intensity:
+        return path
+    out = [path[0]]
+    t = math.radians(angle)
+    for k, p in enumerate(path[1:-1], index+1):
+        seed = 2166136261
+        for byte in (str(shape_id)+"-"+str(k)).encode():
+            seed = ((seed ^ byte)*16777619) & 0xffffffff
+        # Mix the keyed FNV seed; neighbouring stitch indices must not correlate.
+        seed ^= seed >> 16
+        seed = (seed*0x7feb352d) & 0xffffffff
+        seed ^= seed >> 15
+        seed = (seed*0x846ca68b) & 0xffffffff
+        seed ^= seed >> 16
+        r = seed/2**32-.5
+        offset = .1*(math.copysign(abs(r)**1.5,r)*length**2+.02*intensity)*(intensity/5)**1.2
+        q = [p[0]-math.sin(t)*offset, p[1]+math.cos(t)*offset]
+        # Near holes or a curved edge, reduce jitter until the needle stays inside.
+        if region is not None:
+            for _ in range(12):
+                if region.contains(q, 0):
+                    break
+                offset /= 2
+                q = [p[0]-math.sin(t)*offset, p[1]+math.cos(t)*offset]
+            else:
+                q = p
+        out.append(q)
+    return out+[path[-1]]
+
+
+def pattern_offset(pattern, row, length, params=None):
+    p, params = FILL_PATTERNS[pattern], params or {}
+    if p["mode"] == "even":
+        return 0
+    if p["mode"] == "waves":
+        steps = params.get("steps", p["steps"])
+        return (math.sin(2*math.pi*(row % steps)/steps)+1)/2*params.get("amplitude", p["amplitude"])
+    offsets = p["offsets"]
+    return offsets[row % len(offsets)]*(1 if p.get("absolute") else length)
+
+
+def fill_centroid(rings, rule):
+    """Area-weighted centroid, subtracting holes for even-odd regions."""
+    total, cx, cy = 0, 0, 0
+    for ring in rings:
+        cross = [a[0]*b[1]-b[0]*a[1] for a, b in zip(ring, ring[1:]+ring[:1])]
+        area = sum(cross)
+        if abs(area) < 1e-9:
+            continue
+        x = sum((a[0]+b[0])*v for a, b, v in zip(ring, ring[1:]+ring[:1], cross))/(3*area)
+        y = sum((a[1]+b[1])*v for a, b, v in zip(ring, ring[1:]+ring[:1], cross))/(3*area)
+        if rule == "evenodd":
+            depth = sum(inside(ring[0], [other], tolerance=0) for other in rings if other is not ring)
+            area = abs(area)*(-1 if depth % 2 else 1)
+        total, cx, cy = total+area, cx+x*area, cy+y*area
+    return [cx/total, cy/total] if abs(total) > 1e-9 else list(rings[0][0])
+
+
 class Rows:
     """A fill section: rows (y, left, right) in the frame rotated by angle.
     Variants start at either end of the first or the last row."""
     variants = ((False, 0), (False, 1), (True, 0), (True, 1))
 
-    def __init__(self, rows, angle):
+    def __init__(self, rows, angle, pattern=None, anchor=None, spacing=None, params=None, stitch_length=None, lanes=None):
         self.rows, self.angle = rows, angle
+        self.pattern, self.anchor, self.spacing, self.params = pattern, anchor, spacing, params
+        self.stitch_length, self.lanes = stitch_length, lanes
+
+    def subset(self, rows):
+        return Rows(rows, self.angle, self.pattern, self.anchor, self.spacing, self.params, self.stitch_length, self.lanes)
 
     def ordered(self, variant):
         reverse, side = variant
@@ -462,7 +616,21 @@ class Rows:
         return rotate([list(self.ordered(variant)[-1][1])], self.angle, True)[0]
 
     def paths(self, variant, length):
-        return [rotate([a]+interpolate(a, b, length), self.angle, True) for a, b in self.ordered(variant)]
+        if not self.pattern or self.pattern == "even":
+            return [rotate([a]+interpolate(a, b, length), self.angle, True) for a, b in self.ordered(variant)]
+        paths = []
+        for a, b in self.ordered(variant):
+            row = self.lanes[round(a[1],9)] if self.lanes else round((a[1]-self.anchor[1])/self.spacing)
+            offset = pattern_offset(self.pattern, row, length, self.params)
+            base = self.anchor[0]+offset
+            lo, hi = sorted((a[0], b[0]))
+            xs = [base+i*length for i in range(math.floor((lo-base)/length)+1, math.ceil((hi-base)/length))]
+            xs = [x for x in xs if x-lo >= .3-1e-9 and hi-x >= .3-1e-9]
+            points = [[lo, a[1]]]
+            for x in xs+[hi]:
+                points.extend(interpolate(points[-1], [x, a[1]], length))
+            paths.append(rotate(points if a[0] <= b[0] else points[::-1], self.angle, True))
+        return paths
 
 
 class Loop:
@@ -506,28 +674,40 @@ def route_fill(obj, at, entry, target, underlay_only=False):
     region, rotated = Region(rings, rule), [rotate(r, angle) for r in rings]
     grid = Grid(rotated, rule)
     to_grid = lambda p: rotate([p], angle)[0]
+    phases = ("edge", "tatami", "underlay1", "underlay2")
     parts = {}
     def add(piece, phase, point):
         label = grid.component(to_grid(point))
         if label >= 0:
-            parts.setdefault(label, {"edge": [], "tatami": [], "top": []})[phase].append(piece)
-    for rows in fill_sections(rotated, spacing, rule, pull):
-        add(Rows(rows, angle), "top", rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], angle, True)[0])
+            parts.setdefault(label, {phase: [] for phase in (*phases, "top")})[phase].append(piece)
+    pattern = obj.get("fillPattern") if obj["kind"] == "fill" else None
+    anchor = fill_centroid(rotated, rule) if pattern and pattern != "even" else None
+    gradient = obj.get("gradient") if obj["kind"] == "fill" else None
+    sections = fill_sections(rotated, spacing, rule, pull, anchor=anchor[1] if anchor else None, gradient=gradient)
+    lanes = {y:i for i,y in enumerate(sorted({round(row[0],9) for rows in sections for row in rows}))} if gradient else None
+    for rows in sections:
+        add(Rows(rows, angle, pattern, anchor, spacing, obj.get("patternParams"), lanes=lanes), "top", rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], angle, True)[0])
     if "edge" in underlay:
         for ring in inset_rings(rings, region, EDGE_INSET):
             add(Loop(ring), "edge", ring[0])
-    if "tatami" in underlay:
-        for rows in fill_sections([rotate(r, angle+90) for r in rings], 2, rule, 0, EDGE_INSET):
-            add(Rows(rows, angle+90), "tatami", rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], angle+90, True)[0])
+    underlays = obj.get("fillUnderlays") if obj["kind"] == "fill" else None
+    if underlays is None:
+        underlays = [{"angle":90,"spacing":2,"length":length,"inset":EDGE_INSET}] if "tatami" in underlay else []
+    for i, u in enumerate(underlays):
+        ua = angle+u["angle"]
+        for rows in fill_sections([rotate(r, ua) for r in rings], u["spacing"], rule, 0, u["inset"]):
+            add(Rows(rows, ua, stitch_length=u["length"]), "tatami" if i == 0 else "underlay"+str(i), rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], ua, True)[0])
     wide = {grid.label[k] for k, deep in enumerate(grid.deep) if deep}
     for label, part in parts.items():
         if label not in wide:
-            part["edge"], part["tatami"] = [], []
+            for phase in phases:
+                part[phase] = []
     parts = {k: v for k, v in parts.items() if v["top"]}
     if not parts:
         return []
+    top_length = obj.get("fillLength", length) if obj["kind"] == "fill" else length
     tolerance = CONNECT_TOLERANCE+pull/2
-    out, state, links = [], {"at": at, "jump": True}, {}
+    out, state, links = [], {"at": at, "jump": True, "stitch": 0}, {}
     base = min(row[0] for part in parts.values() for piece in part["top"] for row in piece.rows)
     def sew(path):
         if state["jump"]:
@@ -547,7 +727,11 @@ def route_fill(obj, at, entry, target, underlay_only=False):
         return None
     def sew_piece(piece, variant, top):
         rows = piece.rows[::-1] if top and variant[0] else getattr(piece, "rows", None)
-        for i, path in enumerate(piece.paths(variant, length)):
+        for i, path in enumerate(piece.paths(variant, top_length if top else getattr(piece, "stitch_length", None) or length)):
+            if top and obj["kind"] == "fill" and obj.get("handStitch", 0):
+                path = hand_stitch(path, angle, top_length, obj["handStitch"], obj.get("id", ""), state["stitch"], region)
+            if top:
+                state["stitch"] += len(path)
             # Top rows may turn along the edge; underlay turns stay clear of it.
             inward = (lambda p: region.contains(p, tolerance)) if top else (lambda p: region.contains(p, 0) and region.clear(p, .25))
             if not state["jump"] and not all(inward(p) for p in interpolate(state["at"], path[0], .1)):
@@ -559,14 +743,15 @@ def route_fill(obj, at, entry, target, underlay_only=False):
             sew(path)
             if top:
                 grid.mark([rows[i]], spacing)
+    lane = lambda y: lanes[round(y,9)] if lanes else round((y-base)/spacing)
     def link(pieces):
         """links[p]: sections adjoining p's first row and its last row, as
         (section, its adjoining span), and the set of all its neighbours."""
         rows_at = {}
         for piece in pieces:
             for y, l, r in piece.rows:
-                rows_at.setdefault(round((y-base)/spacing), []).append((piece, l, r))
-        touching = lambda piece, row: [(other, a, b) for dk in (-1, 1) for other, a, b in rows_at.get(round((row[0]-base)/spacing)+dk, ())
+                rows_at.setdefault(lane(y), []).append((piece, l, r))
+        touching = lambda piece, row: [(other, a, b) for dk in (-1, 1) for other, a, b in rows_at.get(lane(row[0])+dk, ())
                                        if other is not piece and a < row[2] and row[1] < b]
         for piece in pieces:
             first, end = touching(piece, piece.rows[0]), touching(piece, piece.rows[-1])
@@ -657,9 +842,9 @@ def route_fill(obj, at, entry, target, underlay_only=False):
         _, exit_part, piece, j, side = best
         rows = piece.rows
         before, final = (rows[:j], rows[j:][::-1]) if len(rows)-j <= j+1 else (rows[j+1:], rows[:j+1])
-        final = Rows(final, angle)
-        split = (piece, Rows(before, angle) if before else None, (final, (False, side if (len(final.rows)-1) % 2 else 1-side)))
-    first_phase = lambda part: part["edge"] or part["tatami"] or part["top"]
+        final = piece.subset(final)
+        split = (piece, piece.subset(before) if before else None, (final, (False, side if (len(final.rows)-1) % 2 else 1-side)))
+    first_phase = lambda part: next((part[phase] for phase in phases if part[phase]), part["top"])
     distance = lambda label: min(math.dist(state["at"], piece.start(v)) for piece in first_phase(parts[label]) for v in piece.variants)
     entry_part = grid.component(to_grid(entry)) if entry is not None else -1
     pending = list(parts)
@@ -673,7 +858,7 @@ def route_fill(obj, at, entry, target, underlay_only=False):
             state["jump"] = True
         pending.remove(label)
         part = parts[label]
-        for phase in ("edge", "tatami"):
+        for phase in phases:
             sequence(part[phase], False)
         tops, last = part["top"], None
         if split and label == exit_part:
@@ -880,7 +1065,8 @@ def line_passes(obj, ring):
         pull = obj["pullCompensation"]
         passes.append((satin_path(r, obj["spacing"], width+pull, kind, obj["splitLength"], obj["shortStitches"] and kind != "e-stitch"), SATIN_MAX))
         return passes
-    path = r if kind == "manual" else line_path(r, length)
+    use_tolerance = kind in ("running", "bean", "backstitch") and "tolerance" in obj
+    path = r if kind == "manual" else tolerant_path(r, length, obj["tolerance"]) if use_tolerance else line_path(r, length)
     if kind == "bean":
         triple = [path[0]]
         for a, b in zip(path, path[1:]):
@@ -894,7 +1080,7 @@ def line_passes(obj, ring):
         if len(path) > 1:
             reverse.append(path[-1])
         path = reverse
-    passes.append((path, 3))
+    passes.append((path, length if use_tolerance else 3))
     return passes
 
 
@@ -986,7 +1172,7 @@ def plan_object(obj, at, target):
         if kind == "cross":
             foundation = [[(path, 3)] for path in route_fill(obj, at, entry, None, True)]
             return foundation+route_cross(obj, foundation[-1][-1][0][-1] if foundation else at, None if foundation else entry, exit or target)
-        return [[(path, 3)] for path in route_fill(obj, at, entry, exit or target)]
+        return [[(path, max(3, obj.get("fillLength", 0), *(u["length"] for u in obj.get("fillUnderlays", []))))] for path in route_fill(obj, at, entry, exit or target)]
     return route_lines(obj, at, entry, exit, exit or target)
 
 

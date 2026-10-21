@@ -1,6 +1,7 @@
 'use client';
 import {useT} from './i18n';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
+import {FillSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue} from '@/lib/drag';
@@ -306,7 +307,7 @@ function StudioEditor() {
     if(patch.font||patch.content!==undefined)loadTextFonts(item.id,text);
   }
   function placeText(p:Point){
-    const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),underlay:'edge',text});
+    const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
     loadTextFonts(o.id,text);setSettingsCollapsed(false);
     requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});
@@ -356,6 +357,7 @@ function StudioEditor() {
     const reverse=continuation?.fromStart,anchors=reverse?[...points].reverse():points,anchorCorners=reverse?[...flags].reverse():flags;
     const existing=continuation&&project.objects.find(o=>o.id===continuation.id);
     const next=existing?{...existing,rings:[curvePoints(anchors,false,anchorCorners)]}:object(closedDraft?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
+    if(!existing&&kind==='fill')next.fillPattern='tatami';
     if(pathTool(tool))next.curve={points:anchors.map(p=>[...p]),closed:closedDraft,corners:anchorCorners};
     const wasContinuing=!!continuation;
     commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,next]});setSelected(next.id);setActivePoint(null);cancelDrawing();
@@ -370,7 +372,7 @@ function StudioEditor() {
     setShapeDraft(null);shapePress.current=null;
     const shape=shapeOf(d),xs=shape.points.map(p=>p[0]),ys=shape.points.map(p=>p[1]);
     if(Math.max(...xs)-Math.min(...xs)<1||Math.max(...ys)-Math.min(...ys)<1){setError(t("Click again a little further away to size the shape."));return;}
-    const curve={points:shape.points,closed:true,corners:shape.corners},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),curve};
+    const curve={points:shape.points,closed:true,corners:shape.corners},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),fillPattern:'tatami' as const,curve};
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);setError('');
   }
   function toggleCorner(index:number){
@@ -749,12 +751,14 @@ function StudioEditor() {
           <label>{t("Object name")}<input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
           <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
           <label>{t("Thread colour")}<div className="colour-picker"><input type="color" aria-label={t("Thread colour")} value={item.color} onChange={e=>updateObject({color:e.target.value})}/>{eyedropper}<span>{item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={t("Use thread {v0}",{v0:c})} style={{background:c}} onClick={()=>updateObject({color:c})}/>)}</div></label>
-          <div className="setting-grid"><label>{t("Length · mm")}<input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm{source('spacing')}<input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>
-          {isFillKind(item.kind)&&<label>{t("Fill direction")} <span className="field-value">{formatNumber(item.angle)}°</span><input type="range" min="-90" max="90" value={formatNumber(item.angle)} onChange={e=>updateObject({angle:Number(e.target.value)})}/></label>}
+          {item.kind!=='fill'&&<div className="setting-grid"><label>{t("Length · mm")}<input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm{source('spacing')}<input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>}
+          {['running','bean','backstitch'].includes(item.kind)&&<label>{t("Stitch tolerance · mm")}{item.tolerance!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({tolerance:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:.2})}</span>}<input type="number" min=".1" max="1" step=".1" value={item.tolerance??.2} onChange={e=>{const n=Number(e.target.value);if(n>=.1&&n<=1)updateObject({tolerance:n});}}/></label>}
+          {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source}/>}
+          {item.kind==='cross'&&<StitchAngle value={item.angle} onChange={angle=>updateObject({angle})}/>}
           {isWideKind(item.kind)&&<div className="setting-grid"><label>{t("Width · mm")}<input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label><label htmlFor="split-input">{t("Split above · mm")}{source('splitLength')}<input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
           {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/>{t("Short stitches on curves")}{source('shortStitches')}</label>}
-          {usesPull(item.kind)&&<label htmlFor="pull-input">{t("Pull compensation · mm")}{source('pullCompensation')}<input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
-          {underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input">{t("Underlay")}{source('underlay')}<select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{t(underlayNames[u])}</option>)}</select></label>}
+          {item.kind!=='fill'&&usesPull(item.kind)&&<label htmlFor="pull-input">{t("Pull compensation · mm")}{source('pullCompensation')}<input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
+          {item.kind!=='fill'&&underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input">{t("Underlay")}{source('underlay')}<select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{t(underlayNames[u])}</option>)}</select></label>}
           <div className="setting-grid"><label htmlFor="tie-in-input">{t("Tie-in")}{source('tieIn')}<select id="tie-in-input" value={resolved!.tieIn} onChange={e=>updateObject({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label htmlFor="tie-off-input">{t("Tie-off")}{source('tieOff')}<select id="tie-off-input" value={resolved!.tieOff} onChange={e=>updateObject({tieOff:e.target.value as Lock})}>{lockOptions}</select></label></div>
           {(resolved!.tieIn!=='none'||resolved!.tieOff!=='none')&&<label htmlFor="lock-size-input">{t("Lock size · mm")}{source('lockSize')}<input id="lock-size-input" type="number" min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={resolved!.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))updateObject({lockSize:Number(e.target.value)});}}/></label>}
           <div className="ends-row"><span><i className="end-dot entry"/>{t("Entry ·")} <i className="end-dot exit"/>{t("exit")}</span>{item.entry||item.exit?<button type="button" className="field-value reset" title={t("Return to automatic entry and exit")} onClick={()=>updateObject({entry:undefined,exit:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Auto")}</span>}</div>

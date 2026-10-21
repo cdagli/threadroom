@@ -199,15 +199,16 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
   // Text outlines are also finely tessellated; a text border is sent as a
   // separate object sewn after the letters. Empty text is skipped.
   const line=(kind:string)=>['running','bean','backstitch','underlay','manual'].includes(kind);
+  const tolerant=(o:StitchObject)=>o.tolerance!==undefined&&['running','bean','backstitch'].includes(o.kind);
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
   return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
-    if(!o.text){const rings=o.curve?.closed&&!isFillKind(o.kind)?reclose(o.rings,true):o.rings;return [o.curve&&line(o.kind)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
+    if(!o.text){const rings=o.curve?.closed&&!isFillKind(o.kind)?reclose(o.rings,true):o.rings;return [o.curve&&line(o.kind)&&!tolerant(o)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
-    const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
+    const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?tolerant(o)?closedRings:closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
     if(!text.border||!(o.kind==='fill'||o.kind==='cross'))return [letters];
     const b=text.border,outline=mergedOutline(o.rings);
-    return [letters,{...plain,entry:undefined,exit:undefined,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',splitLength:Number(profileDefault(b.kind,fabric,'splitLength')??0),shortStitches:profileDefault(b.kind,fabric,'shortStitches')===true,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
+    return [letters,{...plain,tolerance:undefined,entry:undefined,exit:undefined,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',splitLength:Number(profileDefault(b.kind,fabric,'splitLength')??0),shortStitches:profileDefault(b.kind,fabric,'shortStitches')===true,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
   })};
 }
 

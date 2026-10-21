@@ -199,3 +199,71 @@ test('Lock and trim settings: project defaults, object overrides and validation'
   assert.match(svg,/data-threadroom-inherited="spacing underlay pull-compensation tie-in"/);
   assert.equal(fromFabric('fill','tieIn'),false);
 });
+
+
+test('Run tolerance is optional, validated, exported and keeps the compiler curve tessellation',()=>{
+  const {curvePoints}=load('curves'),points=[[20,40],[35,20],[55,30],[65,50]];
+  const o={...object('Run',[curvePoints(points,false)],'running'),curve:{points,closed:false}};
+  assert.ok(!('tolerance' in o));
+  for(const tolerance of [.1,.2,1]){
+    const p=project({...o,tolerance});assert.ok(validProject(p));
+    assert.deepEqual(geometryPayload(p).objects[0].rings,o.rings);
+    assert.match(exportSVG(p),new RegExp(`data-threadroom-tolerance="${tolerance}"`));
+  }
+  for(const tolerance of [0,1.1,NaN,null,true,'0.2'])assert.equal(validProject(project({...o,tolerance})),false);
+  assert.doesNotMatch(exportSVG(project(o)),/threadroom-tolerance/);
+});
+
+
+test('Fill pattern table drives validated payloads, JSON and SVG settings',()=>{
+  const {fillPatterns,patternPreview}=load('fill-patterns'),o=object('Fill',[square]);
+  for(const p of fillPatterns){
+    const saved=JSON.parse(JSON.stringify(project({...o,fillPattern:p.id,patternParams:{steps:12,amplitude:0}})));
+    assert.ok(validProject(saved));assert.equal(geometryPayload(saved).objects[0].fillPattern,p.id);
+    assert.match(exportSVG(saved),new RegExp(`data-threadroom-fill-pattern="${p.id}"`));
+    assert.equal(patternPreview(p.id).length,12);
+  }
+  for(const patch of [{fillPattern:'unknown'},{fillPattern:null},{patternParams:null},{patternParams:[]},{patternParams:{steps:1.2}},{patternParams:{steps:0}},{patternParams:{amplitude:11}},{patternParams:{amplitude:NaN}},{patternParams:{extra:1}}])assert.equal(validProject(project({...o,...patch})),false);
+  assert.ok(!('fillPattern' in geometryPayload(project(o)).objects[0]));
+});
+
+test('Fill underlays, hand stitch, independent length and gradients round-trip and validate',()=>{
+  const o=object('Fill',[square]),underlays=[{angle:90,spacing:2,length:2.5,inset:.4},{angle:45,spacing:3,length:5,inset:2}];
+  const ramp={mode:'ramp',start:.2,end:.8,endSpacing:2},plateau={mode:'plateau',center:.5,width:.2,endSpacing:4};
+  for(const gradient of [ramp,plateau]){
+    const saved=JSON.parse(JSON.stringify(project({...o,fillUnderlays:underlays,handStitch:5,fillLength:6,gradient})));
+    assert.ok(validProject(saved));const resolved=geometryPayload(saved).objects[0];
+    for(const key of ['fillUnderlays','handStitch','fillLength','gradient'])assert.deepEqual(resolved[key],saved.objects[0][key]);
+    const svg=exportSVG(saved);
+    for(const attr of ['fill-underlays','hand-stitch','fill-length','gradient'])assert.match(svg,new RegExp(`data-threadroom-${attr}="`));
+    assert.match(svg,/&quot;mode&quot;/);
+  }
+  const {fillUnderlayPreset}=load('project');
+  assert.deepEqual(fillUnderlayPreset('edge-tatami',2.5),[underlays[0]]);assert.deepEqual(fillUnderlayPreset('edge',2.5),[]);
+  for(const fillUnderlays of [[],underlays,[underlays[0],underlays[0],underlays[0]]])assert.ok(validProject(project({...o,fillUnderlays})));
+  for(const patch of [{fillUnderlays:null},{fillUnderlays:[{}]},{fillUnderlays:Array(1)},{fillUnderlays:underlays.concat(underlays)},{fillUnderlays:[{...underlays[0],inset:2.1}]},{fillUnderlays:[{...underlays[0],length:NaN}]},{fillLength:0},{fillLength:6.1},{fillLength:true},{handStitch:1.2},{handStitch:null},{handStitch:6},{gradient:null},{gradient:{}},{gradient:{...ramp,mode:'wave'}},{gradient:{...ramp,end:2}},{gradient:{...plateau,width:-1}},{gradient:{...ramp,endSpacing:Infinity}}])assert.equal(validProject(project({...o,...patch})),false,JSON.stringify(patch));
+  const defaults=geometryPayload(project(o)).objects[0];
+  for(const key of ['fillUnderlays','handStitch','fillLength','gradient'])assert.equal(defaults[key],undefined);
+});
+
+test('Only long fill stitches on knits add a new design warning',()=>{
+  const {checkProject,explain}=load('check');
+  const o={...object('Fill',[square]),fillLength:6};
+  for(const fabric of ['jersey','rib','fleece']){
+    const p=project(o,fabric),w=checkProject(p).find(w=>w.code==='fill-long');assert.ok(w);assert.equal(w.severity,'check');
+    assert.match(explain(w,p).fix,/5 mm/);
+  }
+  for(const p of [project(o),project({...o,fillLength:5},'jersey'),project({...o,kind:'running'},'jersey'),demo()])assert.ok(!checkProject(p).some(w=>w.code==='fill-long'));
+});
+
+
+test('Run tolerance keeps text outlines closed and is ignored by manual and underlay sampling',()=>{
+  const {curvePoints}=load('curves');
+  const o={...object('Text',[square],'bean'),tolerance:.2,text:{border:{kind:'bean',color:'#664538',width:1}}};
+  const letters=geometryPayload(project(o)).objects[0];
+  assert.deepEqual(letters.rings[0][0],letters.rings[0].at(-1));
+  for(const kind of ['manual','underlay']){
+    const points=[[20,40],[35,20],[55,30],[65,50]],curve={points,closed:false},rings=[curvePoints(points,false)],plain={...object('Line',rings,kind),curve};
+    assert.deepEqual(geometryPayload(project({...plain,tolerance:.2})).objects[0].rings,geometryPayload(project(plain)).objects[0].rings);
+  }
+});
