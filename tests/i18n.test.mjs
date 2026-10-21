@@ -59,12 +59,13 @@ test('Parser, engine and asynchronous errors have Turkish UI messages',()=>{
 });
 test('Fill pattern names translate without changing saved pattern IDs or geometry',()=>{
   const {fillPatterns,patternPreview}=load('fill-patterns');
-  const names={even:'Düz',tatami:'Tatami',original:'Orijinal',columns:'Sütunlar','offset-columns':'Kaydırılmış sütunlar',triangle:'Üçgen',walk:'Yürüyüş',waves:'Dalgalar'};
+  const names={even:'Düz',tatami:'Tatami',original:'Orijinal',columns:'Sütunlar','offset-columns':'Kaydırılmış sütunlar',triangle:'Üçgen',walk:'Yürüyüş',waves:'Dalgalar',zigzag:'Zikzak',heartbeat:'Kalp atışı',spiral:'Sarmal',staircase:'Merdiven',rainfall:'Yağmur',tornado:'Hortum',partitionWaveWalk:'Dalgalı yürüyüş',partitionJitter:'Titreşim',partitionBands:'Şeritler',partitionInterlocked:'Geçmeli',partitionRails:'Raylar',partitionTwill:'Dimi',partitionHoundstooth:'Kazayağı',smallHearts:'Kalpler (küçük)',mediumHearts:'Kalpler (orta)',largeHearts:'Kalpler (büyük)',smallDiamond:'Baklavalar (küçük)',mediumDiamond:'Baklavalar (orta)',largeDiamond:'Baklavalar (büyük)',smallCircles:'Daireler (küçük)',mediumCircles:'Daireler (orta)',largeCircles:'Daireler (büyük)',hexweave:'Altıgen örgü',partitionChain:'Zincir',partitionStars:'Yıldızlar'};
   assert.deepEqual(fillPatterns.map(p=>p.id),Object.keys(names));
   for(const pattern of fillPatterns){
     assert.equal(createT('tr')(pattern.name),names[pattern.id]);
     assert.equal(createT('en')(pattern.name),pattern.name);
-    assert.equal(patternPreview(pattern.id).length,12);
+    assert.ok(patternPreview(pattern.id).length>=12);
+    for(const f of pattern.params){assert.ok(Object.hasOwn(en,f.label));assert.ok(tr[f.label]);}
   }
 });
 test('Long knit fill warnings explain the length and fix in the selected language',()=>{
@@ -93,4 +94,12 @@ test('Fill compiler validation messages retain actionable details in Turkish',()
   assert.equal(errorText('Invalid fill underlay.',translate,fallback),'Geçersiz dolgu alt dikişi.');
   assert.equal(errorText('Invalid fill pattern parameters.',translate,fallback),'Geçersiz dolgu deseni parametreleri.');
   assert.equal(errorText('Unknown field must be a finite number.',translate,fallback),translate(fallback));
+});
+
+test('All new parameter validation labels translate compiler errors',()=>{
+  const {fillPatterns}=load('fill-patterns');
+  for(const p of fillPatterns)for(const f of p.params){
+    const translated=errorText(`${f.label} must be a finite number.`,createT('tr'),'The stitch engine rejected this design.');
+    assert.equal(translated,`${createT('tr')(f.label)} sonlu bir sayı olmalıdır.`);
+  }
 });

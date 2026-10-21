@@ -118,17 +118,25 @@ fabric profile until edited, with the existing **Fabric / Reset** markers.
   Explicit tolerance uses equal arc divisions with a deviation check. Unset keeps
   the previous sampling exactly; the suggested starting tolerance is 0.2 mm.
 - **Fill pattern** (`fillPattern`): Even preserves the previous equal row division.
-  Tatami staggers penetrations over four rows; Original aligns columns; Columns
-  alternates two offsets; Offset columns switches every six rows by 6 mm; Triangle
-  rises and falls over six rows; Walk uses seven offsets; Waves uses sinusoidal
-  offsets. `patternParams` sets Waves steps (1–100, initially 20) and amplitude
-  (0–10 mm, initially 2). New drawn shapes and text start with Tatami; existing
-  projects and traced regions with no setting stay Even. Pattern rows and
-  penetrations share an area-centroid anchor across separate parts. Both ends of
-  every row remain penetrations; tiny end fragments are merged and long gaps split.
-  The JSON table in `embroidery/fill-patterns.json` drives both the compiler and
-  SVG thumbnail grid; offset patterns can be added there as data. Hearts are
-  deferred because the source spec gives tile sizes but no exact heart curve.
+  Row patterns: Tatami, Original, Columns, Offset columns, Triangle, Walk, Waves,
+  Zig-Zag, Heartbeat, Spiral, Staircase, Rainfall, Tornado, Wavy Walk, Jitter,
+  Bands, Interlocked, Rails, Twill (continuous shear), and Houndstooth.
+  Tile patterns: Hearts, Diamonds and Circles (small/medium/large), Hexweave,
+  Chain and Stars. Each picker thumbnail shows a full cycle of needle crossings.
+  `patternParams` accepts only the selected pattern's parameters, with defaults,
+  ranges and steps shared by the editor and compiler in `embroidery/fill-patterns.json`.
+  New drawn shapes and text start with Tatami; existing projects and traced regions
+  with no setting stay Even. Pattern lanes and penetrations anchor to each connected
+  piece's area centroid (holes subtract area); lane indices start at its near edge.
+  The Ember along-row frame is mirrored relative to ours. Rows omit their far endpoint
+  when there are interior penetrations, except at section exits or with a gradient.
+  Crossings within 0.35 mm of an endpoint or neighbour are merged: the extra 0.05 mm
+  protects the 0.3 mm short-stitch threshold after PES coordinate rounding.
+  Tile patterns ignore stitch length except Stars, which uses it for its background.
+  Planned intervals, including merged crossings and row turns, survive export without
+  the ordinary 3 mm subdivision. The 12.7 mm machine cap has a 0.15 mm rounding margin.
+  Stitch checks allow intentional pattern floats and satin bites up to 12.7 mm;
+  ordinary sewn moves and inter-object connectors retain the 7 mm warning threshold.
 - **Stitch angle** uses the existing −180…180° field, with a number input and a
   draggable circular dial. Arrow keys adjust the focused dial by 1°. Zero follows
   the x axis; positive angles rotate clockwise on the canvas.

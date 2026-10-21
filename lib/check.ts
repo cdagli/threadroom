@@ -4,6 +4,8 @@ import {moveGeometry, reclose} from './curves';
 
 // Design check: fast geometry checks run in the editor; stitch checks (short/long stitches, density,
 // jumps, trims) come from the compiler (embroidery/compiler.py design_check). Bounds are [x0, y0, x1, y1] mm.
+// Planned pattern fills and satin bites use the 12.7 mm float safety limit; ordinary sewn
+// moves keep 7 mm. Pattern floats are intentional, so trimming connectors cannot fix them.
 export type Box = [number, number, number, number];
 export type Warning = RawWarning & {source: 'design' | 'stitches'; key: string};
 export type Fix = {label: string; title: string; apply: (p: Project) => Project};
@@ -166,7 +168,7 @@ export function explain(w: Warning, p: Project, message = '', t:Translator=creat
     case 'near-edge': return {title: t("Very close to the hoop edge"), why: t("Only {v0} mm from the edge, where fabric puckers and any shift pushes stitches out of the sewing area.",{v0:v.margin}), fix: t("Move it at least {v0} mm in from the edge.",{v0:v.limit})};
     case 'colour-order': return {title: t("Same colour sewn twice"), why: t("You'll change thread {v0} times; sewing each colour together needs only {v1}.",{v0:v.changes,v1:v.minimum}), fix: t("Sew this object next to the other objects of the same colour (Sew earlier / Sew later).")};
     case 'short-stitches': return {title: t("Stitches too short"), why: t("{v0} stitches are under {v1} mm, so the needle keeps hitting the same spot, which frays or breaks thread.",{v0:v.count,v1:v.limit}), fix: t("Enlarge tiny details, smooth sharp tips, or remove points that are very close together.")};
-    case 'long-stitches': return {title: t("Stitches too long"), why: t('longStitches.other',{count:v.count,limit:v.limit,longest:v.longest}), fix: t("Set \"Trim jumps longer than\" in Setup to {v0} mm or less, so long moves are cut instead of sewn.",{v0:v.limit})};
+    case 'long-stitches': return {title: t("Stitches too long"), why: t('longStitches.other',{count:v.count,limit:v.limit,longest:v.longest}), fix: v.limit>limits.satinWide?t("Reduce the pattern size or stitch length; use satin splitting for wide floats."):t("Set \"Trim jumps longer than\" in Setup to {v0} mm or less, so long moves are cut instead of sewn.",{v0:v.limit})};
     case 'dense': return {title: t("Stitches pile up"), why: t("About {v0} layers of thread ({v1} needle holes per mm²) stack here, making a stiff patch that can break needles or cut the fabric.",{v0:v.layers,v1:v.hits}), fix: v.objects > 1 ? t("Cut a hole in the shape underneath, or remove one of the overlapping layers.") : t("Increase the spacing, or use lighter underlay.")};
     case 'long-jump': return {title: t("Long jump between objects"), why: t("The machine cuts the thread and moves {v0} mm to sew the same colour elsewhere, adding time and a loose tail.",{v0:v.length}), fix: t("Sew objects that are close together one after another (Sew earlier / Sew later).")};
     case 'many-trims': return {title: t("Many thread cuts"), why: t("{v0} trims (the machine stops to cut the thread); each adds time and leaves a tail that can pull out.",{v0:v.count}), fix: t("Join nearby pieces into one shape, remove tiny pieces, or raise \"Trim jumps longer than\" in Setup (up to 7 mm).")};
@@ -184,7 +186,7 @@ const replace = (p: Project, next: StitchObject) => ({...p, objects: p.objects.m
 // One-click fixes, offered only where they cannot make the design worse.
 export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix | null {
   const o = p.objects.find(x => x.id === w.objectId);
-  if (w.code === 'long-stitches' && p.trimJump > limits.satinWide) return {label: t("Trim above {v0} mm",{v0:defaultTrimJump}), title: t("Cut the thread for moves longer than {v0} mm",{v0:defaultTrimJump}), apply: q => ({...q, trimJump: defaultTrimJump})};
+  if (w.code === 'long-stitches' && (w.values.limit??limits.satinWide) <= limits.satinWide && p.trimJump > limits.satinWide) return {label: t("Trim above {v0} mm",{v0:defaultTrimJump}), title: t("Cut the thread for moves longer than {v0} mm",{v0:defaultTrimJump}), apply: q => ({...q, trimJump: defaultTrimJump})};
   if (!o) return null;
   switch (w.code) {
     case 'fill-small': case 'fill-narrow':

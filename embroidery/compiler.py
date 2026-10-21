@@ -24,10 +24,8 @@ import math
 import re
 import heapq
 import time
-import json
-from pathlib import Path
 
-FILL_PATTERNS = {p["id"]: p for p in json.loads(Path(__file__).with_name("fill-patterns.json").read_text())}
+from .patterns import FILL_PATTERNS, pattern_cycle
 
 from pystitch import (EmbPattern, EmbThread, STITCH, JUMP, TRIM,
                       COLOR_CHANGE, END, COMMAND_MASK, read_pes, write_pes)
@@ -122,12 +120,14 @@ def validate(project):
             raise ValueError("Unknown fill pattern.")
         if "patternParams" in obj:
             params = obj["patternParams"]
-            if not isinstance(params, dict) or set(params)-{"steps", "amplitude"}:
+            schema = {f["key"]: f for f in FILL_PATTERNS[obj.get("fillPattern", "even")].get("params", [])}
+            if not isinstance(params, dict) or set(params)-schema.keys():
                 raise ValueError("Invalid fill pattern parameters.")
-            if "steps" in params and not number(params["steps"], 1, 100, "Wave steps").is_integer():
-                raise ValueError("Wave steps must be an integer.")
-            if "amplitude" in params:
-                number(params["amplitude"], 0, 10, "Wave amplitude")
+            for key, value in params.items():
+                f = schema[key]
+                v = number(value, f["min"], f["max"], f["label"])
+                if abs((v-f["min"])/f["step"]-round((v-f["min"])/f["step"])) > 1e-7:
+                    raise ValueError("Invalid fill pattern parameters.")
         if "tolerance" in obj:
             number(obj["tolerance"], .1, 1, "Stitch tolerance")
         number(obj.get("angle", 0), -180, 180, "Fill angle")
@@ -564,14 +564,8 @@ def hand_stitch(path, angle, length, intensity, shape_id, index=0, region=None):
 
 
 def pattern_offset(pattern, row, length, params=None):
-    p, params = FILL_PATTERNS[pattern], params or {}
-    if p["mode"] == "even":
-        return 0
-    if p["mode"] == "waves":
-        steps = params.get("steps", p["steps"])
-        return (math.sin(2*math.pi*(row % steps)/steps)+1)/2*params.get("amplitude", p["amplitude"])
-    offsets = p["offsets"]
-    return offsets[row % len(offsets)]*(1 if p.get("absolute") else length)
+    rows, _ = pattern_cycle(pattern, length, .2, params)
+    return rows[row % len(rows)][0]
 
 
 def fill_centroid(rings, rule):
@@ -596,13 +590,13 @@ class Rows:
     Variants start at either end of the first or the last row."""
     variants = ((False, 0), (False, 1), (True, 0), (True, 1))
 
-    def __init__(self, rows, angle, pattern=None, anchor=None, spacing=None, params=None, stitch_length=None, lanes=None):
+    def __init__(self, rows, angle, pattern=None, anchor=None, spacing=None, params=None, stitch_length=None, lanes=None, skip_last=True):
         self.rows, self.angle = rows, angle
         self.pattern, self.anchor, self.spacing, self.params = pattern, anchor, spacing, params
-        self.stitch_length, self.lanes = stitch_length, lanes
+        self.stitch_length, self.lanes, self.skip_last = stitch_length, lanes, skip_last
 
     def subset(self, rows):
-        return Rows(rows, self.angle, self.pattern, self.anchor, self.spacing, self.params, self.stitch_length, self.lanes)
+        return Rows(rows, self.angle, self.pattern, self.anchor, self.spacing, self.params, self.stitch_length, self.lanes, self.skip_last)
 
     def ordered(self, variant):
         reverse, side = variant
@@ -618,18 +612,32 @@ class Rows:
     def paths(self, variant, length):
         if not self.pattern or self.pattern == "even":
             return [rotate([a]+interpolate(a, b, length), self.angle, True) for a, b in self.ordered(variant)]
-        paths = []
-        for a, b in self.ordered(variant):
-            row = self.lanes[round(a[1],9)] if self.lanes else round((a[1]-self.anchor[1])/self.spacing)
-            offset = pattern_offset(self.pattern, row, length, self.params)
-            base = self.anchor[0]+offset
+        paths, ordered = [], self.ordered(variant)
+        cycle, shear = pattern_cycle(self.pattern, length, self.spacing, self.params)
+        for i, (a, b) in enumerate(ordered):
+            row = self.lanes[round(a[1],9)] if self.lanes else round((a[1]-min(r[0] for r in self.rows))/self.spacing)
+            offset, lengths = cycle[row % len(cycle)]
+            lengths = [max(v,.01) for v in lengths]
+            width, base = sum(lengths), self.anchor[0]-offset-shear*row
             lo, hi = sorted((a[0], b[0]))
-            xs = [base+i*length for i in range(math.floor((lo-base)/length)+1, math.ceil((hi-base)/length))]
-            xs = [x for x in xs if x-lo >= .3-1e-9 and hi-x >= .3-1e-9]
-            points = [[lo, a[1]]]
-            for x in xs+[hi]:
-                points.extend(interpolate(points[-1], [x, a[1]], length))
-            paths.append(rotate(points if a[0] <= b[0] else points[::-1], self.angle, True))
+            xs, prefix = [], 0
+            for step in lengths:
+                # Ember Y is minus our along-row x: mirror both offset and cycle.
+                origin = base-prefix
+                xs.extend(origin+q*width for q in range(math.floor((lo-origin)/width)+1, math.ceil((hi-origin)/width)))
+                prefix += step
+            # Allow 0.05 mm for rounding onto PES's 0.1 mm coordinate grid.
+            xs = sorted(x for x in xs if x-lo >= .35-1e-9 and hi-x >= .35-1e-9)
+            kept = []
+            for x in xs:
+                if not kept or x-kept[-1] >= .35-1e-9:
+                    kept.append(x)
+            interior = [[x,a[1]] for x in (kept if a[0] <= b[0] else kept[::-1])]
+            points = [list(a)]+interior
+            # Keep the section exit for the existing boundary/travel router.
+            if not interior or not self.skip_last or i == len(ordered)-1:
+                points.append(list(b))
+            paths.append(rotate(points, self.angle, True))
         return paths
 
 
@@ -681,12 +689,29 @@ def route_fill(obj, at, entry, target, underlay_only=False):
         if label >= 0:
             parts.setdefault(label, {phase: [] for phase in (*phases, "top")})[phase].append(piece)
     pattern = obj.get("fillPattern") if obj["kind"] == "fill" else None
-    anchor = fill_centroid(rotated, rule) if pattern and pattern != "even" else None
     gradient = obj.get("gradient") if obj["kind"] == "fill" else None
-    sections = fill_sections(rotated, spacing, rule, pull, anchor=anchor[1] if anchor else None, gradient=gradient)
-    lanes = {y:i for i,y in enumerate(sorted({round(row[0],9) for rows in sections for row in rows}))} if gradient else None
-    for rows in sections:
-        add(Rows(rows, angle, pattern, anchor, spacing, obj.get("patternParams"), lanes=lanes), "top", rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], angle, True)[0])
+    patterned = pattern and pattern != "even"
+    if patterned:
+        # Match the router's connected pieces; holes and overlapping nonzero rings
+        # stay with their shell, while disconnected pieces get independent phases.
+        groups = {}
+        for ring in rotated:
+            label = grid.component(ring[0])
+            groups.setdefault(label, []).append(ring)
+        for piece_rings in groups.values():
+            anchor = fill_centroid(piece_rings, rule)
+            rows_list = fill_sections(piece_rings, spacing, rule, pull, anchor=anchor[1], gradient=gradient)
+            minimum = min(p[1] for r in piece_rings for p in r)
+            base_lane = anchor[1]+math.ceil((minimum-anchor[1])/spacing)*spacing
+            lane_map = {y:i for i,y in enumerate(sorted({round(row[0],9) for rows in rows_list for row in rows}))} if gradient else {round(row[0],9):round((row[0]-base_lane)/spacing) for rows in rows_list for row in rows}
+            for rows in rows_list:
+                piece = Rows(rows, angle, pattern, anchor, spacing, obj.get("patternParams"), lanes=lane_map, skip_last=not gradient)
+                add(piece, "top", rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], angle, True)[0])
+    else:
+        sections = fill_sections(rotated, spacing, rule, pull, gradient=gradient)
+        lanes = {y:i for i,y in enumerate(sorted({round(row[0],9) for rows in sections for row in rows}))} if gradient else None
+        for rows in sections:
+            add(Rows(rows, angle, lanes=lanes), "top", rotate([[(rows[0][1]+rows[0][2])/2, rows[0][0]]], angle, True)[0])
     if "edge" in underlay:
         for ring in inset_rings(rings, region, EDGE_INSET):
             add(Loop(ring), "edge", ring[0])
@@ -743,10 +768,11 @@ def route_fill(obj, at, entry, target, underlay_only=False):
             sew(path)
             if top:
                 grid.mark([rows[i]], spacing)
-    lane = lambda y: lanes[round(y,9)] if lanes else round((y-base)/spacing)
     def link(pieces):
         """links[p]: sections adjoining p's first row and its last row, as
         (section, its adjoining span), and the set of all its neighbours."""
+        local_lanes = pieces[0].lanes if pieces else None
+        lane = lambda y: local_lanes[round(y,9)] if local_lanes else round((y-base)/spacing)
         rows_at = {}
         for piece in pieces:
             for y, l, r in piece.rows:
@@ -1172,14 +1198,23 @@ def plan_object(obj, at, target):
         if kind == "cross":
             foundation = [[(path, 3)] for path in route_fill(obj, at, entry, None, True)]
             return foundation+route_cross(obj, foundation[-1][-1][0][-1] if foundation else at, None if foundation else entry, exit or target)
-        return [[(path, max(3, obj.get("fillLength", 0), *(u["length"] for u in obj.get("fillUnderlays", []))))] for path in route_fill(obj, at, entry, exit or target)]
+        limit = max(3, obj.get("fillLength", 0), *(u["length"] for u in obj.get("fillUnderlays", [])))
+        paths = route_fill(obj, at, entry, exit or target)
+        if obj.get("fillPattern", "even") != "even":
+            cycle, _ = pattern_cycle(obj["fillPattern"], obj.get("fillLength", obj.get("length", 2.5)), obj["spacing"], obj.get("patternParams"))
+            limit = max(limit, max(v for _, ls in cycle for v in ls)+.01)
+            # Merging tiny crossings and skipLast turns can exceed the raw table's
+            # longest interval. Preserve those planned floats too; split only at
+            # the machine cap, with room for PES's 0.1 mm coordinate rounding.
+            return [[(path, min(SATIN_MAX-.15, max(limit, max(math.dist(a,b) for a,b in zip(path,path[1:]))+.01)))] for path in paths]
+        return [[(path, limit)] for path in paths]
     return route_lines(obj, at, entry, exit, exit or target)
 
 
 # Design check thresholds (mm). Stitches under SHORT_STITCH fray or break the thread; a warning needs
 # SHORT_CLUSTER of them within one SHORT_CELL square (a few at fill row tips are normal), or SHORT_MANY of
 # the object's stitches. Sewn stitches over LONG_STITCH (satin's default split) snag; planned satin
-# bites, jumps and landings are excluded. Density is averaged over DENSE_WINDOW mm squares: needle
+# bites and planned pattern floats use SATIN_MAX; jumps and landings are excluded. Density is averaged over DENSE_WINDOW mm squares: needle
 # penetrations per mm2 and thread layers (sewn thread per mm2 x the woven fill spacing, so one fill is
 # ~1 layer). Two stacked woven fills stay below the check level, three reach it and four (or three with
 # full underlay) fail; clusters smaller than 4 mm2 at the check level are noise. Same-colour jumps
@@ -1212,7 +1247,7 @@ def design_check(trace, cuts, objects):
             add(thread, p[0], p[1], b[2], d/max(1, math.ceil(d/.5)))
         if d < SHORT_STITCH-.01 and b[3] != "lock":
             short.setdefault(b[2], []).append((d, a, b))
-        elif d > LONG_STITCH and b[3] != "bite":
+        elif d > (SATIN_MAX if b[3] in ("bite", "pattern") else LONG_STITCH):
             long_.setdefault(b[2], []).append((d, a, b))
     for i, found in short.items():
         cells = {}
@@ -1227,7 +1262,7 @@ def design_check(trace, cuts, objects):
                              "values": {"count": len(found), "shortest": round(min(d for d, _, _ in found), 2), "limit": SHORT_STITCH, "share": round(share*100, 1)}})
     for i, found in long_.items():
         warnings.append({"code": "long-stitches", "objectId": ident(i), "bounds": box([p[:2] for _, a, b in found for p in (a, b)]),
-                         "severity": "check", "values": {"count": len(found), "longest": round(max(d for d, _, _ in found), 1), "limit": LONG_STITCH}})
+                         "severity": "check", "values": {"count": len(found), "longest": round(max(d for d, _, _ in found), 1), "limit": SATIN_MAX if all(b[3] in ("bite", "pattern") for _, a, b in found) else LONG_STITCH}})
     # Density: 2 x 2 mm windows over 1 mm cells, credited to the object with the most penetrations there.
     dense = {}
     for cx, cy in hits:
@@ -1387,7 +1422,7 @@ def compile_project(project):
         for k, (chunk, limit) in enumerate(chunks):
             for i, point in enumerate(chunk):
                 if i:
-                    sew_to(point, limit, "bite" if limit == SATIN_MAX else "run")
+                    sew_to(point, limit, "pattern" if obj["kind"] == "fill" and obj.get("fillPattern", "even") != "even" else "bite" if limit == SATIN_MAX else "run")
                 else:
                     sew_to(point, 3 if k or last is None or trim else trim_jump+.01, "run" if k or last is None or trim else "connect")
         last = (obj, points)

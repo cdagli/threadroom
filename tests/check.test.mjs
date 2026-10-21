@@ -5,6 +5,7 @@ import {load} from './load-lib.mjs';
 const {checkProject,stitchWarnings,sortWarnings,explain,fixFor,severityNames,raster,limits}=load('check');
 const {object,demo,validProject,defaultLocks,defaultTrimJump}=load('project');
 const {defaultText}=load('text');
+const {createT}=load('i18n');
 const project=(...objects)=>({version:1,name:'Check',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{...defaultLocks},trimJump:defaultTrimJump,objects});
 const rect=(x,y,w,h)=>[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
 const codes=p=>Object.fromEntries(checkProject(p).map(w=>[w.code,w]));
@@ -90,4 +91,11 @@ test('One-click fixes clear their warning and keep the project valid',()=>{
   const trims={...project(),trimJump:9};
   assert.equal(fixFor({code:'long-stitches',objectId:null,bounds:[0,0,1,1],severity:'check',values:{},source:'stitches',key:'k'},trims).apply(trims).trimJump,defaultTrimJump);
   assert.equal(limits.satinWide,7);
+});
+
+test('Over-limit pattern floats explain sizing rather than offering a trim fix',()=>{
+  const p={...demo(),trimJump:10},w={code:'long-stitches',objectId:p.objects[0].id,bounds:[0,0,1,1],severity:'check',values:{count:1,limit:12.7,longest:13},source:'stitches',key:'float'};
+  assert.equal(fixFor(w,p),null);
+  assert.match(explain(w,p).fix,/pattern size/);
+  assert.match(explain(w,p,'',createT('tr')).fix,/Desen boyutunu/);
 });
