@@ -1,3 +1,4 @@
+import {createT,type Translator} from './i18n';
 import type {Point} from './project';
 import {simplifyPath} from './curves';
 
@@ -26,8 +27,8 @@ export type FontLike={unitsPerEm:number;tables:{os2?:{sCapHeight?:number}};charT
 
 export const textLimits={content:300,size:[3,150] as const,tracking:[-30,150] as const,lineHeight:[.8,4] as const,bend:[-100,100] as const,waveHeight:[0,1.5] as const,waveLength:[1,20] as const,borderWidth:[.5,4] as const};
 
-export function defaultText(font:FontRef,origin:Point,content='Your text'):TextSpec {
-  return {content,font,size:12,tracking:0,lineHeight:1.6,align:'center',layout:'straight',bend:25,waveHeight:.3,waveLength:5,offset:50,reverse:false,below:false,origin,rotation:0};
+export function defaultText(font:FontRef,origin:Point,content:string|undefined=undefined,t:Translator=createT('en')):TextSpec {
+  return {content:content??t('Your text'),font,size:12,tracking:0,lineHeight:1.6,align:'center',layout:'straight',bend:25,waveHeight:.3,waveLength:5,offset:50,reverse:false,below:false,origin,rotation:0};
 }
 
 function capHeight(font:FontLike) {

@@ -1,4 +1,6 @@
 'use client';
+import {useT} from './i18n';
+import {createT,errorText,TranslationError} from '@/lib/i18n';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue} from '@/lib/drag';
@@ -26,19 +28,6 @@ import {selectIds, visibleCommands} from '@/lib/layers';
 
 type PanelTab = 'layers' | 'artwork' | 'setup' | 'info';
 type Tool = 'select' | 'pan' | 'measure' | 'open' | 'closed' | 'blocks' | 'freehand' | 'points' | 'text' | 'shape';
-const pathHint='Left click to plot straight lines; right-click or double-click to plot curves. Enter to complete.';
-const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
-  {id:'select',icon:'select',label:'Select',key:'S',alt:'V',title:'Select objects',hint:'Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.'},
-  {id:'pan',icon:'hand',label:'Pan',key:'H',title:'Panning',hint:'Drag to move the canvas. Hold Space to pan with any tool.'},
-  {id:'measure',icon:'ruler',label:'Measure',key:'M',title:'Measuring',hint:'Drag to measure a distance in millimetres.'},
-  {id:'open',icon:'open',label:'Open',key:'1',title:'Drawing Open Shape',hint:pathHint},
-  {id:'closed',icon:'closed',label:'Closed',key:'2',title:'Drawing Closed Shape',hint:`${pathHint} Or click the first point.`},
-  {id:'blocks',icon:'blocks',label:'Blocks',key:'3',title:'Drawing Blocks',hint:`${pathHint} Sews as a satin column.`},
-  {id:'freehand',icon:'pen',label:'Freehand',key:'4',title:'Drawing Freehand',hint:'Click and drag to draw, release to complete.'},
-  {id:'points',icon:'points',label:'Points',key:'P',title:'Placing Points',hint:'Click to place stitch points, then Done.'},
-  {id:'text',icon:'text',label:'Text',key:'T',title:'Adding Text',hint:'Click the hoop to place text.'},
-  {id:'shape',icon:'shapes',label:'Shapes',key:'R',title:'Drawing Shape',hint:'Click to set the center, click again to set the size.'},
-];
 // Open, closed and blocks draw curves whose points are corners (left click) or smooth (right/double-click).
 const pathTool=(t:Tool)=>t==='open'||t==='closed'||t==='blocks';
 const shapeKinds=Object.keys(shapeNames) as ShapeKind[];
@@ -94,7 +83,7 @@ function download(blob: Blob, name: string) {
   const url=URL.createObjectURL(blob), link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function pesBlob(encoded: string) {return new Blob([Uint8Array.from(atob(encoded),c=>c.charCodeAt(0))], {type:'application/octet-stream'});}
-const textName=(content:string)=>content.trim().split('\n')[0].slice(0,30)||'Text';
+
 const outsideHoop=(rings:Point[][],hoop:{width:number;height:number})=>rings.some(r=>r.some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height));
 const initial: Project={version:1,name:'Sleepy little bear',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:defaultLocks,trimJump:defaultTrimJump,objects:[]};
 
@@ -103,7 +92,23 @@ export default process.env.NODE_ENV==='development'&&process.env.NEXT_PUBLIC_EDI
 function ProfiledStudio(){return <Profiler id="Studio" onRender={recordRender}><StudioEditor/></Profiler>;}
 function recordRender(id:string,phase:string,ms:number){performance.measure(`${id}:${phase}`,{start:performance.now()-ms,duration:ms});}
 function StudioEditor() {
-  const [project,setProject]=useState<Project>(initial);
+  const {t,lang,setLang,formatNumber}=useT();
+  const pathHint=t("Left click to plot straight lines; right-click or double-click to plot curves. Enter to complete.");
+  const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
+    {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
+    {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
+    {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t("Drag to measure a distance in millimetres.")},
+    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:pathHint},
+    {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
+    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Sews as a satin column.",{v0:pathHint})},
+    {id:'freehand',icon:'pen',label:t("Freehand"),key:'4',title:t("Drawing Freehand"),hint:t("Click and drag to draw, release to complete.")},
+    {id:'points',icon:'points',label:t("Points"),key:'P',title:t("Placing Points"),hint:t("Click to place stitch points, then Done.")},
+    {id:'text',icon:'text',label:t("Text"),key:'T',title:t("Adding Text"),hint:t("Click the hoop to place text.")},
+    {id:'shape',icon:'shapes',label:t("Shapes"),key:'R',title:t("Drawing Shape"),hint:t("Click to set the center, click again to set the size.")},
+  ];
+
+  const textName=(content:string)=>content.trim().split('\n')[0].slice(0,30)||t("Text");
+  const [project,setProject]=useState<Project>(()=>({...initial,name:t('Sleepy little bear')}));
   const [ready,setReady]=useState(false), [saved,setSaved]=useState(true);
   const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>('select');
   const selected=selection.at(-1)??null,anchor=useRef<string|null>(null);
@@ -145,6 +150,7 @@ function StudioEditor() {
   const hasDraft=draft.length>0;
   const [colours,setColours]=useState(5), [ignoreBg,setIgnoreBg]=useState(true);
   const [showImage,setShowImage]=useState(true), [showTravel,setShowTravel]=useState(false), [look,setLook]=useState<'lines'|'thread'>('lines');
+  useEffect(()=>{setMessage('');setError('');setPickHint('');},[lang]);
   const [designIssues,setDesignIssues]=useState<Warning[]>([]),[checkError,setCheckError]=useState(''),[focusKey,setFocusKey]=useState<string|null>(null);
   const [editPoints,setEditPoints]=useState(false);
   const [panelTab,setPanelTab]=useState<PanelTab>('layers'),[panelOpen,setPanelOpen]=useState(true);
@@ -221,7 +227,8 @@ function StudioEditor() {
     return()=>{window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);};
   },[]);
   useEffect(()=>{
-    let p:Project=demo();
+    let initialT=t;try{if(localStorage.getItem('threadroom-lang')==='en')initialT=createT('en');}catch{/* Storage is optional. */}
+    let p:Project=demo(initialT);
     try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
     p=normalizeGroups(p);current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
@@ -251,9 +258,9 @@ function StudioEditor() {
       let connected=false;
       try{
         const response=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(geometryPayload(p)),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])});
-        if(!response.headers.get('Content-Type')?.includes('application/json'))throw new Error(`The export URL returned a web page (HTTP ${response.status}), rather than the embroidery API. Restart npm run dev to reconnect Python and Next.js.`);
+        if(!response.headers.get('Content-Type')?.includes('application/json'))throw new TranslationError(t,"The export URL returned a web page (HTTP {v0}), rather than the embroidery API. Restart npm run dev to reconnect Python and Next.js.",{v0:response.status});
         const result=await response.json();if(controller.signal.aborted||version!==revision.current)return null;
-        connected=true;setApiState('ready');if(!response.ok){setCheckError(result.error||'The stitch engine rejected this design.');throw new Error(result.error||'Export failed.');}
+        connected=true;setApiState('ready');if(!response.ok){const message=errorText(result.error,t,'The stitch engine rejected this design.');setCheckError(typeof result.error==='string'?result.error:'The stitch engine rejected this design.');throw new Error(message);}
         setCompiledSource(p);setCompiled(result);setProgress(1);setCheckError('');return result as Compiled;
       }catch(e){if(controller.signal.aborted||version!==revision.current)return null;if(!connected)setApiState('offline');throw e;}
     })().finally(()=>{if(compiling.current?.promise===promise)compiling.current=null;});
@@ -288,7 +295,7 @@ function StudioEditor() {
   }
   function loadTextFonts(id:string,spec:TextSpec){
     setFontLoading(n=>n+1);
-    ensureFonts(spec.font,spec.content).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(e instanceof Error?e.message:'The font could not be loaded.')).finally(()=>setFontLoading(n=>n-1));
+    ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
   }
   function updateText(patch:Partial<TextSpec>,merge?:string){
     if(!item?.text)return;
@@ -299,7 +306,7 @@ function StudioEditor() {
     if(patch.font||patch.content!==undefined)loadTextFonts(item.id,text);
   }
   function placeText(p:Point){
-    const text=defaultText(lastFont.current,p),o=layoutObject({...object('Your text',[],'fill',item?.color||palette[3]),underlay:'edge',text});
+    const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
     loadTextFonts(o.id,text);setSettingsCollapsed(false);
     requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});
@@ -307,9 +314,9 @@ function StudioEditor() {
   function focusText(){setSettingsCollapsed(false);requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});}
   function convertText(){
     if(!item?.text)return;
-    if(!item.rings.length){setError('Type some text before converting it to shapes.');return;}
+    if(!item.rings.length){setError(t("Type some text before converting it to shapes."));return;}
     const {text,...shape}=item;void text;
-    commit({...project,objects:project.objects.map(o=>o.id===item.id?{...shape,rings:reclose(shape.rings,!isFillKind(shape.kind))}:o)},'Text converted to editable shapes');
+    commit({...project,objects:project.objects.map(o=>o.id===item.id?{...shape,rings:reclose(shape.rings,!isFillKind(shape.kind))}:o)},t("Text converted to editable shapes"));
   }
   function useGuide(id:string){
     const source=current.current.objects.find(o=>o.id===id&&!o.hidden);if(!source||!item?.text)return;
@@ -340,7 +347,7 @@ function StudioEditor() {
     const kind:Kind=closedDraft?'fill':tool==='blocks'?'satin':tool==='points'?'manual':'running';
     const flags=cornersRef.current.slice(0,points.length);
     const rings=pathTool(tool)?[curvePoints(points,closedDraft,flags)]:[tool==='freehand'?simplifyPath(points):points];
-    if(rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError('Curve exceeds the hoop. Drag its points inward, then finish.');return;}
+    if(rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError(t("Curve exceeds the hoop. Drag its points inward, then finish."));return;}
     const target=pathTarget&&project.objects.find(o=>o.id===pathTarget);
     if(target&&target.text){
       const next=layoutObject({...target,text:{...target.text,layout:'path',path:rings[0]}});
@@ -348,7 +355,7 @@ function StudioEditor() {
     }
     const reverse=continuation?.fromStart,anchors=reverse?[...points].reverse():points,anchorCorners=reverse?[...flags].reverse():flags;
     const existing=continuation&&project.objects.find(o=>o.id===continuation.id);
-    const next=existing?{...existing,rings:[curvePoints(anchors,false,anchorCorners)]}:object(closedDraft?'Closed shape':tool==='blocks'?'Satin block':tool==='open'?'Open shape':tool==='points'?'Point stitches':'Freehand line',rings,kind,item?.color||palette[3]);
+    const next=existing?{...existing,rings:[curvePoints(anchors,false,anchorCorners)]}:object(closedDraft?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
     if(pathTool(tool))next.curve={points:anchors.map(p=>[...p]),closed:closedDraft,corners:anchorCorners};
     const wasContinuing=!!continuation;
     commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,next]});setSelected(next.id);setActivePoint(null);cancelDrawing();
@@ -362,16 +369,16 @@ function StudioEditor() {
   function finishShape(d:{start:Point;end:Point;square:boolean}){
     setShapeDraft(null);shapePress.current=null;
     const shape=shapeOf(d),xs=shape.points.map(p=>p[0]),ys=shape.points.map(p=>p[1]);
-    if(Math.max(...xs)-Math.min(...xs)<1||Math.max(...ys)-Math.min(...ys)<1){setError('Click again a little further away to size the shape.');return;}
-    const curve={points:shape.points,closed:true,corners:shape.corners},o={...object(shapeNames[shapeKind],[curveRing(curve)],'fill',item?.color||palette[3]),curve};
+    if(Math.max(...xs)-Math.min(...xs)<1||Math.max(...ys)-Math.min(...ys)<1){setError(t("Click again a little further away to size the shape."));return;}
+    const curve={points:shape.points,closed:true,corners:shape.corners},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),curve};
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);setError('');
   }
   function toggleCorner(index:number){
     if(!item?.curve)return;const corner=!(item.curve.corners?.[index]??false);
-    if(savePointChange(setCorner(item,index,corner)))setMessage(corner?'Point is now a corner.':'Point is now a curve point.');
+    if(savePointChange(setCorner(item,index,corner)))setMessage(corner?t("Point is now a corner."):t("Point is now a curve point."));
   }
   function deleteSelected(){if(!selected)return;commit({...project,objects:project.objects.filter(o=>!selection.includes(o.id))});setSelected(null);}
-  function groupSelection(){if(items.length<2)return;commit(groupObjects(project,selection).project);}
+  function groupSelection(){if(items.length<2)return;commit(groupObjects(project,selection,undefined,t).project);}
   function ungroupSelection(){commit(ungroupObjects(project,selection));}
   function hideObjects(ids:string[]){const hidden=!project.objects.filter(o=>ids.includes(o.id)).every(o=>o.hidden);commit({...project,objects:project.objects.map(o=>ids.includes(o.id)?{...o,hidden}:o)});}
   function renameObject(id:string,name:string,group:boolean){commit(group?{...project,groups:project.groups?.map(g=>g.id===id?{...g,name:name.slice(0,40)}:g)}:{...project,objects:project.objects.map(o=>o.id===id?{...o,name:name.slice(0,40)}:o)});}
@@ -381,18 +388,18 @@ function StudioEditor() {
     const art=current.current.artwork;if(!art||!selection.length||hasDraft)return;
     endDrag();const session={ids:[...selection],src:art.src};colourPickRef.current=session;setColourPick(session);setPickHint('');setShowImage(true);setHover(null);
     svg.current?.focus({preventScroll:true});
-    void artworkPixels(art.src).catch(e=>{if(colourPickRef.current===session)setPickHint(e instanceof Error?e.message:'Could not read the reference image.');});
+    void artworkPixels(art.src,t).catch(e=>{if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));});
   }
   async function pickColour(p:Point){
     const session=colourPickRef.current,art=current.current.artwork;if(!session||!art)return;
-    if(p[0]<art.x||p[1]<art.y||p[0]>art.x+art.width||p[1]>art.y+art.height){setPickHint('Click inside the reference image.');return;}
+    if(p[0]<art.x||p[1]<art.y||p[0]>art.x+art.width||p[1]>art.y+art.height){setPickHint(t("Click inside the reference image."));return;}
     try{
-      const pixels=await artworkPixels(art.src);
+      const pixels=await artworkPixels(art.src,t);
       if(colourPickRef.current!==session||current.current.artwork!==art)return;
-      const color=sampleArtwork(pixels,art,p);if(!color){setPickHint('No visible image pixels here. Try another point.');return;}
+      const color=sampleArtwork(pixels,art,p);if(!color){setPickHint(t("No visible image pixels here. Try another point."));return;}
       const before=current.current;cancelColourPick();
-      commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?{...o,color}:o)},`Thread colour picked: ${color.toUpperCase()}`);
-    }catch(e){if(colourPickRef.current===session)setPickHint(e instanceof Error?e.message:'Could not read the reference image.');}
+      commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?{...o,color}:o)},t("Thread colour picked: {v0}",{v0:color.toUpperCase()}));
+    }catch(e){if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));}
   }
   function reorderSelection(where:'top'|'up'|'down'|'bottom'){
     const indices=project.objects.flatMap((o,i)=>selection.includes(o.id)?[i]:[]);if(!indices.length)return;
@@ -403,11 +410,11 @@ function StudioEditor() {
   }
   function finishEditing(){setEditPoints(false);setActivePoint(null);setPointMode('move');svg.current?.focus({preventScroll:true});}
   function savePointChange(next:StitchObject){
-    if(next.rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError('That adjustment extends outside the hoop. Move the point inward.');return false;}
+    if(next.rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError(t("That adjustment extends outside the hoop. Move the point inward."));return false;}
     commit({...project,objects:project.objects.map(o=>o.id===next.id?next:o)});return true;
   }
   function addPoint(ring:number,index:number,p:Point){if(!item)return;const next=insertGeometryPoint(item,ring,index,p);if(next===item)return;if(savePointChange(next)){setActivePoint([ring,index]);setPointMode('move');}}
-  function removePoint(location=activePoint){if(!item||!location)return;const next=removeGeometryPoint(item,...location);if(next===item){setError(`Keep at least ${item.curve?.closed||isFillKind(item.kind)?3:2} points in this path.`);return;}if(savePointChange(next)){setActivePoint(null);svg.current?.focus({preventScroll:true});}}
+  function removePoint(location=activePoint){if(!item||!location)return;const next=removeGeometryPoint(item,...location);if(next===item){setError(t("Keep at least {v0} points in this path.",{v0:item.curve?.closed||isFillKind(item.kind)?3:2}));return;}if(savePointChange(next)){setActivePoint(null);svg.current?.focus({preventScroll:true});}}
   function continueCurve(){
     if(!item?.curve||item.curve.closed)return;
     const fromStart=activePoint?.[1]===0,points=item.curve.points.map(p=>[...p] as Point),flags=item.curve.points.map((_,i)=>item.curve!.corners?.[i]??false);
@@ -481,7 +488,7 @@ function StudioEditor() {
       const anchor=target.closest('[data-draft-point]')?.getAttribute('data-draft-point');
       const index=smooth?-1:anchor!==undefined&&anchor!==null?Number(anchor):closedDraft&&canFinish&&Math.hypot(p[0]-draft[0][0],p[1]-draft[0][1])*scale<12?0:-1;
       if(index>=0){draftDrag.current={index,start:[e.clientX,e.clientY],before:draft,moved:false};capture(e);return;}
-      if(pathTool(tool)&&draft.length>=200){setError('Use at most 200 curve points. Finish this curve to start another.');return;}
+      if(pathTool(tool)&&draft.length>=200){setError(t("Use at most 200 curve points. Finish this curve to start another."));return;}
       if(!draft.length||Math.hypot(p[0]-draft[draft.length-1][0],p[1]-draft[draft.length-1][1])*scale>3){setDraft(d=>[...d,p]);setCorners(c=>[...c,!smooth]);}
       else if(smooth)setCorners(c=>c.map((v,i)=>i===c.length-1?false:v));
     }
@@ -551,7 +558,7 @@ function StudioEditor() {
     if(drawing){setDrawing(false);if(draftRef.current.length>=2)finish(draftRef.current,true);else cancelDrawing();}
   }
   function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
-  function chooseTool(t:Tool){cancelColourPick();if(draftRef.current.length){if(t==='pan')setPanMode(p=>!p);else if(t===tool)setPanMode(false);return;}setTool(t);cancelDrawing();setMeasure(null);stopPlayback();if(t==='text')ensureFonts(lastFont.current,'Your text').catch(()=>{});}
+  function chooseTool(next:Tool){cancelColourPick();if(draftRef.current.length){if(next==='pan')setPanMode(p=>!p);else if(next===tool)setPanMode(false);return;}setTool(next);cancelDrawing();setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
   function fitArtwork(width=project.artwork?.width||hoop.width,height=project.artwork?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
   function editObject(){setTool('select');setEditPoints(true);setActivePoint(null);setPointMode('move');}
@@ -567,53 +574,53 @@ function StudioEditor() {
     commit({...project,objects:project.objects.map(o=>moveGeometry(o,([x,y])=>[cx+(x-cx)*scale,cy+(y-cy)*scale]))});
   }
   async function importFile(f:File){
-    if(hasDraft){setError('Finish or cancel the current path before importing.');return;}
+    if(hasDraft){setError(t("Finish or cancel the current path before importing."));return;}
     setError('');setMessage('');setDraft([]);chooseTool('select');
     try{
-      if(f.size>8*1024*1024)throw new Error('Choose a file smaller than 8 MB.');
+      if(f.size>8*1024*1024)throw new TranslationError(t,"Choose a file smaller than 8 MB.");
       if(/\.json$/i.test(f.name)){
-        const p:unknown=JSON.parse(await f.text());if(!validProject(p))throw new Error('This is not a supported Threadroom project.');
+        const p:unknown=JSON.parse(await f.text());if(!validProject(p))throw new TranslationError(t,"This is not a supported Threadroom project.");
         commit(p);setSelected(p.objects[0]?.id||null);fit();leavePanel();return;
       }
       if(/\.(pes|pec)$/i.test(f.name)){
         const data=await f.arrayBuffer(), parsed=parse(data,f.name), h=hoops[project.hoop];
-        if(parsed.commands.length>100000)throw new Error('This prototype previews files with up to 100,000 stitch commands.');
+        if(parsed.commands.length>100000)throw new TranslationError(t,"This prototype previews files with up to 100,000 stitch commands.");
         const dx=h.width/2-(parsed.bounds.minX+parsed.bounds.maxX)/2,dy=h.height/2-(parsed.bounds.minY+parsed.bounds.maxY)/2;
         commit({...project,name:parsed.name,objects:[],artwork:undefined});
         let binary='';for(const b of new Uint8Array(data))binary+=String.fromCharCode(b);
         setCompiled({pes:btoa(binary),filename:f.name,commands:parsed.commands.filter(c=>c.type==='stitch'||c.type==='jump').map(c=>({...c,x:c.x+dx,y:c.y+dy,fromX:c.fromX+dx,fromY:c.fromY+dy})),threads:parsed.blocks,stats:{stitches:parsed.stitches,jumps:parsed.jumps,jumpLength:Math.round(parsed.commands.filter((c,i)=>i&&c.type==='jump').reduce((s,c)=>s+Math.hypot(c.x-c.fromX,c.y-c.fromY),0)*10)/10,trims:parsed.trims,colorChanges:parsed.colorChanges,width:parsed.width,height:parsed.height,maxStitch:0,bytes:f.size,durationMs:0},engine:'Imported PES',pesVersion:'Imported'});
         setSelected(null);fit();leavePanel();return;
       }
-      if(!/\.(png|jpe?g|webp|svg)$/i.test(f.name))throw new Error('Choose PNG, JPG, WebP, SVG, PES, PEC, or a Threadroom JSON project.');
+      if(!/\.(png|jpe?g|webp|svg)$/i.test(f.name))throw new TranslationError(t,"Choose PNG, JPG, WebP, SVG, PES, PEC, or a Threadroom JSON project.");
       const src=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(f);});
       await loadImage(src,f.name);leavePanel();
-    }catch(e){setError(e instanceof Error?e.message:'This file could not be opened.');}
+    }catch(e){setError(errorText(e,t,'This file could not be opened.'));}
   }
   async function loadImage(src:string,name:string){
     const img=new Image();img.src=src;await img.decode();
-    if(img.naturalWidth*img.naturalHeight>25_000_000)throw new Error('Use an image smaller than 25 megapixels.');
+    if(img.naturalWidth*img.naturalHeight>25_000_000)throw new TranslationError(t,"Use an image smaller than 25 megapixels.");
     const ratio=img.naturalHeight/img.naturalWidth, width=Math.min(60,hoop.width*0.75,hoop.height*0.75/ratio),height=width*ratio;
     commit({...project,name:name.replace(/\.[^.]+$/,''),objects:[],artwork:{src,name,width,height,x:(hoop.width-width)/2,y:(hoop.height-height)/2}});setSelected(null);setShowImage(true);setImageOpacity(.65);fitArtwork(width,height);setTool('closed');
   }
   async function trace(){
     if(!project.artwork||hasDraft)return;setBusy(true);setError('');
     const before=project, version=revision.current;
-    try{const objects=await traceArtwork(before.artwork!,colours,ignoreBg);if(revision.current!==version)return;commit({...before,objects},`${objects.length} regions traced`);setSelected(objects[0]?.id||null);setShowImage(true);setImageOpacity(.25);setEditPoints(false);setTool('select');leavePanel();}catch(e){setError(e instanceof Error?e.message:'Tracing failed.');}finally{setBusy(false);}
+    try{const objects=await traceArtwork(before.artwork!,colours,ignoreBg,t);if(revision.current!==version)return;commit({...before,objects},t('regions.other',{count:objects.length}));setSelected(objects[0]?.id||null);setShowImage(true);setImageOpacity(.25);setEditPoints(false);setTool('select');leavePanel();}catch(e){setError(errorText(e,t,'Tracing failed.'));}finally{setBusy(false);}
   }
   async function generate(exportFile=false):Promise<boolean>{
-    if(hasDraft){setError('Finish or cancel the current path before previewing.');return false;}
+    if(hasDraft){setError(t("Finish or cancel the current path before previewing."));return false;}
     setBusy(true);setError('');
     try{
       const result=(compileFresh?compiled:null)??await compile(project,revision.current);if(!result)return false;
       setMessage('');if(exportFile){download(pesBlob(result.pes),result.filename);exported();}return true;
-    }catch(e){setError(e instanceof Error&&e.name!=='SyntaxError'?e.message:'The Python API is unavailable. Start with npm run dev, or check the Vercel Python Function logs.');return false;}finally{setBusy(false);}
+    }catch(e){setError(errorText(e,t,'The Python API is unavailable. Start with npm run dev, or check the Vercel Python Function logs.'));return false;}finally{setBusy(false);}
   }
   async function play(){
     if(timeline){setTimeline(false);setShowTravel(false);stopPlayback();return;}
     const request=++playRequest.current;setTimeline(true);if(await generate()&&request===playRequest.current){setProgress(0);setPlaying(true);}
   }
   function toggleRealistic(){setLook(l=>l==='lines'?'thread':'lines');}
-  function exported(){if(fails)setMessage(`Exported with ${fails} problem${fails>1?'s':''} that will likely fail. Fix ${fails>1?'them':'it'} or test-stitch on scrap fabric first.`);}
+  function exported(){if(fails)setMessage(t('exportProblems.other',{count:fails}));}
   const resetEnd=useStableCallback((key:'entry'|'exit')=>updateObject({[key]:undefined}));
   const stableAddPoint=useStableCallback(addPoint),stableSavePoint=useStableCallback(savePointChange),stableRemovePoint=useStableCallback(removePoint);
   const sewn=compiled?Math.floor(compiled.commands.length*progress):0;
@@ -634,7 +641,7 @@ function StudioEditor() {
   const fails=issues.filter(w=>w.severity==='fail').length,checks=issues.length-fails;
   const stitchState=imported||!project.objects.length?'none':compileFresh||checkError?'done':apiState==='offline'?'offline':'pending';
   const focus=issues.find(w=>w.key===focusKey)||null,focusIndex=focus?issues.indexOf(focus):-1;
-  const focusCopy=focus&&explain(focus,project,checkError),focusFix=focus&&fixFor(focus,project);
+  const focusCopy=focus&&explain(focus,project,checkError,t),focusFix=focus&&fixFor(focus,project,t);
   function focusIssue(w:Warning){setFocusKey(w.key);if(w.objectId&&project.objects.some(o=>o.id===w.objectId))setSelected(w.objectId);closePanel('check-panel');reveal(w.bounds);}
   // Pans (and zooms out if needed) so the problem is on screen; the marker keeps a minimum screen size.
   function reveal([x0,y0,x1,y1]:Box){
@@ -643,39 +650,41 @@ function StudioEditor() {
     const zoom=Math.min(v.zoom,Math.max(.5,Math.min(hoop.width*1.18/((x1-x0)*1.3+6),hoop.height*1.18/((y1-y0)*1.3+6))));
     applyViewport({zoom,pan:[(x0+x1)/2-hoop.width/2,(y0+y1)/2-hoop.height/2]});
   }
-  function applyFix(w:Warning){const fix=fixFor(w,project);if(!fix)return;commit(fix.apply(project),`Fixed: ${explain(w,project).title.toLowerCase()}.`);setFocusKey(null);}
-  const objectName=(id:string|null)=>project.objects.find(o=>o.id===id)?.name||'Whole design';
-  const badge=issues.length?`${issues.length} issue${issues.length>1?'s':''}`:stitchState==='pending'?'Checking…':stitchState==='offline'?'Shapes OK':'Ready to stitch';
+  function applyFix(w:Warning){const fix=fixFor(w,project,t);if(!fix)return;commit(fix.apply(project),t("Fixed: {v0}.",{v0:explain(w,project,'',t).title.toLocaleLowerCase(lang)}));setFocusKey(null);}
+  const objectName=(id:string|null)=>project.objects.find(o=>o.id===id)?.name||t("Whole design");
+  const badge=issues.length?t('issues.other',{count:issues.length}):stitchState==='pending'?t("Checking…"):stitchState==='offline'?t("Shapes OK"):t("Ready to stitch");
   const needle=visible?.indices[visibleSewn-1]===sewn-1?compiled?.commands[sewn-1]:undefined;
   const count=compiled?sewnStitches(compiled,sewn):0,thread=look==='thread'&&!!compiled;
 
-  const source=(key:Setting)=>!item?null:item[key]!==undefined?<button type="button" className="field-value reset" title={isLockSetting(key)?'Reset to the Setup value':fromFabric(item.kind,key)?'Reset to the fabric default':'Reset to the default'} onClick={e=>{e.preventDefault();updateObject({[key]:undefined});}}>Reset</button>:<span className="field-value inherited">{isLockSetting(key)?'Setup':fromFabric(item.kind,key)?'Fabric':'Default'}</span>;
-  const lockOptions=Object.entries(lockNames).map(([k,v])=><option key={k} value={k}>{v}</option>);
+  const source=(key:Setting)=>!item?null:item[key]!==undefined?<button type="button" className="field-value reset" title={isLockSetting(key)?t("Reset to the Setup value"):fromFabric(item.kind,key)?t("Reset to the fabric default"):t("Reset to the default")} onClick={e=>{e.preventDefault();updateObject({[key]:undefined});}}>{t("Reset")}</button>:<span className="field-value inherited">{isLockSetting(key)?t("Setup"):fromFabric(item.kind,key)?t("Fabric"):t("Default")}</span>;
+  const lockOptions=Object.entries(lockNames).map(([k,v])=><option key={k} value={k}>{t(v)}</option>);
   const setLocks=(patch:Partial<Locks>,merge?:string)=>commit({...project,locks:{...project.locks,...patch}},'',merge&&`setup:${merge}`);
   const inRange=(v:string,[a,b]:readonly [number,number])=>v!==''&&Number(v)>=a&&Number(v)<=b;
-  const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:'Layers'},{id:'artwork',icon:'image',label:'Artwork'},{id:'setup',icon:'settings',label:'Setup'},{id:'info',icon:'info',label:'Info'}];
-  const eyedropper=<button type="button" className="image-eyedropper" aria-label="Pick thread colour from reference image" title={project.artwork?'Pick original reference image colour':'Import reference artwork to pick a colour'} aria-pressed={!!colourPick} disabled={!project.artwork} onClick={toggleColourPick}><Icon name="eyedropper" size={17}/></button>;
+  const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:t("Layers")},{id:'artwork',icon:'image',label:t("Artwork")},{id:'setup',icon:'settings',label:t("Setup")},{id:'info',icon:'info',label:t("Info")}];
+  const eyedropper=<button type="button" className="image-eyedropper" aria-label={t("Pick thread colour from reference image")} title={project.artwork?t("Pick original reference image colour"):t("Import reference artwork to pick a colour")} aria-pressed={!!colourPick} disabled={!project.artwork} onClick={toggleColourPick}><Icon name="eyedropper" size={17}/></button>;
   return <main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
-    <input ref={file} type="file" tabIndex={-1} className="visually-hidden" aria-label="Import artwork or project" accept=".png,.jpg,.jpeg,.webp,.svg,.pes,.pec,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/>
-    <div id="project-menu" className="toolbar-popover project-popover" popover="auto" role="menu" aria-label="Project">
-      <button role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');file.current?.click();}}><Icon name="upload" size={16}/>Import file…</button>
-      <button role="menuitem" disabled={hasDraft} onClick={()=>{const p=demo();commit(p);setSelected(p.objects[0].id);fit();closePanel('project-menu');}}><Icon name="needle" size={16}/>Bear sample</button>
-      <button role="menuitem" disabled={hasDraft} onClick={()=>{commit({...initial,name:'Untitled embroidery',objects:[]});setSelected(null);setDraft([]);fit();closePanel('project-menu');}}><Icon name="plus" size={16}/>Blank canvas</button>
+    <input ref={file} type="file" tabIndex={-1} className="visually-hidden" aria-label={t("Import artwork or project")} accept=".png,.jpg,.jpeg,.webp,.svg,.pes,.pec,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/>
+    <div id="project-menu" className="toolbar-popover project-popover" popover="auto" role="menu" aria-label={t("Project")}>
+      <button role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');file.current?.click();}}><Icon name="upload" size={16}/>{t("Import file…")}</button>
+      <button role="menuitem" disabled={hasDraft} onClick={()=>{const p=demo(t);commit(p);setSelected(p.objects[0].id);fit();closePanel('project-menu');}}><Icon name="needle" size={16}/>{t("Bear sample")}</button>
+      <button role="menuitem" disabled={hasDraft} onClick={()=>{commit({...initial,name:t("Untitled embroidery"),objects:[]});setSelected(null);setDraft([]);fit();closePanel('project-menu');}}><Icon name="plus" size={16}/>{t("Blank canvas")}</button>
       <hr/>
-      <button role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>Save project</button>
-      <button role="menuitem" disabled={hasDraft||!project.objects.length} onClick={()=>{closePanel('project-menu');download(new Blob([exportSVG(project)],{type:'image/svg+xml'}),'threadroom-artwork.svg');}}><Icon name="download" size={16}/>Export editable SVG</button>
+      <button role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Save project")}</button>
+      <button role="menuitem" disabled={hasDraft||!project.objects.length} onClick={()=>{closePanel('project-menu');download(new Blob([exportSVG(project)],{type:'image/svg+xml'}),'threadroom-artwork.svg');}}><Icon name="download" size={16}/>{t("Export editable SVG")}</button>
+      <hr/>
+      <div role="group" aria-label={t('Language')}>{(['tr','en'] as const).map(value=><button key={value} role="menuitemradio" aria-checked={lang===value} onClick={()=>{setLang(value);closePanel('project-menu');}}>{t(value==='tr'?'Türkçe':'English')}{lang===value?' ✓':''}</button>)}</div>
     </div>
     <div id="check-panel" className="toolbar-popover check-popover" popover="auto" role="dialog" aria-labelledby="check-title">
-      <div className="popover-heading"><h2 id="check-title">Design check</h2><button className="icon-button" aria-label="Close design check" popoverTarget="check-panel" popoverTargetAction="hide"><Icon name="close" size={16}/></button></div>
-      {issues.length?<p className="check-summary">{fails>0&&<span><i className="severity-dot fail"/>{fails} will likely fail</span>}{checks>0&&<span><i className="severity-dot check"/>{checks} worth checking</span>}</p>
-        :<p className="check-ok"><Icon name="check" size={16}/>{stitchState==='done'?'Ready to stitch: no problems found.':stitchState==='none'?'Add a shape to check it.':'No shape problems so far.'}</p>}
-      {issues.length>0&&<ul className="issue-list">{issues.map(w=><li key={w.key}><button aria-current={focusKey===w.key} onClick={()=>focusIssue(w)} title="Show on the canvas"><i className={`severity-dot ${w.severity}`} aria-label={severityNames[w.severity]}/><span><strong>{explain(w,project,checkError).title}</strong><small>{objectName(w.objectId)} · {severityNames[w.severity]}</small></span><span className="row-chevron">›</span></button></li>)}</ul>}
-      <p className="check-note">{stitchState==='pending'?'Stitch checks run a moment after you stop editing.':stitchState==='offline'?'Stitch checks need the stitch engine, which is offline.':'Checks shapes and the generated stitches.'} <span title="Will likely fail: fix before stitching. Worth checking: may sew poorly on soft baby fabric.">What do these mean?</span></p>
+      <div className="popover-heading"><h2 id="check-title">{t("Design check")}</h2><button className="icon-button" aria-label={t("Close design check")} popoverTarget="check-panel" popoverTargetAction="hide"><Icon name="close" size={16}/></button></div>
+      {issues.length?<p className="check-summary">{fails>0&&<span><i className="severity-dot fail"/>{t('failsSummary',{count:fails})}</span>}{checks>0&&<span><i className="severity-dot check"/>{t('checksSummary',{count:checks})}</span>}</p>
+        :<p className="check-ok"><Icon name="check" size={16}/>{stitchState==='done'?t("Ready to stitch: no problems found."):stitchState==='none'?t("Add a shape to check it."):t("No shape problems so far.")}</p>}
+      {issues.length>0&&<ul className="issue-list">{issues.map(w=><li key={w.key}><button aria-current={focusKey===w.key} onClick={()=>focusIssue(w)} title={t("Show on the canvas")}><i className={`severity-dot ${w.severity}`} aria-label={t(severityNames[w.severity])}/><span><strong>{explain(w,project,checkError,t).title}</strong><small>{objectName(w.objectId)} · {t(severityNames[w.severity])}</small></span><span className="row-chevron">›</span></button></li>)}</ul>}
+      <p className="check-note">{stitchState==='pending'?t("Stitch checks run a moment after you stop editing."):stitchState==='offline'?t("Stitch checks need the stitch engine, which is offline."):t("Checks shapes and the generated stitches.")} <span title={t("Will likely fail: fix before stitching. Worth checking: may sew poorly on soft baby fabric.")}>{t("What do these mean?")}</span></p>
     </div>
-    <section className="stage" aria-label="Embroidery editor">
+    <section className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
         {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} artwork={showImage?project.artwork:undefined} imageOpacity={imageOpacity}/>}
-        <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label="Embroidery canvas" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current)endDrag();}} onPointerLeave={()=>setHover(null)} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
+        <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current)endDrag();}} onPointerLeave={()=>setHover(null)} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(pathTool(tool)&&draftRef.current.length){if(cornersRef.current.length>(continuation?.base||0))setCorners(c=>c.map((v,i)=>i===c.length-1?false:v));return;}
             if(editing&&item?.curve&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
@@ -700,127 +709,127 @@ function StudioEditor() {
               {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale}/>}
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
         </svg>
-        {!project.objects.length&&!project.artwork&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>Import artwork or draw a path.</p></div>}
+        {!project.objects.length&&!project.artwork&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
       </div>
       <header className="project-chip">
-        <a className="brand" href="/" aria-label="Threadroom home">t<span className="brand-dot">.</span></a>
-        <input aria-label="Project name" value={project.name} maxLength={40} onChange={e=>commit({...project,name:e.target.value})}/><span className={`save-indicator ${saved?'':'unsaved'}`} role="status" aria-label={saved?'Saved locally':'Unsaved'} title={saved?'Saved locally':'Unsaved'}/>
-        <button className="icon-button" aria-label="Project menu" title="Import, samples, save and SVG export" popoverTarget="project-menu"><Icon name="chevron" size={16}/></button>
+        <a className="brand" href="/" aria-label={t("Threadroom home")}>t<span className="brand-dot">.</span></a>
+        <input aria-label={t("Project name")} value={project.name} maxLength={40} onChange={e=>commit({...project,name:e.target.value})}/><span className={`save-indicator ${saved?'':'unsaved'}`} role="status" aria-label={saved?t("Saved locally"):t("Unsaved")} title={saved?t("Saved locally"):t("Unsaved")}/>
+        <button className="icon-button" aria-label={t("Project menu")} title={t("Import, samples, save and SVG export")} popoverTarget="project-menu"><Icon name="chevron" size={16}/></button>
       </header>
-      <div className="top-actions">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title="Design check: problems that could spoil the stitch-out" aria-label={`Design check: ${badge}${fails?`, ${fails} likely to fail`:''}`}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={`${fails} problem${fails>1?'s':''} will likely fail. You can still export.`}>{fails} likely to fail</small>}</button>}<Button label="Export PES" size="sm" variant="primary" isLoading={busy} isDisabled={hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}/></div>
+      <div className="top-actions">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title={t("Design check: problems that could spoil the stitch-out")} aria-label={t("Design check: {v0}{v1}",{v0:badge,v1:fails?t(', {v0} likely to fail',{v0:fails}):''})}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={t('exportWarning.other',{count:fails})}>{t('failsSummary',{count:fails})}</small>}</button>}<Button label={t("Export PES")} size="sm" variant="primary" isLoading={busy} isDisabled={hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}/></div>
       {<div className="tool-banner">
-        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>Pick thread colour</strong><span>Click the reference image to pick its colour · Esc to cancel</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?'Editing points':continuation?'Continuing curve':pathTarget?'Drawing text path':tool==='shape'?`Drawing ${shapeNames[shapeKind]}`:tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?'Drag to pan · Click the drawing tool to resume':editing?`Drag a point · Click + to add · Delete removes the selected point${item?.curve?' · Double-click a point to switch corner / curve':''}`:pathTarget?`Click points along the path for your text. ${pathHint}`:tool==='shape'?shapeKind==='rect'?'Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square.':'Click to set the center, click again to set the size.':tool==='select'&&item?.text?'Drag to move · Double-click or Edit text to change the words.':tools.find(t=>t.id===tool)?.hint}</span></>}</div>
+        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):editing?t("Drag a point · Click + to add · Delete removes the selected point{v0}",{v0:item?.curve?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
         {!colourPick&&(pathTool(tool)||tool==='points'||editing||tool==='select'&&item)&&<div className="banner-actions">
-          {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title="Remove last point (Backspace)" disabled={!canUndoDraft} onClick={popDraft}>Undo point</button><button title="Cancel (Esc)" onClick={()=>{cancelDrawing();setTool('select');}}>Cancel</button><Button label={closedDraft?'Close shape':'Done'} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
-          {editing&&<div className="point-actions" role="group" aria-label="Point editing tools">
-            <button aria-label="Move points" title="Drag a point to move it" aria-pressed={pointMode==='move'} onClick={()=>setPointMode('move')}><Icon name="select" size={15}/><span>Move</span></button>
-            <button aria-label="Add point" title="Click the curve to insert a point" aria-pressed={pointMode==='add'} disabled={!!item?.curve&&item.curve.points.length>=200} onClick={()=>setPointMode('add')}><Icon name="plus" size={15}/><span>Add point</span></button>
-            <button aria-label="Remove point" title="Click a point to remove it, or select one and press Delete" aria-pressed={pointMode==='remove'} onClick={()=>setPointMode('remove')}><Icon name="minus" size={15}/><span>Remove</span></button>
-            {item?.curve&&<button aria-label={activePoint&&item.curve.corners?.[activePoint[1]]?'Make curve point':'Make corner point'} title="Switch the selected point between a sharp corner and a smooth curve (or double-click the point)" disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1])}><Icon name={activePoint&&item.curve.corners?.[activePoint[1]]?'curve':'closed'} size={15}/><span>{activePoint&&item.curve.corners?.[activePoint[1]]?'Curve':'Corner'}</span></button>}
-            {item?.curve&&!item.curve.closed&&<button aria-label="Continue curve" title={activePoint?.[1]===0?'Continue from the first point':'Continue from the last point'} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>Continue</span></button>}
+          {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</button><button title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</button><Button label={closedDraft?t("Close shape"):t("Done")} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
+          {editing&&<div className="point-actions" role="group" aria-label={t("Point editing tools")}>
+            <button aria-label={t("Move points")} title={t("Drag a point to move it")} aria-pressed={pointMode==='move'} onClick={()=>setPointMode('move')}><Icon name="select" size={15}/><span>{t("Move")}</span></button>
+            <button aria-label={t("Add point")} title={t("Click the curve to insert a point")} aria-pressed={pointMode==='add'} disabled={!!item?.curve&&item.curve.points.length>=200} onClick={()=>setPointMode('add')}><Icon name="plus" size={15}/><span>{t("Add point")}</span></button>
+            <button aria-label={t("Remove point")} title={t("Click a point to remove it, or select one and press Delete")} aria-pressed={pointMode==='remove'} onClick={()=>setPointMode('remove')}><Icon name="minus" size={15}/><span>{t("Remove")}</span></button>
+            {item?.curve&&<button aria-label={activePoint&&item.curve.corners?.[activePoint[1]]?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1])}><Icon name={activePoint&&item.curve.corners?.[activePoint[1]]?'curve':'closed'} size={15}/><span>{activePoint&&item.curve.corners?.[activePoint[1]]?t("Curve"):t("Corner")}</span></button>}
+            {item?.curve&&!item.curve.closed&&<button aria-label={t("Continue curve")} title={activePoint?.[1]===0?t("Continue from the first point"):t("Continue from the last point")} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>{t("Continue")}</span></button>}
           </div>}
-          {tool==='select'&&item&&!multi&&!item.hidden&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?'Done editing':'Edit points'}</button>}
-          {tool==='select'&&item?.text&&<button className="edit-points-button" onClick={focusText}>Edit text</button>}
+          {tool==='select'&&item&&!multi&&!item.hidden&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
+          {tool==='select'&&item?.text&&<button className="edit-points-button" onClick={focusText}>{t("Edit text")}</button>}
         </div>}
       </div>}
-      {timeline&&showTravel&&compiled&&<div className="travel-legend" role="note" aria-label="Travel view legend"><span title="The needle lifts and the hoop moves without sewing"><i className="legend-jump"/>Jump · {stitchPaths.jumpCount}</span><span title="A sewn stitch joining two pieces without cutting the thread"><i className="legend-travel"/>Travel stitch · {stitchPaths.travelCount}</span><span title="The machine cuts the thread here before a jump"><i className="legend-trim">✕</i>Trim (thread cut) · {stitchPaths.trims.length}</span></div>}
+      {timeline&&showTravel&&compiled&&<div className="travel-legend" role="note" aria-label={t("Travel view legend")}><span title={t("The needle lifts and the hoop moves without sewing")}><i className="legend-jump"/>{t("Jump ·")} {formatNumber(stitchPaths.jumpCount)}</span><span title={t("A sewn stitch joining two pieces without cutting the thread")}><i className="legend-travel"/>{t("Travel stitch ·")} {formatNumber(stitchPaths.travelCount)}</span><span title={t("The machine cuts the thread here before a jump")}><i className="legend-trim">✕</i>{t("Trim (thread cut) ·")} {formatNumber(stitchPaths.trims.length)}</span></div>}
       {focus&&focusCopy&&<div className={`issue-callout ${focus.severity}`} role="status" aria-live="polite">
-        <div className="issue-callout-head"><i className={`severity-dot ${focus.severity}`}/><strong>{focusCopy.title}</strong><small>{severityNames[focus.severity]} · {objectName(focus.objectId)}</small><button className="icon-button" aria-label="Close issue" onClick={()=>setFocusKey(null)}><Icon name="close" size={14}/></button></div>
-        <p>{focusCopy.why}</p><p><b>Fix:</b> {focusCopy.fix}</p>
-        <div className="issue-actions">{focusFix&&<button className="issue-fix-button" title={focusFix.title} onClick={()=>applyFix(focus)}>{focusFix.label}</button>}{issues.length>1&&<span className="issue-nav"><button aria-label="Previous issue" title="Previous issue" onClick={()=>focusIssue(issues[(focusIndex-1+issues.length)%issues.length])}>‹</button><span>{focusIndex+1} / {issues.length}</span><button aria-label="Next issue" title="Next issue" onClick={()=>focusIssue(issues[(focusIndex+1)%issues.length])}>›</button></span>}</div>
+        <div className="issue-callout-head"><i className={`severity-dot ${focus.severity}`}/><strong>{focusCopy.title}</strong><small>{t(severityNames[focus.severity])} · {objectName(focus.objectId)}</small><button className="icon-button" aria-label={t("Close issue")} onClick={()=>setFocusKey(null)}><Icon name="close" size={14}/></button></div>
+        <p>{focusCopy.why}</p><p><b>{t("Fix:")}</b> {focusCopy.fix}</p>
+        <div className="issue-actions">{focusFix&&<button className="issue-fix-button" title={focusFix.title} onClick={()=>applyFix(focus)}>{focusFix.label}</button>}{issues.length>1&&<span className="issue-nav"><button aria-label={t("Previous issue")} title={t("Previous issue")} onClick={()=>focusIssue(issues[(focusIndex-1+issues.length)%issues.length])}>‹</button><span>{formatNumber(focusIndex+1)} / {formatNumber(issues.length)}</span><button aria-label={t("Next issue")} title={t("Next issue")} onClick={()=>focusIssue(issues[(focusIndex+1)%issues.length])}>›</button></span>}</div>
       </div>}
-      {item&&<aside className={`settings-overlay ${settingsCollapsed?'collapsed':''}`} aria-label={multi?'Selection settings':item.text?'Text settings':'Object settings'}>
-        <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?`${items.length} objects`:item.name}>{multi?`${items.length} objects`:item.name}</h2><button className="icon-button" aria-label="Delete selected object" title="Delete (Delete key)" disabled={hasDraft} onClick={deleteSelected}><Icon name="trash" size={16}/></button><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?'Expand settings':'Collapse settings'} aria-expanded={!settingsCollapsed} title={settingsCollapsed?'Expand settings':'Collapse settings'} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
+      {item&&<aside className={`settings-overlay ${settingsCollapsed?'collapsed':''}`} aria-label={multi?t("Selection settings"):item.text?t("Text settings"):t("Object settings")}>
+        <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?t('objects.other',{count:items.length}):item.name}>{multi?t('objects.other',{count:items.length}):item.name}</h2><button className="icon-button" aria-label={t("Delete selected object")} title={t("Delete (Delete key)")} disabled={hasDraft} onClick={deleteSelected}><Icon name="trash" size={16}/></button><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} title={settingsCollapsed?t("Expand settings"):t("Collapse settings")} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
         {!settingsCollapsed&&<div className="overlay-body">
-        {multi?<fieldset disabled={hasDraft} className="panel-section settings"><label>Thread colour<div className="colour-picker"><input type="color" aria-label="Thread colour" value={item.color} onChange={e=>colourSelection(e.target.value)}/>{eyedropper}<span>{items.every(o=>o.color===item.color)?item.color.toUpperCase():'Mixed colours'}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={`Use thread ${c}`} style={{background:c}} onClick={()=>colourSelection(c)}/>)}</div></label><div className="selection-actions"><button title="Group (⌘G)" onClick={groupSelection}>Group</button><button disabled={!items.some(o=>o.group!==undefined)} title="Ungroup (⇧⌘G)" onClick={ungroupSelection}>Ungroup</button><button onClick={deleteSelected}>Delete</button></div></fieldset>:<>
+        {multi?<fieldset disabled={hasDraft} className="panel-section settings"><label>{t("Thread colour")}<div className="colour-picker"><input type="color" aria-label={t("Thread colour")} value={item.color} onChange={e=>colourSelection(e.target.value)}/>{eyedropper}<span>{items.every(o=>o.color===item.color)?item.color.toUpperCase():t("Mixed colours")}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={t("Use thread {v0}",{v0:c})} style={{background:c}} onClick={()=>colourSelection(c)}/>)}</div></label><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
-        <fieldset disabled={hasDraft} className="panel-section settings">{item.text&&<h2 className="settings-subheading">Stitches</h2>}
-          <label>Object name<input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
-          <StitchSelector value={item.kind} groups={stitchGroups(item)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
-          <label>Thread colour<div className="colour-picker"><input type="color" aria-label="Thread colour" value={item.color} onChange={e=>updateObject({color:e.target.value})}/>{eyedropper}<span>{item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={`Use thread ${c}`} style={{background:c}} onClick={()=>updateObject({color:c})}/>)}</div></label>
-          <div className="setting-grid"><label>Length · mm<input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input">{item.kind==='cross'?'Cross size':'Spacing'} · mm{source('spacing')}<input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>
-          {isFillKind(item.kind)&&<label>Fill direction <span className="field-value">{item.angle}°</span><input type="range" min="-90" max="90" value={item.angle} onChange={e=>updateObject({angle:Number(e.target.value)})}/></label>}
-          {isWideKind(item.kind)&&<div className="setting-grid"><label>Width · mm<input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label><label htmlFor="split-input">Split above · mm{source('splitLength')}<input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
-          {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/>Short stitches on curves{source('shortStitches')}</label>}
-          {usesPull(item.kind)&&<label htmlFor="pull-input">Pull compensation · mm{source('pullCompensation')}<input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
-          {underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input">Underlay{source('underlay')}<select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{underlayNames[u]}</option>)}</select></label>}
-          <div className="setting-grid"><label htmlFor="tie-in-input">Tie-in{source('tieIn')}<select id="tie-in-input" value={resolved!.tieIn} onChange={e=>updateObject({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label htmlFor="tie-off-input">Tie-off{source('tieOff')}<select id="tie-off-input" value={resolved!.tieOff} onChange={e=>updateObject({tieOff:e.target.value as Lock})}>{lockOptions}</select></label></div>
-          {(resolved!.tieIn!=='none'||resolved!.tieOff!=='none')&&<label htmlFor="lock-size-input">Lock size · mm{source('lockSize')}<input id="lock-size-input" type="number" min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={resolved!.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))updateObject({lockSize:Number(e.target.value)});}}/></label>}
-          <div className="ends-row"><span><i className="end-dot entry"/>Entry · <i className="end-dot exit"/>exit</span>{item.entry||item.exit?<button type="button" className="field-value reset" title="Return to automatic entry and exit" onClick={()=>updateObject({entry:undefined,exit:undefined})}>Reset</button>:<span className="field-value inherited">Auto</span>}</div>
+        <fieldset disabled={hasDraft} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}
+          <label>{t("Object name")}<input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
+          <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
+          <label>{t("Thread colour")}<div className="colour-picker"><input type="color" aria-label={t("Thread colour")} value={item.color} onChange={e=>updateObject({color:e.target.value})}/>{eyedropper}<span>{item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={t("Use thread {v0}",{v0:c})} style={{background:c}} onClick={()=>updateObject({color:c})}/>)}</div></label>
+          <div className="setting-grid"><label>{t("Length · mm")}<input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm{source('spacing')}<input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>
+          {isFillKind(item.kind)&&<label>{t("Fill direction")} <span className="field-value">{formatNumber(item.angle)}°</span><input type="range" min="-90" max="90" value={formatNumber(item.angle)} onChange={e=>updateObject({angle:Number(e.target.value)})}/></label>}
+          {isWideKind(item.kind)&&<div className="setting-grid"><label>{t("Width · mm")}<input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label><label htmlFor="split-input">{t("Split above · mm")}{source('splitLength')}<input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
+          {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/>{t("Short stitches on curves")}{source('shortStitches')}</label>}
+          {usesPull(item.kind)&&<label htmlFor="pull-input">{t("Pull compensation · mm")}{source('pullCompensation')}<input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
+          {underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input">{t("Underlay")}{source('underlay')}<select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{t(underlayNames[u])}</option>)}</select></label>}
+          <div className="setting-grid"><label htmlFor="tie-in-input">{t("Tie-in")}{source('tieIn')}<select id="tie-in-input" value={resolved!.tieIn} onChange={e=>updateObject({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label htmlFor="tie-off-input">{t("Tie-off")}{source('tieOff')}<select id="tie-off-input" value={resolved!.tieOff} onChange={e=>updateObject({tieOff:e.target.value as Lock})}>{lockOptions}</select></label></div>
+          {(resolved!.tieIn!=='none'||resolved!.tieOff!=='none')&&<label htmlFor="lock-size-input">{t("Lock size · mm")}{source('lockSize')}<input id="lock-size-input" type="number" min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={resolved!.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))updateObject({lockSize:Number(e.target.value)});}}/></label>}
+          <div className="ends-row"><span><i className="end-dot entry"/>{t("Entry ·")} <i className="end-dot exit"/>{t("exit")}</span>{item.entry||item.exit?<button type="button" className="field-value reset" title={t("Return to automatic entry and exit")} onClick={()=>updateObject({entry:undefined,exit:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Auto")}</span>}</div>
         </fieldset></>}
         </div>}
       </aside>}
       <div className="dock-area">
-        {(error||message)&&<div className={`feedback ${error?'error':''}`} role={error?'alert':'status'}>{error||message}<button aria-label="Dismiss message" onClick={()=>{setError('');setMessage('');}}>×</button></div>}
-        {timeline&&compiled&&<div className="stitch-playback" role="group" aria-label="Stitch playback controls">
-          <button className="play-button" aria-label={playing?'Pause playback':'Play stitches'} title={playing?'Pause':'Play the stitch-out from the start'} onClick={()=>{if(!playing&&progress>=1)setProgress(0);setPlaying(p=>!p);}}><Icon name={playing?'pause':'play'} size={16}/></button>
-          <input className="playback" type="range" aria-label="Stitch playback" min="0" max="1" step=".001" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false);}}/>
-          <span className="stitch-counter">{count.toLocaleString()} / {compiled.stats.stitches.toLocaleString()}</span>
-          <button className="travel-toggle" aria-pressed={showTravel} title="Travel view: show jumps, thread cuts and connecting stitches" onClick={()=>setShowTravel(v=>!v)}><Icon name="route" size={16}/><span>Travel</span></button>
+        {(error||message)&&<div className={`feedback ${error?'error':''}`} role={error?'alert':'status'}>{error||message}<button aria-label={t("Dismiss message")} onClick={()=>{setError('');setMessage('');}}>×</button></div>}
+        {timeline&&compiled&&<div className="stitch-playback" role="group" aria-label={t("Stitch playback controls")}>
+          <button className="play-button" aria-label={playing?t("Pause playback"):t("Play stitches")} title={playing?t("Pause"):t("Play the stitch-out from the start")} onClick={()=>{if(!playing&&progress>=1)setProgress(0);setPlaying(p=>!p);}}><Icon name={playing?'pause':'play'} size={16}/></button>
+          <input className="playback" type="range" aria-label={t("Stitch playback")} min="0" max="1" step=".001" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false);}}/>
+          <span className="stitch-counter">{formatNumber(count)} / {formatNumber(compiled.stats.stitches)}</span>
+          <button className="travel-toggle" aria-pressed={showTravel} title={t("Travel view: show jumps, thread cuts and connecting stitches")} onClick={()=>setShowTravel(v=>!v)}><Icon name="route" size={16}/><span>{t("Travel")}</span></button>
         </div>}
-        {apiState==='offline'&&!compiled&&<span className="sim-hint" role="status">Engine offline · showing shapes</span>}
-        {thread&&<span className="sim-hint" title="Thread is drawn about 0.4 mm wide at true scale. Real fabric stretches, so test-stitch on matching scrap first.">Simulation on {fabric.label.toLowerCase()} · fabric pull and puckering aren’t shown</span>}
-        {tool==='shape'&&<div className="shape-flyout" role="radiogroup" aria-label="Shape">{shapeKinds.map(k=><button key={k} role="radio" aria-checked={shapeKind===k} aria-label={shapeNames[k]} title={shapeNames[k]} onClick={()=>{setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}><Icon name={k} size={17}/></button>)}</div>}
-        <div className="dock" role="toolbar" aria-label="Editor tools">
-          {tools.map((t,i)=>{const active=(t.id==='pan'?(tool==='pan'||panMode):tool===t.id&&!panMode);
-            return <span key={t.id} className="tool-slot">{(i===3||i===8)&&<span className="toolbar-divider"/>}<button className={active?'tool active':'tool'} disabled={hasDraft&&t.id!==tool&&t.id!=='pan'} title={`${t.id==='shape'?`Draw shape: ${shapeNames[shapeKind]}`:t.title} (${t.alt?`${t.key} / ${t.alt}`:t.key})`} aria-label={t.id==='shape'?`Shapes: ${shapeNames[shapeKind]}`:t.label} aria-pressed={active} onClick={()=>chooseTool(t.id)}><Icon name={t.id==='shape'?shapeKind:t.icon}/><span>{t.label}</span></button></span>;})}
+        {apiState==='offline'&&!compiled&&<span className="sim-hint" role="status">{t("Engine offline · showing shapes")}</span>}
+        {thread&&<span className="sim-hint" title={t("Thread is drawn about 0.4 mm wide at true scale. Real fabric stretches, so test-stitch on matching scrap first.")}>{t("Simulation on")} {t(fabric.label).toLocaleLowerCase(lang)} {t("· fabric pull and puckering aren’t shown")}</span>}
+        {tool==='shape'&&<div className="shape-flyout" role="radiogroup" aria-label={t("Shape")}>{shapeKinds.map(k=><button key={k} role="radio" aria-checked={shapeKind===k} aria-label={t(shapeNames[k])} title={t(shapeNames[k])} onClick={()=>{setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}><Icon name={k} size={17}/></button>)}</div>}
+        <div className="dock" role="toolbar" aria-label={t("Editor tools")}>
+          {tools.map((toolInfo,i)=>{const active=(toolInfo.id==='pan'?(tool==='pan'||panMode):tool===toolInfo.id&&!panMode);
+            return <span key={toolInfo.id} className="tool-slot">{(i===3||i===8)&&<span className="toolbar-divider"/>}<button className={active?'tool active':'tool'} disabled={hasDraft&&toolInfo.id!==tool&&toolInfo.id!=='pan'} title={`${toolInfo.id==='shape'?t("Draw shape: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.title} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key})`} aria-label={toolInfo.id==='shape'?t("Shapes: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.id==='shape'?shapeKind:toolInfo.icon}/><span>{toolInfo.label}</span></button></span>;})}
           <span className="toolbar-divider"/>
-          <button className={`tool ${timeline?'active':''}`} aria-label={timeline?'Hide stitch playback':'Play stitches'} aria-busy={busy} title={timeline?'Hide stitch playback':'Play the stitch-out from the start'} disabled={hasDraft||busy||outside||(!project.objects.length&&!compiled)} onClick={()=>void play()}><Icon name="play"/><span>Play</span></button>
-          <button className={`tool ${look==='thread'?'active':''}`} aria-label="Realistic view" aria-pressed={look==='thread'} aria-busy={busy} title="Toggle realistic view: how the stitches will look on your fabric" disabled={!project.objects.length&&!compiled} onClick={toggleRealistic}><Icon name="eye"/><span>{busy?'Working…':'Realistic'}</span></button>
+          <button className={`tool ${timeline?'active':''}`} aria-label={timeline?t("Hide stitch playback"):t("Play stitches")} aria-busy={busy} title={timeline?t("Hide stitch playback"):t("Play the stitch-out from the start")} disabled={hasDraft||busy||outside||(!project.objects.length&&!compiled)} onClick={()=>void play()}><Icon name="play"/><span>{t("Play")}</span></button>
+          <button className={`tool ${look==='thread'?'active':''}`} aria-label={t("Realistic view")} aria-pressed={look==='thread'} aria-busy={busy} title={t("Toggle realistic view: how the stitches will look on your fabric")} disabled={!project.objects.length&&!compiled} onClick={toggleRealistic}><Icon name="eye"/><span>{busy?t("Working…"):t("Realistic")}</span></button>
         </div>
       </div>
       <div className="corner-controls">
-        <div className="zoom-controls"><button aria-label="Zoom in" title="Zoom in (+)" onClick={()=>zoomBy(1.2)}><Icon name="plus" size={16}/></button><span>{Math.round(zoom*100)}%</span><button aria-label="Zoom out" title="Zoom out (−)" onClick={()=>zoomBy(1/1.2)}><Icon name="minus" size={16}/></button><button aria-label="Fit hoop" title="Fit hoop" onClick={fit}><Icon name="fit" size={16}/></button></div>
-        <div className="history-controls"><button title="Undo (Ctrl / ⌘ Z)" aria-label="Undo" disabled={!hasDraft&&!history.length} onClick={undo}><Icon name="undo"/></button><button title="Redo (Ctrl / ⌘ Shift Z)" aria-label="Redo" disabled={hasDraft||!future.length} onClick={redo}><Icon name="redo"/></button></div>
+        <div className="zoom-controls"><button aria-label={t("Zoom in")} title={t("Zoom in (+)")} onClick={()=>zoomBy(1.2)}><Icon name="plus" size={16}/></button><span>{formatNumber(Math.round(zoom*100))}%</span><button aria-label={t("Zoom out")} title={t("Zoom out (−)")} onClick={()=>zoomBy(1/1.2)}><Icon name="minus" size={16}/></button><button aria-label={t("Fit hoop")} title={t("Fit hoop")} onClick={fit}><Icon name="fit" size={16}/></button></div>
+        <div className="history-controls"><button title={t("Undo (Ctrl / ⌘ Z)")} aria-label={t("Undo")} disabled={!hasDraft&&!history.length} onClick={undo}><Icon name="undo"/></button><button title={t("Redo (Ctrl / ⌘ Shift Z)")} aria-label={t("Redo")} disabled={hasDraft||!future.length} onClick={redo}><Icon name="redo"/></button></div>
       </div>
-      {!focus&&<div className="canvas-navigation-hint">{hoop.label} hoop · Scroll to zoom · Space / right-drag to pan</div>}
+      {!focus&&<div className="canvas-navigation-hint">{t(hoop.label)} {t("hoop · Scroll to zoom · Space / right-drag to pan")}</div>}
     </section>
-    <nav className="panel-rail" role="tablist" aria-label="Panels" aria-orientation="vertical">
+    <nav className="panel-rail" role="tablist" aria-label={t("Panels")} aria-orientation="vertical">
       {tabs.map(t=><button key={t.id} role="tab" id={`tab-${t.id}`} aria-controls="side-panel" aria-selected={panelOpen&&panelTab===t.id} aria-label={t.label} title={t.label} onClick={()=>openTab(t.id)}><Icon name={t.icon}/></button>)}
       <span className="rail-divider"/>
-      <button aria-label={panelOpen?'Hide panel':'Show panel'} title={panelOpen?'Hide panel':'Show panel'} aria-expanded={panelOpen} aria-controls="side-panel" onClick={()=>setPanelOpen(o=>!o)}><Icon name="panel"/></button>
+      <button aria-label={panelOpen?t("Hide panel"):t("Show panel")} title={panelOpen?t("Hide panel"):t("Show panel")} aria-expanded={panelOpen} aria-controls="side-panel" onClick={()=>setPanelOpen(o=>!o)}><Icon name="panel"/></button>
     </nav>
     <aside id="side-panel" className="side-panel" role="tabpanel" aria-labelledby={`tab-${panelTab}`} hidden={!panelOpen}>
-      <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<span className="count-badge">{project.objects.length}</span>}<button className="icon-button" aria-label="Hide panel" onClick={()=>setPanelOpen(false)}><Icon name="close" size={16}/></button></div>
+      <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<span className="count-badge">{formatNumber(project.objects.length)}</span>}<button className="icon-button" aria-label={t("Hide panel")} onClick={()=>setPanelOpen(false)}><Icon name="close" size={16}/></button></div>
       {panelTab==='layers'&&<>
         <LayersPanel project={project} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))}>
-          <div className="layers-footer" role="group" aria-label="Layer actions">
-            <button disabled={hasDraft||items.length<2} title="Group (⌘G)" aria-label="Group selected objects" onClick={groupSelection}>Group</button><button disabled={hasDraft||!items.some(o=>o.group!==undefined)} title="Ungroup (⇧⌘G)" aria-label="Ungroup selected objects" onClick={ungroupSelection}>Ungroup</button>
-            {(['top','up','down','bottom'] as const).map((where,i)=><button key={where} disabled={hasDraft||!items.length||((where==='top'||where==='up')?selection.includes(project.objects[0]?.id):selection.includes(project.objects.at(-1)?.id??''))} aria-label={`Move to ${where}`} title={`Move to ${where}`} onClick={()=>reorderSelection(where)}>{['⇈','↑','↓','⇊'][i]}</button>)}
-            <button disabled={hasDraft||!items.length} aria-label="Delete selected objects" title="Delete (Delete key)" onClick={deleteSelected}><Icon name="trash" size={16}/></button>
+          <div className="layers-footer" role="group" aria-label={t("Layer actions")}>
+            <button disabled={hasDraft||items.length<2} title={t("Group (⌘G)")} aria-label={t("Group selected objects")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={hasDraft||!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} aria-label={t("Ungroup selected objects")} onClick={ungroupSelection}>{t("Ungroup")}</button>
+            {(['top','up','down','bottom'] as const).map((where,i)=><button key={where} disabled={hasDraft||!items.length||((where==='top'||where==='up')?selection.includes(project.objects[0]?.id):selection.includes(project.objects.at(-1)?.id??''))} aria-label={t(`move.${where}`)} title={t(`move.${where}`)} onClick={()=>reorderSelection(where)}>{['⇈','↑','↓','⇊'][i]}</button>)}
+            <button disabled={hasDraft||!items.length} aria-label={t("Delete selected objects")} title={t("Delete (Delete key)")} onClick={deleteSelected}><Icon name="trash" size={16}/></button>
           </div>
         </LayersPanel>
       </>}
       {panelTab==='artwork'&&<section className="panel-section">
-        <button className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>Import file</strong></button>
-        {!project.artwork&&<p className="section-copy">PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.</p>}
+        <button className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>{t("Import file")}</strong></button>
+        {!project.artwork&&<p className="section-copy">{t("PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.")}</p>}
         {project.artwork&&<div className="artwork-settings">
           <div className="asset-name">{project.artwork.name}</div>
-          <Button label="Auto trace" variant="primary" icon={<Icon name="region"/>} isLoading={busy} isDisabled={hasDraft} width="100%" onClick={()=>void trace()}/>
-          <div className="manual-trace"><button disabled={hasDraft} title="Closed shape (2)" onClick={()=>{chooseTool('closed');setShowImage(true);leavePanel();}}>Trace outline</button><button disabled={hasDraft} title="Open shape (1)" onClick={()=>{chooseTool('open');setShowImage(true);leavePanel();}}>Trace line</button></div>
-          <label>Image width · mm<input type="number" min="5" max={hoop.width} step="1" disabled={hasDraft} value={Math.round(project.artwork.width*10)/10} onChange={e=>{const w=Number(e.target.value);if(w>0&&w<=hoop.width){const a=project.artwork!;const height=a.height*w/a.width;commit({...project,artwork:{...a,width:w,height,x:(hoop.width-w)/2,y:(hoop.height-height)/2}});}}}/></label>
-          <label>Reference opacity<input type="range" min=".1" max="1" step=".05" value={imageOpacity} onChange={e=>{setImageOpacity(Number(e.target.value));setShowImage(true);}}/></label>
-          <label className="check-label"><input type="checkbox" checked={showImage} onChange={e=>setShowImage(e.target.checked)}/>Show reference</label>
-          <button className="text-button" onClick={()=>fitArtwork()}>Fit image</button>
-          <details className="trace-options"><summary>Trace settings</summary><label>Colours<select value={colours} onChange={e=>setColours(Number(e.target.value))}>{[2,3,4,5,6,8].map(n=><option key={n} value={n}>{n}</option>)}</select></label><label className="check-label"><input type="checkbox" checked={ignoreBg} onChange={e=>setIgnoreBg(e.target.checked)}/>Remove background</label></details>
+          <Button label={t("Auto trace")} variant="primary" icon={<Icon name="region"/>} isLoading={busy} isDisabled={hasDraft} width="100%" onClick={()=>void trace()}/>
+          <div className="manual-trace"><button disabled={hasDraft} title={t("Closed shape (2)")} onClick={()=>{chooseTool('closed');setShowImage(true);leavePanel();}}>{t("Trace outline")}</button><button disabled={hasDraft} title={t("Open shape (1)")} onClick={()=>{chooseTool('open');setShowImage(true);leavePanel();}}>{t("Trace line")}</button></div>
+          <label>{t("Image width · mm")}<input type="number" min="5" max={hoop.width} step="1" disabled={hasDraft} value={Math.round(project.artwork.width*10)/10} onChange={e=>{const w=Number(e.target.value);if(w>0&&w<=hoop.width){const a=project.artwork!;const height=a.height*w/a.width;commit({...project,artwork:{...a,width:w,height,x:(hoop.width-w)/2,y:(hoop.height-height)/2}});}}}/></label>
+          <label>{t("Reference opacity")}<input type="range" min=".1" max="1" step=".05" value={imageOpacity} onChange={e=>{setImageOpacity(Number(e.target.value));setShowImage(true);}}/></label>
+          <label className="check-label"><input type="checkbox" checked={showImage} onChange={e=>setShowImage(e.target.checked)}/>{t("Show reference")}</label>
+          <button className="text-button" onClick={()=>fitArtwork()}>{t("Fit image")}</button>
+          <details className="trace-options"><summary>{t("Trace settings")}</summary><label>{t("Colours")}<select value={colours} onChange={e=>setColours(Number(e.target.value))}>{[2,3,4,5,6,8].map(n=><option key={formatNumber(n)} value={formatNumber(n)}>{formatNumber(n)}</option>)}</select></label><label className="check-label"><input type="checkbox" checked={ignoreBg} onChange={e=>setIgnoreBg(e.target.checked)}/>{t("Remove background")}</label></details>
         </div>}
       </section>}
       {panelTab==='setup'&&<section className="panel-section">
-        <label>Machine<select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">Brother PR1X</option></select></label>
-        <label>Hoop<select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{h.label}</option>)}</select></label>
-        <label>Fabric<select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{f.label}</option>)}</select></label>
-        <p className="fabric-advice">Stabilizer: {fabric.stabilizer} · Topping: {fabric.topping}</p>
-        <div className="setting-grid setup-locks"><label>Tie-in<select disabled={hasDraft} value={project.locks.tieIn} onChange={e=>setLocks({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label>Tie-off<select disabled={hasDraft} value={project.locks.tieOff} onChange={e=>setLocks({tieOff:e.target.value as Lock})}>{lockOptions}</select></label>
-          <label>Lock size · mm<input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>Trim jumps longer than · mm<input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title="Shorter jumps sew as one stitch without a trim" onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
+        <label>{t("Machine")}<select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">{t("Brother PR1X")}</option></select></label>
+        <label>{t("Hoop")}<select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{t(h.label)}</option>)}</select></label>
+        <label>{t("Fabric")}<select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{t(f.label)}</option>)}</select></label>
+        <p className="fabric-advice">{t("Stabilizer:")} {t(fabric.stabilizer)} {t("· Topping:")} {t(fabric.topping)}</p>
+        <div className="setting-grid setup-locks"><label>{t("Tie-in")}<select disabled={hasDraft} value={project.locks.tieIn} onChange={e=>setLocks({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label>{t("Tie-off")}<select disabled={hasDraft} value={project.locks.tieOff} onChange={e=>setLocks({tieOff:e.target.value as Lock})}>{lockOptions}</select></label>
+          <label>{t("Lock size · mm")}<input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>{t("Trim jumps longer than · mm")}<input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title={t("Shorter jumps sew as one stitch without a trim")} onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
       </section>}
       {panelTab==='info'&&<section className="panel-section design-summary">
-        <div className="summary-grid"><div><span>Hoop</span><strong>{hoop.label}</strong></div><div><span>Design size</span><strong>{(compiled?.stats.width||size.width).toFixed(1)} × {(compiled?.stats.height||size.height).toFixed(1)}<small> mm</small></strong></div><div><span>Stitches</span><strong>{compiled?compiled.stats.stitches.toLocaleString():'—'}</strong></div><div><span>Thread changes</span><strong>{compiled?compiled.stats.colorChanges:'—'}</strong></div></div>
-        {compiled&&<p className="section-copy" title="Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.">{compiled.stats.jumps} jumps · {compiled.stats.jumpLength.toLocaleString()} mm · {compiled.stats.trims} trims</p>}
-        {!!size.width&&<label>Design width · mm<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
-        {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>Design exceeds hoop</div>}
-        <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?'Engine connected':apiState==='checking'?'Connecting…':'Engine offline'}</div>
+        <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{t(hoop.label)}</strong></div><div><span>{t("Design size")}</span><strong>{formatNumber((compiled?.stats.width||size.width),1)} × {formatNumber((compiled?.stats.height||size.height),1)}<small> mm</small></strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
+        {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStats',{jumps:compiled.stats.jumps,length:compiled.stats.jumpLength,trims:compiled.stats.trims})}</p>}
+        {!!size.width&&<label>{t("Design width · mm")}<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
+        {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>{t("Design exceeds hoop")}</div>}
+        <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?t("Engine connected"):apiState==='checking'?t("Connecting…"):t("Engine offline")}</div>
       </section>}
     </aside>
   </main>;

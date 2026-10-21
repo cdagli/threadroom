@@ -1,4 +1,5 @@
 'use client';
+import {useT} from './i18n';
 import {useId, useRef, useState, type KeyboardEvent} from 'react';
 import {kindHints, kindNames, type Kind} from '@/lib/project';
 import {type StitchGroup} from '@/lib/curves';
@@ -20,10 +21,11 @@ export function StitchIcon({kind}: {kind:Kind}) {
 }
 
 export default function StitchSelector({value, groups, onChange}: {value:Kind;groups:StitchGroup[];onChange:(value:Kind)=>void}) {
+  const {t,lang}=useT();
   const id=useId(), button=useRef<HTMLButtonElement>(null), menu=useRef<HTMLDivElement>(null);
   const [open,setOpen]=useState(false),[position,setPosition]=useState({left:0,top:0,width:260,maxHeight:400});
   const currentOnly=!groups.some(g=>g.kinds.includes(value));
-  const shown=currentOnly?[{label:'Current',kinds:[value]},...groups]:groups;
+  const shown=currentOnly?[{label:t("Current"),kinds:[value]},...groups]:groups;
   function place(){
     const rect=button.current!.getBoundingClientRect(),width=Math.min(310,window.innerWidth-24);
     const below=window.innerHeight-rect.bottom-12,above=rect.top-12;
@@ -42,14 +44,14 @@ export default function StitchSelector({value, groups, onChange}: {value:Kind;gr
     else if(e.key==='Tab'){menu.current?.hidePopover();}
     else if(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&e.key!==' '){
       const ordered=[...options.slice(index+1),...options.slice(0,index+1)];
-      ordered.find(option=>option.dataset.name?.toLowerCase().startsWith(e.key.toLowerCase()))?.focus();
+      ordered.find(option=>option.dataset.name?.toLocaleLowerCase(lang).startsWith(e.key.toLocaleLowerCase(lang)))?.focus();
     }
   }
   return <div className="stitch-selector">
-    <span id={`${id}-label`} className="stitch-label">Stitch style</span>
-    <button ref={button} type="button" className="stitch-selector-button" aria-label={`Stitch style: ${kindNames[value]}`} aria-haspopup="menu" aria-expanded={open} aria-controls={id} popoverTarget={id} onClick={place} onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();place();menu.current?.showPopover();}}}><StitchIcon kind={value}/><span>{kindNames[value]}</span><span className="stitch-chevron" aria-hidden="true">⌄</span></button>
+    <span id={`${id}-label`} className="stitch-label">{t("Stitch style")}</span>
+    <button ref={button} type="button" className="stitch-selector-button" aria-label={t("Stitch style: {v0}",{v0:t(kindNames[value])})} aria-haspopup="menu" aria-expanded={open} aria-controls={id} popoverTarget={id} onClick={place} onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();place();menu.current?.showPopover();}}}><StitchIcon kind={value}/><span>{t(kindNames[value])}</span><span className="stitch-chevron" aria-hidden="true">⌄</span></button>
     <div ref={menu} id={id} className="stitch-menu" popover="auto" role="menu" aria-labelledby={`${id}-label`} style={position} onKeyDown={navigate} onToggle={e=>{const shown=e.currentTarget.matches(':popover-open');setOpen(shown);if(shown)requestAnimationFrame(()=>menu.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus());}}>
-      {shown.map(group=><div key={group.label} role="group" aria-label={group.label}><h3 className="stitch-group-heading">{group.label}</h3>{group.kinds.map(kind=><button key={kind} type="button" role="menuitemradio" data-name={kindNames[kind]} aria-checked={kind===value} title={kindHints[kind]} onClick={()=>{if(kind===value)close();else select(kind);}}><StitchIcon kind={kind}/><span><strong>{kindNames[kind]}{currentOnly&&kind===value?' · Current':''}</strong><small>{currentOnly&&kind===value?'Saved style · choose a line style to change it':kindHints[kind]}</small></span><span className="stitch-check" aria-hidden="true">{kind===value?'✓':''}</span></button>)}</div>)}
+      {shown.map(group=><div key={group.label} role="group" aria-label={group.label}><h3 className="stitch-group-heading">{group.label}</h3>{group.kinds.map(kind=><button key={kind} type="button" role="menuitemradio" data-name={t(kindNames[kind])} aria-checked={kind===value} title={t(kindHints[kind])} onClick={()=>{if(kind===value)close();else select(kind);}}><StitchIcon kind={kind}/><span><strong>{t(kindNames[kind])}{currentOnly&&kind===value?t(" · Current"):''}</strong><small>{currentOnly&&kind===value?t("Saved style · choose a line style to change it"):t(kindHints[kind])}</small></span><span className="stitch-check" aria-hidden="true">{kind===value?'✓':''}</span></button>)}</div>)}
     </div>
   </div>;
 }

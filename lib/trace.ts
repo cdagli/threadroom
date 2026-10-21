@@ -1,8 +1,9 @@
+import {createT,TranslationError,type Translator} from './i18n';
 import {object, type Artwork, type Point, type StitchObject} from './project';
 
 /** Small flat-art tracer: quantise colour, find connected components and trace
  * pixel boundaries, preserving holes. No image is uploaded to the server. */
-export async function traceArtwork(art: Artwork, colours: number, ignoreBackground: boolean): Promise<StitchObject[]> {
+export async function traceArtwork(art: Artwork, colours: number, ignoreBackground: boolean,t:Translator=createT('en')): Promise<StitchObject[]> {
   const image = new Image(); image.src = art.src; await image.decode();
   const factor=80/Math.max(image.naturalWidth, image.naturalHeight);
   const w=Math.max(2, Math.round(image.naturalWidth*factor)), h=Math.max(2,Math.round(image.naturalHeight*factor));
@@ -12,7 +13,7 @@ export async function traceArtwork(art: Artwork, colours: number, ignoreBackgrou
   const pixels=Array.from({length:w*h}, (_,i)=>[rgba[i*4],rgba[i*4+1],rgba[i*4+2]]);
   const distance=(a:number[],b:number[])=>a.reduce((d,v,i)=>d+(v-b[i])**2,0);
   const usable=pixels.filter((_,i)=>rgba[i*4+3]>100);
-  if (!usable.length) throw new Error('This image is entirely transparent.');
+  if (!usable.length) throw new TranslationError(t,"This image is entirely transparent.");
   const centres=[usable[0]];
   for(let k=1;k<colours;k++) centres.push(usable.reduce((best,p)=>Math.min(...centres.map(c=>distance(p,c)))>Math.min(...centres.map(c=>distance(best,c)))?p:best,usable[0]));
   const nearest=(p:number[])=>centres.reduce((best,c,i)=>distance(p,c)<distance(p,centres[best])?i:best,0);
@@ -58,10 +59,10 @@ export async function traceArtwork(art: Artwork, colours: number, ignoreBackgrou
       const simplified=ring.filter((p,i)=>{const a=ring[(i+ring.length-1)%ring.length],b=ring[(i+1)%ring.length];return (p[0]-a[0])*(b[1]-p[1])!==(p[1]-a[1])*(b[0]-p[0]);});
       if(simplified.length>=3)rings.push(simplified.map(([x,y])=>[art.x+x/w*art.width,art.y+y/h*art.height]));
     }
-    if(rings.length){const hex='#'+centres[label].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');result.push(object(`Traced region ${result.length+1}`,rings,'fill',hex));}
-    if(result.length>80)throw new Error('This artwork has too many small regions. Try fewer colours or simpler artwork.');
+    if(rings.length){const hex='#'+centres[label].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');result.push(object(t("Traced region {v0}",{v0:result.length+1}),rings,'fill',hex));}
+    if(result.length>80)throw new TranslationError(t,"This artwork has too many small regions. Try fewer colours or simpler artwork.");
   }
-  if(!result.length)throw new Error('No regions found. Try keeping the background or using simpler artwork.');
-  if(result.reduce((n,o)=>n+o.rings.reduce((m,r)=>m+r.length,0),0)>12000)throw new Error('This trace is too complex. Try fewer colours.');
+  if(!result.length)throw new TranslationError(t,"No regions found. Try keeping the background or using simpler artwork.");
+  if(result.reduce((n,o)=>n+o.rings.reduce((m,r)=>m+r.length,0),0)>12000)throw new TranslationError(t,"This trace is too complex. Try fewer colours.");
   return result.sort((a,b)=>a.color.localeCompare(b.color));
 }

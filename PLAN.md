@@ -113,6 +113,7 @@ Status: implemented. Collapsible group rows, rename, visibility, member selectio
   stylesheet uses them instead of literal hex values.
 
 ## Phase 8: Turkish UI with a TR/EN switch
+Status: implemented. Turkish default, persistent project-menu language switch, typed dictionaries, localised library messages and number formatting. Dictionary/placeholder and Turkish design-check tests added; desktop browser interaction check pending.
 - Turkish by default; a language switch in the project menu, remembered per browser.
 - `lib/i18n.ts`: a small typed dictionary (`tr`, `en`) and `t(key, values)`, no dependency. Every UI
   string moves there: buttons, hints, banners, settings, stitch/fabric/underlay/lock names and hints,
@@ -140,3 +141,15 @@ Status: implemented. Collapsible group rows, rename, visibility, member selectio
   pixels at the clicked point, ignoring the reference opacity on screen.
 - **Reference image always at the bottom** (done). In Realistic view the image is drawn into the thread canvas
   between the fabric and the threads (not in the SVG above it), so stitches always cover it at any opacity.
+- **All Ember stitch and fill types.** After the Ember fill settings land: every remaining Ember fill
+  pattern (Diamonds sm/md/lg, Zig-Zag, Circles sm/md/lg, Heartbeat, Spiral, Staircase, Rainfall,
+  Hexweave, Tornado, Wavy Walk, Jitter, Bands, Interlocked, Rails, Twill, Houndstooth, Chain, Stars),
+  the non-row fills (Satin sweep fill, Streamlines with a flow field, Circular fill around a draggable
+  centre, Cross-stitch styles: cross, upright, double, smyrna, half), the run types Double and Triple
+  rope run, and two-rail satin Blocks. Exact definitions in `docs/ember-patterns-spec.md`.
+- **Entry/exit handle size** (done: it was Chrome's default focus outline on the handle after a click). The selected object's entry/exit handle sometimes shows as a large dark
+  ring with a light fill (reported 2026-10-22). Find the cause (handle radius from a stale canvas scale,
+  or a focus/hover style on the 12 px hit circle) and keep the handles small and quiet like Ember's.
+- **Ember drawing mechanics.** Draw open/closed shapes exactly like Ember: right-click creates a curve
+  segment the way Ember does, and a closed shape's draft is drawn open (no closing edge or fill) until
+  it is completed. Details in `docs/ember-drawing-spec.md`.

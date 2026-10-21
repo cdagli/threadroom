@@ -1,3 +1,4 @@
+import {createT,type Translator,type Key} from './i18n';
 import {validText, type TextSpec} from './text';
 export type Point = [number, number];
 export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual';
@@ -35,17 +36,17 @@ export type Compiled = {
   stats: {stitches: number; jumps: number; jumpLength: number; trims: number; colorChanges: number; width: number; height: number; maxStitch: number; bytes: number; durationMs: number};
   engine: string; pesVersion: string;
 };
-export const hoops: Record<string, {width: number; height: number; label: string}> = {
+export const hoops: Record<string, {width: number; height: number; label: Key}> = {
   '100x100': {width: 100, height: 100, label: '100 × 100 mm'},
   '180x130': {width: 180, height: 130, label: '180 × 130 mm'},
   '300x200': {width: 300, height: 200, label: '300 × 200 mm'},
   '60x40': {width: 60, height: 40, label: '60 × 40 mm'},
 };
-export const kindNames: Record<Kind, string> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
-export const kindHints: Record<Kind, string> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
+export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
+export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
 export const isFillKind=(kind:Kind)=>kind==='fill'||kind==='cross';
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
-export type FabricProfile = {label: string; fill: number; satin: number; fillUnderlay: Underlay; satinUnderlay: Underlay; pull: number; stabilizer: string; topping: string};
+export type FabricProfile = {label: Key; fill: number; satin: number; fillUnderlay: Underlay; satinUnderlay: Underlay; pull: number; stabilizer: Key; topping: Key};
 // The only fabric table: geometryPayload sends resolved values, so the compiler has no fabric defaults.
 // fill/satin: row and column spacing (mm); pull: compensation (mm).
 export const fabrics: Record<Fabric, FabricProfile> = {
@@ -57,7 +58,7 @@ export const fabrics: Record<Fabric, FabricProfile> = {
   terry: {label: 'Terry / towelling', fill: .4, satin: .38, fillUnderlay: 'edge-tatami', satinUnderlay: 'edge-zigzag', pull: .35, stabilizer: 'Tear-away', topping: 'Water-soluble'},
   denim: {label: 'Denim / twill', fill: .4, satin: .38, fillUnderlay: 'tatami', satinUnderlay: 'center', pull: .15, stabilizer: 'Heavy tear-away', topping: 'None'},
 };
-export const underlayNames: Record<Underlay, string> = {none: 'None', center: 'Center walk', edge: 'Edge walk', zigzag: 'Light zigzag', 'edge-zigzag': 'Edge + zigzag', tatami: 'Light tatami', 'edge-tatami': 'Edge + tatami'};
+export const underlayNames: Record<Underlay, Key> = {none: 'None', center: 'Center walk', edge: 'Edge walk', zigzag: 'Light zigzag', 'edge-zigzag': 'Edge + zigzag', tatami: 'Light tatami', 'edge-tatami': 'Edge + tatami'};
 export const underlayOptions=(kind:Kind):Underlay[]=>isFillKind(kind)?['none','edge','tatami','edge-tatami']:kind==='satin'?['none','center','edge','zigzag','edge-zigzag']:['none'];
 export const usesSpacing=(kind:Kind)=>isFillKind(kind)||isWideKind(kind);
 export const usesPull=usesSpacing;
@@ -70,7 +71,7 @@ export type Setting = 'spacing' | 'underlay' | 'pullCompensation' | 'splitLength
 // Ties are sewn only around trims: tie-in after each trim and at the start, tie-off before each trim
 // and colour change. Size 1 mm hides under fill rows and satin yet grips; jumps up to 3 mm (the
 // longest running stitch) sew as one connecting stitch instead of a trim, so no float is longer.
-export const lockNames: Record<Lock, string> = {none: 'None', tack: 'Tack', triangle: 'Triangle'};
+export const lockNames: Record<Lock, Key> = {none: 'None', tack: 'Tack', triangle: 'Triangle'};
 export const lockLimits={size:[.5,1.5] as const,trim:[1,10] as const};
 export const defaultLocks: Locks = {tieIn: 'tack', tieOff: 'tack', lockSize: 1};
 export const defaultTrimJump=3;
@@ -107,7 +108,7 @@ export function bounds(objects: StitchObject[]) {
   const x = Math.min(...xs), y = Math.min(...ys);
   return {x, y, width: Math.max(...xs)-x, height: Math.max(...ys)-y};
 }
-export function demo(): Project {
+export function demo(t:Translator=createT('en')): Project {
   // A simple teddy face with holes for the muzzle and inner ears, avoiding
   // stacked top fills. This is a new editable POC sample.
   const outer: Point[] = [];
@@ -123,14 +124,14 @@ export function demo(): Project {
     outer.push([u*u*u*a[0]+3*u*u*t*b[0]+3*u*t*t*c[0]+t*t*t*d[0], u*u*u*a[1]+3*u*u*t*b[1]+3*u*t*t*c[1]+t*t*t*d[1]]);
   }
   const muzzle = ellipse(50, 59, 10, 7), ear1 = ellipse(29, 31, 4.4, 5.2), ear2 = ellipse(71, 31, 4.4, 5.2);
-  const items = [object('Honey bear', [outer, muzzle, ear1, ear2]),
-    object('Cream muzzle', [muzzle], 'fill', palette[1]),
-    object('Inner ears', [ear1, ear2], 'fill', palette[1]),
-    object('Rosy cheeks', [ellipse(34,54,3,1.8), ellipse(66,54,3,1.8)], 'fill', palette[2]),
-    object('Sleepy eyes', [[[35,47],[36,48],[38,49],[40,48],[41,47]], [[59,47],[60,48],[62,49],[64,48],[65,47]]], 'bean', palette[3]),
-    object('Little nose', [ellipse(50,56,2.1,1.3)], 'fill', palette[3]),
-    object('Smile', [[[50,57],[50,60],[48,62],[46,60]], [[50,60],[52,62],[54,60]]], 'bean', palette[3])];
-  return {version: 1, name: 'Sleepy little bear', machine: 'brother-pr1x', hoop: '100x100', fabric: 'woven', locks: {...defaultLocks}, trimJump: defaultTrimJump, objects: items};
+  const items = [object(t("Honey bear"), [outer, muzzle, ear1, ear2]),
+    object(t("Cream muzzle"), [muzzle], 'fill', palette[1]),
+    object(t("Inner ears"), [ear1, ear2], 'fill', palette[1]),
+    object(t("Rosy cheeks"), [ellipse(34,54,3,1.8), ellipse(66,54,3,1.8)], 'fill', palette[2]),
+    object(t("Sleepy eyes"), [[[35,47],[36,48],[38,49],[40,48],[41,47]], [[59,47],[60,48],[62,49],[64,48],[65,47]]], 'bean', palette[3]),
+    object(t("Little nose"), [ellipse(50,56,2.1,1.3)], 'fill', palette[3]),
+    object(t("Smile"), [[[50,57],[50,60],[48,62],[46,60]], [[50,60],[52,62],[54,60]]], 'bean', palette[3])];
+  return {version: 1, name: t("Sleepy little bear"), machine: 'brother-pr1x', hoop: '100x100', fabric: 'woven', locks: {...defaultLocks}, trimJump: defaultTrimJump, objects: items};
 }
 export function pathData(rings: Point[][], closed: boolean) {
   return rings.map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ')+(closed?' Z':'')).join(' ');
@@ -160,11 +161,11 @@ export function moveObjects(p:Project,ids:string[],index:number,group?:string|nu
   const rest=p.objects.filter(o=>!selected.has(o.id));
   return normalizeGroups({...p,objects:[...rest.slice(0,at),...block,...rest.slice(at)]});
 }
-export function groupObjects(p:Project,ids:string[],name?:string):{project:Project;groupId:string|null} {
+export function groupObjects(p:Project,ids:string[],name?:string,t:Translator=createT('en')):{project:Project;groupId:string|null} {
   const selected=new Set(ids),members=p.objects.filter(o=>selected.has(o.id));
   if(members.length<2)return {project:p,groupId:null};
-  let n=1;while(p.groups?.some(g=>g.name===`Group ${n}`))n++;
-  const groupId=crypto.randomUUID(),groups=[...(p.groups??[]),{id:groupId,name:name??`Group ${n}`}];
+  let n=1;while(p.groups?.some(g=>g.name===t("Group {v0}",{v0:n})))n++;
+  const groupId=crypto.randomUUID(),groups=[...(p.groups??[]),{id:groupId,name:name??t("Group {v0}",{v0:n})}];
   return {project:moveObjects({...p,groups},members.map(o=>o.id),p.objects.indexOf(members[0]),groupId),groupId};
 }
 export function ungroupObjects(p:Project,ids:string[]):Project {

@@ -1,3 +1,4 @@
+import {createT,TranslationError,type Translator} from './i18n';
 import {type Artwork, type Point} from './project';
 
 export type ImagePixels={width:number;height:number;data:Uint8ClampedArray};
@@ -19,12 +20,12 @@ export function sampleArtwork(pixels:ImagePixels,art:Pick<Artwork,'x'|'y'|'width
 // Retain only the current source, including its in-flight decode; changing
 // artwork releases the previous natural-resolution buffer.
 let cached:{src:string;promise:Promise<ImagePixels>}|undefined;
-export function artworkPixels(src:string):Promise<ImagePixels> {
+export function artworkPixels(src:string,t:Translator=createT('en')):Promise<ImagePixels> {
   if(cached?.src===src)return cached.promise;
   const promise=(async()=>{
     const image=new Image();image.src=src;await image.decode();
     const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('Image colours are unavailable in this browser.');
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new TranslationError(t,"Image colours are unavailable in this browser.");
     ctx.drawImage(image,0,0);return ctx.getImageData(0,0,canvas.width,canvas.height);
   })();
   cached={src,promise};void promise.catch(()=>{if(cached?.promise===promise)cached=undefined;});return promise;

@@ -1,3 +1,4 @@
+import {createT,TranslationError,type Translator} from './i18n';
 import {fabrics, isFillKind, profileDefault, resolve, type Kind, type Point, type Project, type Resolved, type StitchObject} from './project';
 import {mergedOutline, transformText} from './text';
 
@@ -38,9 +39,9 @@ export function isClosedShape(o:StitchObject):boolean {
   return o.rings.every(r=>r.length>=3&&(isFillKind(o.kind)||r.length>3&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1]));
 }
 export type StitchGroup={label:string;kinds:Kind[]};
-export function stitchGroups(o:StitchObject):StitchGroup[] {
+export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGroup[] {
   const line:Kind[]=['running','bean','backstitch','satin','zigzag','e-stitch','underlay'];
-  return isClosedShape(o)?[{label:'Fill',kinds:['fill','cross']},{label:'Outline',kinds:line}]:[{label:'Line',kinds:[...line,'manual']}];
+  return isClosedShape(o)?[{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}]:[{label:t("Line"),kinds:[...line,'manual']}];
 }
 // Text is relaid out by the editor; manual curves become their anchor stitches.
 export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
@@ -173,8 +174,8 @@ export function withEnd(o:StitchObject,key:'entry'|'exit',p:Point|undefined):Sti
 // Line kinds need each outline closed (first point repeated); fills don't.
 export const reclose=(rings:Point[][],closed:boolean)=>rings.map(r=>{const shut=r.length>1&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1];return closed&&!shut?[...r,r[0]]:!closed&&shut?r.slice(0,-1):r;});
 
-export function samplePath(points:Point[], length:number):Point[] {
-  if(!Number.isFinite(length)||length<=0)throw new Error('Choose a positive stitch length.');
+export function samplePath(points:Point[], length:number,t:Translator=createT('en')):Point[] {
+  if(!Number.isFinite(length)||length<=0)throw new TranslationError(t,'Choose a positive stitch length.');
   if(points.length<2)return points;
   const result:Point[]=[[...points[0]]];let remaining=length;
   for(let i=1;i<points.length;i++){

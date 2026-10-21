@@ -1,3 +1,4 @@
+import {createT,TranslationError,type Translator,type Key} from './i18n';
 import {parse, type Font} from 'opentype.js';
 import type {FontRef} from './text';
 
@@ -5,7 +6,7 @@ import type {FontRef} from './text';
 // separate static file, so characters outside Latin load further subsets.
 const CDN='https://cdn.jsdelivr.net/fontsource/fonts';
 export type Category='s'|'r'|'d'|'h'|'m';
-export const categoryNames:Record<Category,string>={s:'Sans serif',r:'Serif',d:'Display',h:'Script',m:'Monospace'};
+export const categoryNames:Record<Category, Key>={s:'Sans serif',r:'Serif',d:'Display',h:'Script',m:'Monospace'};
 export type CatalogFont={id:string;family:string;category:Category;weights:number[];italic:boolean;subsets:string[]};
 export type UploadedFont={id:string;family:string;weight:number;italic:boolean};
 // Solid, rounded or bold faces that stay legible as fill stitches.
@@ -13,13 +14,13 @@ export const recommended=['fredoka','nunito','baloo-2','quicksand','comfortaa','
 export const defaultFont:FontRef={source:'catalog',id:'nunito',family:'Nunito',weight:800,italic:false,subsets:['cyrillic','cyrillic-ext','latin','latin-ext','vietnamese']};
 // Scripts that read left to right without shaping. Arabic, Hebrew and Indic text need a shaper.
 const subsetsLoaded=['latin','latin-ext','vietnamese','cyrillic','cyrillic-ext','greek','greek-ext'];
-export const weightNames:Record<number,string>={100:'Thin',200:'Extra light',300:'Light',400:'Regular',500:'Medium',600:'Semibold',700:'Bold',800:'Extra bold',900:'Black'};
+export const weightNames:Record<number, Key>={100:'Thin',200:'Extra light',300:'Light',400:'Regular',500:'Medium',600:'Semibold',700:'Bold',800:'Extra bold',900:'Black'};
 
 let catalog:Promise<CatalogFont[]>|null=null;
-export function loadCatalog():Promise<CatalogFont[]> {
+export function loadCatalog(t:Translator=createT('en')):Promise<CatalogFont[]> {
   catalog??=fetch('/fonts/catalog.json').then(r=>{if(!r.ok)throw new Error();return r.json();}).then((data:{fonts:[string,string,Category,number[],number,string[]][]})=>
     data.fonts.map(([id,family,category,weights,italic,subsets])=>({id,family,category,weights,italic:!!italic,subsets})))
-    .catch(()=>{catalog=null;throw new Error('The font list could not be loaded. Check your connection and try again.');});
+    .catch(()=>{catalog=null;throw new TranslationError(t,"The font list could not be loaded. Check your connection and try again.");});
   return catalog;
 }
 export function refFor(font:CatalogFont,weight:number,italic:boolean):FontRef {
@@ -50,17 +51,17 @@ function fetchFont(key:string,load:()=>Promise<ArrayBuffer>):Promise<Font> {
 }
 /** Loads the first subset, then further subsets until every character is covered.
  * Resolves true when new font data was loaded. */
-export async function ensureFonts(ref:FontRef,text:string):Promise<boolean> {
+export async function ensureFonts(ref:FontRef,text:string,t:Translator=createT('en')):Promise<boolean> {
   const before=loadedFonts(ref).length;
   if(ref.source==='upload'){
-    await fetchFont(`upload:${ref.id}`,async()=>{const data=await readUpload(ref.id);if(!data)throw new Error(`Upload “${ref.family}” again to edit this text.`);return data;});
+    await fetchFont(`upload:${ref.id}`,async()=>{const data=await readUpload(ref.id);if(!data)throw new TranslationError(t,"Upload “{v0}” again to edit this text.",{v0:ref.family});return data;});
     return loadedFonts(ref).length>before;
   }
   const chars=[...new Set(text.replace(/\s/g,''))],fonts:Font[]=[];
   for(const [i,key] of keys(ref).entries()){
     if(i>0&&chars.every(c=>fonts.some(f=>f.charToGlyphIndex(c)>0)))break;
     try{fonts.push(await fetchFont(key,async()=>{const r=await fetch(key);if(!r.ok)throw new Error();return r.arrayBuffer();}));}
-    catch{if(i===0)throw new Error(`${ref.family} could not be downloaded. Check your connection, or choose another style.`);}
+    catch{if(i===0)throw new TranslationError(t,"{v0} could not be downloaded. Check your connection, or choose another style.",{v0:ref.family});}
   }
   return loadedFonts(ref).length>before;
 }
@@ -102,12 +103,12 @@ async function readUpload(id:string):Promise<ArrayBuffer|null> {
 export async function listUploads():Promise<UploadedFont[]> {
   try{return ((await store<{meta:UploadedFont}[]>('readonly',s=>s.getAll()))||[]).map(v=>v.meta);}catch{return [];}
 }
-export async function uploadFont(file:File):Promise<FontRef> {
-  if(file.size>15*1024*1024)throw new Error('Choose a font file smaller than 15 MB.');
-  if(/\.woff2$/i.test(file.name))throw new Error('WOFF2 is not supported here. Upload the TTF, OTF or WOFF version.');
+export async function uploadFont(file:File,t:Translator=createT('en')):Promise<FontRef> {
+  if(file.size>15*1024*1024)throw new TranslationError(t,"Choose a font file smaller than 15 MB.");
+  if(/\.woff2$/i.test(file.name))throw new TranslationError(t,"WOFF2 is not supported here. Upload the TTF, OTF or WOFF version.");
   const data=await file.arrayBuffer();let font:Font;
-  try{font=parse(data);}catch{throw new Error('This file is not a readable TTF, OTF or WOFF font.');}
-  if(!font.charToGlyphIndex('A')&&!font.charToGlyphIndex('a')&&font.numGlyphs<3)throw new Error('This font has no usable letters.');
+  try{font=parse(data);}catch{throw new TranslationError(t,"This file is not a readable TTF, OTF or WOFF font.");}
+  if(!font.charToGlyphIndex('A')&&!font.charToGlyphIndex('a')&&font.numGlyphs<3)throw new TranslationError(t,"This font has no usable letters.");
   const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',data));
   const id=`u${Array.from(digest.slice(0,10),b=>b.toString(16).padStart(2,'0')).join('')}`;
   const family=font.names.fontFamily?.en||Object.values(font.names.fontFamily||{})[0]||file.name.replace(/\.[^.]+$/,'');

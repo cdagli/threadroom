@@ -1,8 +1,9 @@
+import type {Key} from './i18n';
 import type {Point} from './project';
 import {curvePoints} from './curves';
 
 export type ShapeKind='circle'|'rect'|'star'|'triangle'|'diamond'|'hexagon'|'heart';
-export const shapeNames:Record<ShapeKind,string>={circle:'Circle',rect:'Rectangle',star:'Star',triangle:'Triangle',diamond:'Diamond',hexagon:'Hexagon',heart:'Heart'};
+export const shapeNames:Record<ShapeKind, Key>={circle:'Circle',rect:'Rectangle',star:'Star',triangle:'Triangle',diamond:'Diamond',hexagon:'Hexagon',heart:'Heart'};
 type Shape={points:Point[];corners:boolean[]};
 type Hoop={width:number;height:number};
 const radial=(c:Point,r:number,n:number,start:number,corner:boolean,inner=1):Shape=>({

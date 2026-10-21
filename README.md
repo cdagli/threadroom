@@ -4,6 +4,12 @@ A beginner-oriented embroidery editor built with **Next.js 16, React 19,
 Astryx, and a headless Python + Pystitch exporter**. Supports the Brother PR1X.
 The existing `../pes-viewer` and original bear files are unchanged.
 
+## Language
+
+The editor starts in Turkish. Choose **Türkçe / English** in the project chip’s ▾ menu;
+the preference is remembered in this browser. Displayed numbers follow the language.
+Existing project names, layer names and text are preserved; new objects use the current language.
+
 ## What works
 
 - Import PNG/JPG/WebP/SVG reference artwork, size it in millimetres, and trace

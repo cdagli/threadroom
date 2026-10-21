@@ -1,3 +1,4 @@
+import {createT,errorText,type Translator,type Key} from './i18n';
 import {defaultTrimJump, hoops, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
 import {moveGeometry, reclose} from './curves';
 
@@ -6,7 +7,7 @@ import {moveGeometry, reclose} from './curves';
 export type Box = [number, number, number, number];
 export type Warning = RawWarning & {source: 'design' | 'stitches'; key: string};
 export type Fix = {label: string; title: string; apply: (p: Project) => Project};
-export const severityNames: Record<Severity, string> = {fail: 'Will likely fail', check: 'Worth checking'};
+export const severityNames: Record<Severity, Key> = {fail: 'Will likely fail', check: 'Worth checking'};
 // Thresholds (mm, mm²). Fills: under 3 mm² is mostly lock stitches; parts thinner than 1 mm sew as
 // tiny bunched stitches; under 2 mm wide (the compiler's MIN_UNDERLAY_FILL) gets no underlay.
 // Satin under 1 mm hits nearly the same holes twice; over 7 mm (the default split) it is split, or floats
@@ -149,26 +150,26 @@ export const sortWarnings = (list: Warning[], p: Project) => {
 };
 
 // Plain-language copy: a short title, why it matters for the stitch-out, and one concrete fix.
-export function explain(w: Warning, p: Project, message = ''): {title: string; why: string; fix: string} {
-  const v = w.values, o = p.objects.find(x => x.id === w.objectId), kind = o ? kindNames[o.kind].toLowerCase() : 'stitch';
+export function explain(w: Warning, p: Project, message = '', t:Translator=createT('en')): {title: string; why: string; fix: string} {
+  const v = w.values, o = p.objects.find(x => x.id === w.objectId), kind = o ? t(kindNames[o.kind]).toLocaleLowerCase(t.lang) : t('Stitches').toLocaleLowerCase(t.lang);
   switch (w.code) {
-    case 'fill-small': return {title: 'Shape too small to fill', why: `At ${v.area} mm² the knots that start and end the thread take up most of it, so it sews as a lump.`, fix: 'Enlarge it to at least 3 × 2 mm, or sew it as a running stitch outline.'};
-    case 'fill-narrow': return {title: 'Shape too thin to fill', why: w.severity === 'fail' ? `At its widest it is ${v.width} mm, so the rows become tiny stitches that bunch up and break thread.` : `At its widest it is ${v.width} mm, too thin for underlay (the foundation stitches), so the edges pull in.`, fix: `Make this shape at least ${v.limit} mm wide or change it to a running stitch.`};
-    case 'fill-thin-part': return {title: 'Thin parts in a fill', why: `About ${v.area} mm² is thinner than ${v.limit} mm and sews as tiny stitches that pucker or break thread.`, fix: `Widen the highlighted part to ${v.limit} mm or more, or draw it as a separate line.`};
-    case 'satin-narrow': return {title: 'Satin too narrow', why: `At ${v.width} mm the needle hits almost the same holes on both sides, which cuts the fabric and breaks thread.`, fix: `Make it at least ${v.limit} mm wide or use a bean stitch.`};
-    case 'satin-long': return {title: 'Satin stitches too long', why: `Stitches up to ${v.bite} mm long lie loose and snag on fingers and toys.`, fix: `Split stitches above ${v.limit} mm (Split above in the object settings).`};
-    case 'satin-wide': return {title: 'Wide satin', why: `Across ${v.width} mm each stitch is split into pieces, which looks less smooth and is easier to snag.`, fix: `Keep satin under ${v.limit} mm wide; draw wider areas as a fill.`};
-    case 'text-small': return {title: 'Text too small', why: `${kind[0].toUpperCase()+kind.slice(1)} letters under ${v.limit} mm lose their shape; these are ${v.size} mm tall.`, fix: o && !isFillKind(o.kind) && !isWideKind(o.kind) ? `Make the letters at least ${v.limit} mm tall.` : `Make the letters at least ${v.limit} mm tall, or use a bean stitch outline.`};
-    case 'outside-hoop': return {title: 'Outside the hoop', why: `Stitches reach ${v.by} mm past the ${hoops[p.hoop].label} sewing area, so the file can't be made.`, fix: 'Move it inside the hoop, or choose a larger hoop in Setup.'};
-    case 'near-edge': return {title: 'Very close to the hoop edge', why: `Only ${v.margin} mm from the edge, where fabric puckers and any shift pushes stitches out of the sewing area.`, fix: `Move it at least ${v.limit} mm in from the edge.`};
-    case 'colour-order': return {title: 'Same colour sewn twice', why: `You'll change thread ${v.changes} times; sewing each colour together needs only ${v.minimum}.`, fix: 'Sew this object next to the other objects of the same colour (Sew earlier / Sew later).'};
-    case 'short-stitches': return {title: 'Stitches too short', why: `${v.count} stitches are under ${v.limit} mm, so the needle keeps hitting the same spot, which frays or breaks thread.`, fix: 'Enlarge tiny details, smooth sharp tips, or remove points that are very close together.'};
-    case 'long-stitches': return {title: 'Stitches too long', why: `${v.count} sewn stitch${v.count === 1 ? ' is' : 'es are'} over ${v.limit} mm (up to ${v.longest} mm) and will snag on fingers and toys.`, fix: `Set "Trim jumps longer than" in Setup to ${v.limit} mm or less, so long moves are cut instead of sewn.`};
-    case 'dense': return {title: 'Stitches pile up', why: `About ${v.layers} layers of thread (${v.hits} needle holes per mm²) stack here, making a stiff patch that can break needles or cut the fabric.`, fix: v.objects > 1 ? 'Cut a hole in the shape underneath, or remove one of the overlapping layers.' : 'Increase the spacing, or use lighter underlay.'};
-    case 'long-jump': return {title: 'Long jump between objects', why: `The machine cuts the thread and moves ${v.length} mm to sew the same colour elsewhere, adding time and a loose tail.`, fix: 'Sew objects that are close together one after another (Sew earlier / Sew later).'};
-    case 'many-trims': return {title: 'Many thread cuts', why: `${v.count} trims (the machine stops to cut the thread); each adds time and leaves a tail that can pull out.`, fix: 'Join nearby pieces into one shape, remove tiny pieces, or raise "Trim jumps longer than" in Setup (up to 7 mm).'};
-    case 'engine-error': return {title: 'Stitches can\'t be made', why: message || 'The stitch engine rejected this design.', fix: 'Change the highlighted object, then check again.'};
-    default: return {title: w.code, why: '', fix: ''};
+    case 'fill-small': return {title: t("Shape too small to fill"), why: t("At {v0} mm² the knots that start and end the thread take up most of it, so it sews as a lump.",{v0:v.area}), fix: t("Enlarge it to at least 3 × 2 mm, or sew it as a running stitch outline.")};
+    case 'fill-narrow': return {title: t("Shape too thin to fill"), why: w.severity === 'fail' ? t("At its widest it is {v0} mm, so the rows become tiny stitches that bunch up and break thread.",{v0:v.width}) : t("At its widest it is {v0} mm, too thin for underlay (the foundation stitches), so the edges pull in.",{v0:v.width}), fix: t("Make this shape at least {v0} mm wide or change it to a running stitch.",{v0:v.limit})};
+    case 'fill-thin-part': return {title: t("Thin parts in a fill"), why: t("About {v0} mm² is thinner than {v1} mm and sews as tiny stitches that pucker or break thread.",{v0:v.area,v1:v.limit}), fix: t("Widen the highlighted part to {v0} mm or more, or draw it as a separate line.",{v0:v.limit})};
+    case 'satin-narrow': return {title: t("Satin too narrow"), why: t("At {v0} mm the needle hits almost the same holes on both sides, which cuts the fabric and breaks thread.",{v0:v.width}), fix: t("Make it at least {v0} mm wide or use a bean stitch.",{v0:v.limit})};
+    case 'satin-long': return {title: t("Satin stitches too long"), why: t("Stitches up to {v0} mm long lie loose and snag on fingers and toys.",{v0:v.bite}), fix: t("Split stitches above {v0} mm (Split above in the object settings).",{v0:v.limit})};
+    case 'satin-wide': return {title: t("Wide satin"), why: t("Across {v0} mm each stitch is split into pieces, which looks less smooth and is easier to snag.",{v0:v.width}), fix: t("Keep satin under {v0} mm wide; draw wider areas as a fill.",{v0:v.limit})};
+    case 'text-small': return {title: t("Text too small"), why: t("{v0} letters under {v1} mm lose their shape; these are {v2} mm tall.",{v0:kind[0].toLocaleUpperCase(t.lang)+kind.slice(1),v1:v.limit,v2:v.size}), fix: o && !isFillKind(o.kind) && !isWideKind(o.kind) ? t("Make the letters at least {v0} mm tall.",{v0:v.limit}) : t("Make the letters at least {v0} mm tall, or use a bean stitch outline.",{v0:v.limit})};
+    case 'outside-hoop': return {title: t("Outside the hoop"), why: t("Stitches reach {v0} mm past the {v1} sewing area, so the file can't be made.",{v0:v.by,v1:t(hoops[p.hoop].label)}), fix: t("Move it inside the hoop, or choose a larger hoop in Setup.")};
+    case 'near-edge': return {title: t("Very close to the hoop edge"), why: t("Only {v0} mm from the edge, where fabric puckers and any shift pushes stitches out of the sewing area.",{v0:v.margin}), fix: t("Move it at least {v0} mm in from the edge.",{v0:v.limit})};
+    case 'colour-order': return {title: t("Same colour sewn twice"), why: t("You'll change thread {v0} times; sewing each colour together needs only {v1}.",{v0:v.changes,v1:v.minimum}), fix: t("Sew this object next to the other objects of the same colour (Sew earlier / Sew later).")};
+    case 'short-stitches': return {title: t("Stitches too short"), why: t("{v0} stitches are under {v1} mm, so the needle keeps hitting the same spot, which frays or breaks thread.",{v0:v.count,v1:v.limit}), fix: t("Enlarge tiny details, smooth sharp tips, or remove points that are very close together.")};
+    case 'long-stitches': return {title: t("Stitches too long"), why: t('longStitches.other',{count:v.count,limit:v.limit,longest:v.longest}), fix: t("Set \"Trim jumps longer than\" in Setup to {v0} mm or less, so long moves are cut instead of sewn.",{v0:v.limit})};
+    case 'dense': return {title: t("Stitches pile up"), why: t("About {v0} layers of thread ({v1} needle holes per mm²) stack here, making a stiff patch that can break needles or cut the fabric.",{v0:v.layers,v1:v.hits}), fix: v.objects > 1 ? t("Cut a hole in the shape underneath, or remove one of the overlapping layers.") : t("Increase the spacing, or use lighter underlay.")};
+    case 'long-jump': return {title: t("Long jump between objects"), why: t("The machine cuts the thread and moves {v0} mm to sew the same colour elsewhere, adding time and a loose tail.",{v0:v.length}), fix: t("Sew objects that are close together one after another (Sew earlier / Sew later).")};
+    case 'many-trims': return {title: t("Many thread cuts"), why: t("{v0} trims (the machine stops to cut the thread); each adds time and leaves a tail that can pull out.",{v0:v.count}), fix: t("Join nearby pieces into one shape, remove tiny pieces, or raise \"Trim jumps longer than\" in Setup (up to 7 mm).")};
+    case 'engine-error': return {title: t("Stitches can't be made"), why: errorText(message,t,'The stitch engine rejected this design.'), fix: t("Change the highlighted object, then check again.")};
+    default: return {title: t('Unknown design issue'), why: t('The stitch engine rejected this design.'), fix: t('Change the highlighted object, then check again.')};
   }
 }
 
@@ -179,31 +180,31 @@ const kindFix = (o: StitchObject, kind: Kind): StitchObject => {
 };
 const replace = (p: Project, next: StitchObject) => ({...p, objects: p.objects.map(o => o.id === next.id ? next : o)});
 // One-click fixes, offered only where they cannot make the design worse.
-export function fixFor(w: Warning, p: Project): Fix | null {
+export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix | null {
   const o = p.objects.find(x => x.id === w.objectId);
-  if (w.code === 'long-stitches' && p.trimJump > limits.satinWide) return {label: `Trim above ${defaultTrimJump} mm`, title: `Cut the thread for moves longer than ${defaultTrimJump} mm`, apply: q => ({...q, trimJump: defaultTrimJump})};
+  if (w.code === 'long-stitches' && p.trimJump > limits.satinWide) return {label: t("Trim above {v0} mm",{v0:defaultTrimJump}), title: t("Cut the thread for moves longer than {v0} mm",{v0:defaultTrimJump}), apply: q => ({...q, trimJump: defaultTrimJump})};
   if (!o) return null;
   switch (w.code) {
     case 'fill-small': case 'fill-narrow':
-      return o.curve ? null : {label: 'Use running stitch', title: 'Sew this shape as a running stitch outline', apply: q => replace(q, kindFix(o, 'running'))};
+      return o.curve ? null : {label: t("Use running stitch"), title: t("Sew this shape as a running stitch outline"), apply: q => replace(q, kindFix(o, 'running'))};
     case 'satin-narrow':
-      return o.curve?.closed ? null : {label: 'Use bean stitch', title: 'A triple running stitch: strong and thin', apply: q => replace(q, kindFix(o, 'bean'))};
+      return o.curve?.closed ? null : {label: t("Use bean stitch"), title: t("A triple running stitch: strong and thin"), apply: q => replace(q, kindFix(o, 'bean'))};
     case 'text-small': {
       // Scaling moves the editable text settings with the outline (transformText), so it stays text.
       const hoop = hoops[p.hoop], [x0, y0, x1, y1] = box(o.rings.flat()), k = w.values.limit/o.text!.size, cx = (x0+x1)/2, cy = (y0+y1)/2, grow = reach(o, p);
       if (cx-(cx-x0)*k-grow >= 0 && cy-(cy-y0)*k-grow >= 0 && cx+(x1-cx)*k+grow <= hoop.width && cy+(y1-cy)*k+grow <= hoop.height)
-        return {label: `Make ${w.values.limit} mm tall`, title: 'Enlarge the text around its centre', apply: q => replace(q, moveGeometry(o, ([x, y]) => [cx+(x-cx)*k, cy+(y-cy)*k]))};
-      return isFillKind(o.kind) || isWideKind(o.kind) ? {label: 'Use bean outline', title: 'Outline the letters with a triple running stitch', apply: q => replace(q, kindFix(o, 'bean'))} : null;
+        return {label: t("Make {v0} mm tall",{v0:w.values.limit}), title: t("Enlarge the text around its centre"), apply: q => replace(q, moveGeometry(o, ([x, y]) => [cx+(x-cx)*k, cy+(y-cy)*k]))};
+      return isFillKind(o.kind) || isWideKind(o.kind) ? {label: t("Use bean outline"), title: t("Outline the letters with a triple running stitch"), apply: q => replace(q, kindFix(o, 'bean'))} : null;
     }
     case 'satin-long': {
       const next = {...o}; delete next.splitLength;
-      return {label: `Split at ${satinDefaults.splitLength} mm`, title: 'Split stitches longer than 7 mm into staggered pieces', apply: q => replace(q, next)};
+      return {label: t("Split at {v0} mm",{v0:satinDefaults.splitLength}), title: t("Split stitches longer than 7 mm into staggered pieces"), apply: q => replace(q, next)};
     }
     case 'outside-hoop': case 'near-edge': {
       const hoop = hoops[p.hoop], [x0, y0, x1, y1] = w.bounds;
       const shift = (lo: number, hi: number, size: number) => {for (const m of [limits.edge, 0]) if (hi-lo <= size-2*m) return lo < m ? m-lo : hi > size-m ? size-m-hi : 0; return null;};
       const dx = shift(x0, x1, hoop.width), dy = shift(y0, y1, hoop.height);
-      return dx === null || dy === null || (!dx && !dy) ? null : {label: 'Move inside', title: `Move it ${limits.edge} mm in from the hoop edge`, apply: q => replace(q, moveGeometry(o, ([x, y]) => [x+dx, y+dy]))};
+      return dx === null || dy === null || (!dx && !dy) ? null : {label: t("Move inside"), title: t("Move it {v0} mm in from the hoop edge",{v0:limits.edge}), apply: q => replace(q, moveGeometry(o, ([x, y]) => [x+dx, y+dy]))};
     }
     case 'colour-order': {
       const blocks = colourBlocks(p), k = blocks.findIndex(b => p.objects[b.objects[0]].id === o.id), block = blocks[k];
@@ -217,8 +218,8 @@ export function fixFor(w: Warning, p: Project): Fix | null {
         const items = q.objects.filter((_, i) => !group.has(i)), at = items.indexOf(q.objects[after])+1;
         return normalizeGroups({...q, objects: [...items.slice(0, at), ...q.objects.filter((_, i) => group.has(i)), ...items.slice(at)]});
       };
-      if (clear(block.objects)) return {label: 'Sew earlier', title: 'Sew it right after the earlier objects of this colour; nothing it passes overlaps it', apply: q => reorder(q, moved, blocks[m].objects.at(-1)!)};
-      if (between.length && clear(blocks[m].objects)) return {label: 'Sew others later', title: 'Sew the earlier objects of this colour just before this one; nothing they pass overlaps them', apply: q => reorder(q, earlier, Math.max(...between))};
+      if (clear(block.objects)) return {label: t("Sew earlier"), title: t("Sew it right after the earlier objects of this colour; nothing it passes overlaps it"), apply: q => reorder(q, moved, blocks[m].objects.at(-1)!)};
+      if (between.length && clear(blocks[m].objects)) return {label: t("Sew others later"), title: t("Sew the earlier objects of this colour just before this one; nothing they pass overlaps them"), apply: q => reorder(q, earlier, Math.max(...between))};
       return null;
     }
   }
