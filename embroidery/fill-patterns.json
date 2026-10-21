@@ -1,0 +1,10 @@
+[
+  {"id":"even","name":"Even","mode":"even","usesStitchSpacing":true},
+  {"id":"tatami","name":"Tatami","mode":"offsets","offsets":[0.25,0.5,0.75,1],"usesStitchSpacing":true},
+  {"id":"original","name":"Original","mode":"offsets","offsets":[0],"usesStitchSpacing":true},
+  {"id":"columns","name":"Columns","mode":"offsets","offsets":[0.25,0.5],"usesStitchSpacing":true},
+  {"id":"offset-columns","name":"Offset columns","mode":"offsets","offsets":[0,0,0,0,0,0,6,6,6,6,6,6],"absolute":true,"usesStitchSpacing":true},
+  {"id":"triangle","name":"Triangle","mode":"offsets","offsets":[0.4,0.6,0.8,1,0.8,0.6],"usesStitchSpacing":true},
+  {"id":"walk","name":"Walk","mode":"offsets","offsets":[0.14285714285714285,0.2857142857142857,0.42857142857142855,0.5714285714285714,0.7142857142857143,0.8571428571428571,1],"usesStitchSpacing":true},
+  {"id":"waves","name":"Waves","mode":"waves","steps":20,"amplitude":2,"usesStitchSpacing":true}
+]

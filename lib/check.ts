@@ -104,6 +104,7 @@ export function checkProject(p: Project): Warning[] {
     const margin = Math.min(g[0], g[1], hoop.width-g[2], hoop.height-g[3]);
     if (margin < -.001) add('outside-hoop', o, g, 'fail', {by: round(-margin)});
     else if (margin < limits.edge) add('near-edge', o, g, 'check', {margin: round(margin), limit: limits.edge});
+    if(o.kind==='fill'&&(o.fillLength??o.length)>5&&['jersey','rib','fleece'].includes(p.fabric))add('fill-long',o,b,'check',{length:o.fillLength??o.length,limit:5});
     if (o.text) {
       const min = limits.text[textGroup(o.kind)];
       if (o.text.size < min) add('text-small', o, b, o.text.size < min*2/3 ? 'fail' : 'check', {size: round(o.text.size), limit: min});
@@ -152,6 +153,7 @@ export const sortWarnings = (list: Warning[], p: Project) => {
 export function explain(w: Warning, p: Project, message = ''): {title: string; why: string; fix: string} {
   const v = w.values, o = p.objects.find(x => x.id === w.objectId), kind = o ? kindNames[o.kind].toLowerCase() : 'stitch';
   switch (w.code) {
+    case 'fill-long': return {title:'Long fill stitches on knit fabric',why:`Fill stitches of ${v.length} mm can snag or shift on stretchy fabric.`,fix:'Reduce fill stitch length to 5 mm or less.'};
     case 'fill-small': return {title: 'Shape too small to fill', why: `At ${v.area} mm² the knots that start and end the thread take up most of it, so it sews as a lump.`, fix: 'Enlarge it to at least 3 × 2 mm, or sew it as a running stitch outline.'};
     case 'fill-narrow': return {title: 'Shape too thin to fill', why: w.severity === 'fail' ? `At its widest it is ${v.width} mm, so the rows become tiny stitches that bunch up and break thread.` : `At its widest it is ${v.width} mm, too thin for underlay (the foundation stitches), so the edges pull in.`, fix: `Make this shape at least ${v.limit} mm wide or change it to a running stitch.`};
     case 'fill-thin-part': return {title: 'Thin parts in a fill', why: `About ${v.area} mm² is thinner than ${v.limit} mm and sews as tiny stitches that pucker or break thread.`, fix: `Widen the highlighted part to ${v.limit} mm or more, or draw it as a separate line.`};

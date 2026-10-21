@@ -140,3 +140,10 @@ Status: implemented. Collapsible group rows, rename, visibility, member selectio
   pixels at the clicked point, ignoring the reference opacity on screen.
 - **Reference image always at the bottom** (done). In Realistic view the image is drawn into the thread canvas
   between the fabric and the threads (not in the SVG above it), so stitches always cover it at any opacity.
+
+- **Ember fill settings (done)**. Steps 2–7: optional run tolerance; data-driven fill
+  patterns and thumbnail picker; angle input/dial; ordered relative-angle underlays
+  with fabric presets; seeded hand stitch; independent fill length; ramp/plateau
+  gradients; validation, SVG metadata and regression tests. Open paths remain line-only.
+  Hearts await curve data; Underpath off awaits boundary routing and jump handling.
+  Desktop browser interaction check remains pending.

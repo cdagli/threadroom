@@ -1,6 +1,9 @@
+import {fillPatterns, type FillPattern, type PatternParams} from './fill-patterns';
 import {validText, type TextSpec} from './text';
 export type Point = [number, number];
 export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual';
+export type FillGradient = {mode:'ramp';start:number;end:number;endSpacing:number}|{mode:'plateau';center:number;width:number;endSpacing:number};
+export type FillUnderlay = {angle:number;spacing:number;length:number;inset:number};
 export type Underlay = 'none' | 'center' | 'edge' | 'zigzag' | 'edge-zigzag' | 'tatami' | 'edge-tatami';
 export type Fabric = 'woven' | 'gauze' | 'jersey' | 'rib' | 'fleece' | 'terry' | 'denim';
 export type Lock = 'none' | 'tack' | 'triangle';
@@ -10,6 +13,10 @@ export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
   hidden?: boolean; group?: string;
   length: number; angle: number; satinWidth: number;
+  fillLength?: number; handStitch?: 0|1|2|3|4|5; gradient?: FillGradient;
+  fillUnderlays?: FillUnderlay[];
+  fillPattern?: FillPattern; patternParams?: PatternParams;
+  tolerance?: number; // explicit run tolerance; unset keeps legacy sampling
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
   entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
@@ -90,9 +97,12 @@ export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
 export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean};
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
   const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??profileDefault(o.kind,fabric,key);
-  return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay: (value('underlay')??'none') as Underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true,
+  const underlay=(value('underlay')??'none') as Underlay;
+  return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true,
     tieIn: o.tieIn??locks.tieIn, tieOff: o.tieOff??locks.tieOff, lockSize: o.lockSize??locks.lockSize};
 }
+// Edge walks stay in the legacy underlay flag; this list contains row passes only.
+export const fillUnderlayPreset=(underlay:Underlay,length:number):FillUnderlay[]=>underlay.includes('tatami')?[{angle:90,spacing:2,length,inset:.4}]:[];
 export const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '#a6bdca'];
 export function object(name: string, rings: Point[][], kind: Kind = 'fill', color = palette[0]): StitchObject {
   return {id: crypto.randomUUID(), name, rings, kind, color, length: 2.5, angle: 35, satinWidth: 2};
@@ -182,6 +192,7 @@ export function moveGroup(p:Project,groupId:string,index:number):Project {
 
 const validLock=(v:unknown)=>typeof v==='string'&&Object.hasOwn(lockNames,v);
 const validSize=(v:unknown)=>typeof v==='number'&&v>=lockLimits.size[0]&&v<=lockLimits.size[1];
+const inRange=(v:unknown,lo:number,hi:number)=>typeof v==='number'&&Number.isFinite(v)&&v>=lo&&v<=hi;
 const validPoint=(pt:unknown)=>Array.isArray(pt)&&pt.length===2&&pt.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000);
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
@@ -206,6 +217,13 @@ export function validProject(value: unknown): value is Project {
     if(o.length<.5||o.length>3||o.angle< -180||o.angle>180||o.satinWidth<satinLimits.width[0]||o.satinWidth>satinLimits.width[1])return false;
     if(o.splitLength!==undefined&&(typeof o.splitLength!=='number'||!(o.splitLength>=satinLimits.split[0]&&o.splitLength<=satinLimits.split[1])))return false;
     if(o.shortStitches!==undefined&&typeof o.shortStitches!=='boolean')return false;
+    if(o.fillLength!==undefined&&!inRange(o.fillLength,1,6))return false;
+    if(o.handStitch!==undefined&&(!Number.isInteger(o.handStitch)||!inRange(o.handStitch,0,5)))return false;
+    if(o.gradient!==undefined){const g=o.gradient;if(!g||typeof g!=='object'||!inRange(g.endSpacing,.3,4)||(g.mode==='ramp'? !inRange(g.start,0,1)||!inRange(g.end,0,1):g.mode==='plateau'?!inRange(g.center,0,1)||!inRange(g.width,0,1):true))return false;}
+    if(o.fillUnderlays!==undefined&&(!Array.isArray(o.fillUnderlays)||o.fillUnderlays.length>3||Array.from(o.fillUnderlays).some(u=>!u||typeof u!=='object'||!inRange(u.angle,-180,180)||!inRange(u.spacing,1,4)||!inRange(u.length,1,5)||!inRange(u.inset,0,2))))return false;
+    if(o.fillPattern!==undefined&&!fillPatterns.some(p=>p.id===o.fillPattern))return false;
+    if(o.patternParams!==undefined&&(!o.patternParams||typeof o.patternParams!=='object'||Array.isArray(o.patternParams)||Object.keys(o.patternParams).some(k=>!['steps','amplitude'].includes(k))||o.patternParams.steps!==undefined&&(!Number.isInteger(o.patternParams.steps)||!(o.patternParams.steps>=1&&o.patternParams.steps<=100))||o.patternParams.amplitude!==undefined&&(typeof o.patternParams.amplitude!=='number'||!(o.patternParams.amplitude>=0&&o.patternParams.amplitude<=10))))return false;
+    if(o.tolerance!==undefined&&(typeof o.tolerance!=='number'||!(o.tolerance>=.1&&o.tolerance<=1)))return false;
     if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=.3&&o.spacing<=2)))return false;
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
     if(o.underlay!==undefined&&!underlayOptions(o.kind).includes(o.underlay))return false;

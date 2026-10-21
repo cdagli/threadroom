@@ -194,7 +194,12 @@ class CompilerTests(unittest.TestCase):
         p["objects"][3]["pullCompensation"]=.3
         result=compile_project(resolved(p))
         Path("tests/stitch-library.pes").write_bytes(base64.b64decode(result["pes"]))
-        Path("tests/stitch-library.json").write_text(json.dumps(result))
+        # Keep the committed reference stable: elapsed time is deliberately not a fixture.
+        expected = json.loads(Path("tests/stitch-library.json").read_text())
+        self.assertEqual(result["pes"], expected["pes"])
+        self.assertEqual(result["commands"], expected["commands"])
+        self.assertEqual({k:v for k,v in result["stats"].items() if k != "durationMs"},
+                         {k:v for k,v in expected["stats"].items() if k != "durationMs"})
         Path("tests/stitch-library.project.json").write_text(json.dumps(p))
 
 
@@ -834,3 +839,158 @@ class DesignCheckTests(unittest.TestCase):
         self.assertEqual([w for w in bear if w["severity"] == "fail"], [])
         library = compile_project(resolved(json.loads(Path("tests/stitch-library.project.json").read_text())))["warnings"]
         self.assertEqual([w for w in library if w["severity"] == "fail"], [])
+
+
+class RunToleranceTests(unittest.TestCase):
+    def test_corners_curves_lengths_and_repeat_runs(self):
+        corner = [[20,20],[30,20],[30,30]]
+        self.assertIn([30,20], C.tolerant_path(corner, 2.5, 1))
+        arc = [[40+8*math.cos(i*math.pi/80), 40+8*math.sin(i*math.pi/80)] for i in range(41)]
+        low, high = [C.tolerant_path(arc, 3, t) for t in (.1, 1)]
+        self.assertLessEqual(len(high), len(low))
+        for path in (low, high):
+            self.assertTrue(all(math.dist(a,b) <= 3+1e-8 for a,b in zip(path,path[1:])))
+            self.assertEqual(path[0], arc[0])
+            self.assertAlmostEqual(math.dist(path[-1], arc[-1]), 0)
+        for kind in ("running", "bean", "backstitch"):
+            o = project(kind, [arc], tolerance=.2)["objects"][0]
+            path, limit = C.line_passes(o, arc)[0]
+            self.assertEqual(limit, 2.5)
+            self.assertGreaterEqual(len(path), len(C.tolerant_path(arc, 2.5, .2)))
+            compile_project(project(kind, [arc], tolerance=.2))
+        for value in (None, True, "0.2", 0, 1.1, math.nan):
+            with self.assertRaises(ValueError):
+                compile_project(project("running", [corner], tolerance=value))
+
+
+class FillPatternTests(unittest.TestCase):
+    def test_offsets_cycles_alignment_and_lengths(self):
+        rows = [(30+i*.5, 20, 60) for i in range(12)]
+        for pattern in C.FILL_PATTERNS:
+            piece = C.Rows(rows, 0, pattern, [40,30], .5, {"steps": 12, "amplitude": 3})
+            paths = piece.paths((False, 0), 4)
+            for path in paths:
+                self.assertTrue(all(math.dist(a,b) <= 4+1e-8 for a,b in zip(path,path[1:])), pattern)
+                self.assertEqual(sorted((path[0][0],path[-1][0])), [20,60])
+            if pattern == "tatami":
+                self.assertEqual([p[0] for p in paths[0][2:-2]], [p[0] for p in paths[4][2:-2]])
+            if pattern == "original":
+                self.assertEqual(sorted(p[0] for p in paths[0][2:-2]), sorted(p[0] for p in paths[1][2:-2]))
+        self.assertEqual(C.pattern_offset("offset-columns", 6, 4), 6)
+        self.assertEqual(C.pattern_offset("waves", 3, 4, {"steps":12,"amplitude":3}), 3)
+
+    def test_even_is_identical_and_patterns_survive_exit_split(self):
+        p = project(angle=35, underlay="tatami", exit=[60,45])
+        self.assertEqual(compile_project(p)["pes"], compile_project(project(angle=35, underlay="tatami", exit=[60,45], fillPattern="even"))["pes"])
+        for pattern in C.FILL_PATTERNS:
+            result = compile_project(project(angle=0, fillPattern=pattern, exit=[60,45]))
+            self.assertNotIn("short-stitches", [w["code"] for w in result["warnings"]], pattern)
+        for settings in ({"fillPattern":"unknown"}, {"fillPattern":[]}, {"patternParams":None}, {"patternParams":{"steps":1.1}}, {"patternParams":{"steps":101}}, {"patternParams":{"amplitude":-1}}, {"patternParams":{"extra":1}}):
+            with self.assertRaises(ValueError):
+                compile_project(project(**settings))
+
+    def test_parts_share_a_centroid_anchor(self):
+        rings = [[[10,10],[30,10],[30,25],[10,25]],[[60,10],[80,10],[80,25],[60,25]]]
+        anchor = C.fill_centroid(rings, "evenodd")
+        self.assertEqual(anchor, [45,17.5])
+        sections = C.fill_sections(rings, .5, "evenodd", anchor=anchor[1])
+        for rows in sections:
+            piece = C.Rows(rows, 0, "original", anchor, .5)
+            for path in piece.paths((False,0), 4):
+                for x,y in path[2:-2]:
+                    self.assertAlmostEqual((x-anchor[0]) % 4, 0)
+
+
+class FillSettingsTests(unittest.TestCase):
+    def test_underlay_preset_is_byte_identical_and_list_order_is_preserved(self):
+        for mode in ("none", "edge", "tatami", "edge-tatami"):
+            preset = [{"angle":90,"spacing":2,"length":2.5,"inset":.4}] if "tatami" in mode else []
+            legacy = compile_project(project(underlay=mode))
+            explicit = compile_project(project(underlay=mode, fillUnderlays=preset))
+            self.assertEqual(explicit["pes"], legacy["pes"], mode)
+            self.assertEqual(explicit["commands"], legacy["commands"], mode)
+        from unittest.mock import patch
+        passes = [{"angle":90,"spacing":2,"length":4,"inset":.4}, {"angle":45,"spacing":3,"length":5,"inset":1}]
+        # Record the sections as they are sewn, before travel and PES quantisation.
+        seen, original = [], C.Rows.paths
+        def paths(piece, variant, length):
+            seen.append((piece.angle,length))
+            return original(piece,variant,length)
+        with patch.object(C.Rows, "paths", paths):
+            compile_project(project(angle=0, fillUnderlays=passes, fillLength=3.5))
+        self.assertEqual(seen, [(90,4),(45,5),(0,3.5)])
+        self.assertEqual(compile_project(project(fillUnderlays=[]))["pes"], compile_project(project())["pes"])
+        for settings in (None, {}, [None], [{}], passes*2, [{**passes[0],"spacing":.9}], [{**passes[0],"length":5.1}], [{**passes[0],"angle":181}], [{**passes[0],"inset":-1}]):
+            with self.assertRaises(ValueError):
+                compile_project(project(fillUnderlays=settings))
+
+    def test_hand_stitch_is_seeded_perpendicular_bounded_and_keeps_ends(self):
+        path = [[20+i*4,30] for i in range(12)]
+        for intensity in range(6):
+            changed = C.hand_stitch(path,0,4,intensity,"shape")
+            self.assertEqual(changed,C.hand_stitch(path,0,4,intensity,"shape"))
+            self.assertEqual(changed[0],path[0])
+            self.assertEqual(changed[-1],path[-1])
+            bound = .1*(.5**1.5*16+.02*intensity)*(intensity/5)**1.2
+            self.assertTrue(all(abs(p[1]-q[1]) <= bound+1e-9 and p[0] == q[0] for p,q in zip(changed,path)))
+        self.assertNotEqual(C.hand_stitch(path,0,4,5,"shape"),C.hand_stitch(path,0,4,5,"other"))
+        self.assertEqual(C.hand_stitch(path,0,4,0,"shape"),path)
+        p = project(id="stable", handStitch=5, fillPattern="tatami", fillLength=4, underlay="tatami")
+        self.assertEqual(compile_project(p)["pes"],compile_project(p)["pes"])
+        self.assertEqual(compile_project(project(handStitch=0))["pes"],compile_project(project())["pes"])
+        underlay = {**p["objects"][0], "kind":"fill"}
+        quiet = {**underlay,"handStitch":0}
+        self.assertEqual(C.route_fill(underlay,None,None,None,True),C.route_fill(quiet,None,None,None,True))
+
+    def test_fill_length_changes_only_cover_rows_and_does_not_change_runs(self):
+        from unittest.mock import patch
+        seen, original = [], C.Rows.paths
+        def paths(piece, variant, length):
+            seen.append((piece.angle,length))
+            return original(piece,variant,length)
+        with patch.object(C.Rows, "paths", paths):
+            compile_project(project(angle=0, underlay="tatami", fillLength=6))
+        self.assertEqual(seen,[(90,2.5),(0,6)])
+        for kind in ("running","bean","backstitch","cross"):
+            rings = [[[20,20],[60,20]]] if kind != "cross" else None
+            self.assertEqual(compile_project(project(kind,rings,fillLength=6))["pes"],compile_project(project(kind,rings))["pes"])
+        self.assertEqual(compile_project(project(fillLength=2.5))["pes"],compile_project(project())["pes"])
+        long = compile_project(project(angle=0,fillLength=6,tieIn="none",tieOff="none"))
+        self.assertGreater(long["stats"]["maxStitch"],5)
+        self.assertLessEqual(long["stats"]["maxStitch"],6.15)
+
+    def test_gradient_spacing_ramp_reverse_and_plateau(self):
+        ramp = {"mode":"ramp","start":.2,"end":.8,"endSpacing":2}
+        samples = [C.gradient_spacing(ramp,i/10,.4) for i in range(11)]
+        self.assertEqual(samples,sorted(samples))
+        self.assertEqual(samples[0],.4)
+        self.assertEqual(samples[-1],2)
+        reverse = {**ramp,"start":.8,"end":.2}
+        for a,b in zip([C.gradient_spacing(reverse,i/10,.4) for i in range(11)],sorted(samples,reverse=True)):
+            self.assertAlmostEqual(a,b)
+        plateau = {"mode":"plateau","center":.5,"width":.2,"endSpacing":2}
+        for i in range(11):
+            self.assertAlmostEqual(C.gradient_spacing(plateau,i/10,.4),C.gradient_spacing(plateau,1-i/10,.4))
+        self.assertEqual(C.gradient_spacing(plateau,.5,.4),.4)
+        rings = project()["objects"][0]["rings"]
+        rows = C.fill_sections(rings,.4,"evenodd",gradient=ramp)[0]
+        gaps = [b[0]-a[0] for a,b in zip(rows,rows[1:])]
+        self.assertTrue(all(a <= b+1e-9 for a,b in zip(gaps,gaps[1:])))
+        for g in (ramp,reverse,plateau,{**ramp,"start":.5,"end":.5}):
+            result = compile_project(project(gradient=g,fillPattern="tatami",exit=[60,45]))
+            self.assertTrue(result["commands"])
+            self.assertLess(result["stats"]["trims"],3)
+        for patch in ({"fillLength":None},{"fillLength":.9},{"fillLength":6.1},{"handStitch":True},{"handStitch":2.5},{"handStitch":6},{"gradient":None},{"gradient":{}},{"gradient":{**ramp,"start":-1}},{"gradient":{**ramp,"endSpacing":4.1}},{"gradient":{**plateau,"width":math.nan}}):
+            with self.assertRaises(ValueError):
+                compile_project(project(**patch))
+
+    def test_unset_settings_preserve_baseline_bear_and_quiet_patterns(self):
+        import hashlib
+        bear = node("demo",None)
+        self.assertEqual(hashlib.sha256(compile_project(bear)["pes"].encode()).hexdigest(),"ed5cb6963af3c5e265158a214cda92f09787818a163805888bb7aca0a18debab")
+        for pattern in C.FILL_PATTERNS:
+            p = copy.deepcopy(bear)
+            for o in p["objects"]:
+                if o["kind"] == "fill":
+                    o["fillPattern"] = pattern
+            self.assertEqual(compile_project(p)["warnings"],[],pattern)
