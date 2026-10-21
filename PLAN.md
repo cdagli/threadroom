@@ -150,9 +150,18 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
 - **Entry/exit handle size** (done: it was Chrome's default focus outline on the handle after a click). The selected object's entry/exit handle sometimes shows as a large dark
   ring with a light fill (reported 2026-10-22). Find the cause (handle radius from a stale canvas scale,
   or a focus/hover style on the 12 px hit circle) and keep the handles small and quiet like Ember's.
-- **Ember drawing mechanics.** Draw open/closed shapes exactly like Ember: right-click creates a curve
-  segment the way Ember does, and a closed shape's draft is drawn open (no closing edge or fill) until
-  it is completed. Details in `docs/ember-drawing-spec.md`.
+- **Ember drawing mechanics (done, steps 1–7).** Open unfilled drafts, solid cursor band,
+  release placement with 0.5 mm drag rejection, double/right-click timing, Ctrl/⌘ 15° snap,
+  first-point closure for either tool, repeat drawing, tool-switch completion and Ember node markers.
+  New curves/presets/freehand use optional `curve.spline:'levien'`; existing curves keep Catmull–Rom,
+  including during edits and continuation. Freehand fits editable nodes and closes within 2 mm.
+  Editing inserts corner/smooth nodes on left/right path clicks; Ctrl/⌘ axis-locks node drags.
+  Kept the reviewed deviations: Escape discards and draft nodes are draggable; minimums remain
+  2 open / 3 closed. Blocks remain centre-line satin; step 8 (two rails) is deferred.
+  Solver follows §3.4's end formula: the symmetric sample's tangent is −49.48°, rather than the
+  inconsistent approximate −48.2° in §6's example. Fixed-tangent curvature blending is out of
+  scope for drawn nodes. Pure drawing/spline and model/export regression tests added.
+  Details in `docs/ember-drawing-spec.md`. Desktop browser interaction check pending.
 
 - **Ember fill settings (done)**. Steps 2–7: optional run tolerance; data-driven fill
   patterns and thumbnail picker; angle input/dial; ordered relative-angle underlays

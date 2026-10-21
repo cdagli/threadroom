@@ -6,7 +6,9 @@ import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEv
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue} from '@/lib/drag';
 import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, isLockSetting, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
-import {curvePoints, curveRing, setCorner, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, simplifyPath, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
+import {curvePoints, curveRing, setCorner, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
+import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
+import {fitFreehand} from '@/lib/spline';
 import {clientToWorld, panViewport, viewportScale, zoomViewport, type Viewport} from '@/lib/viewport';
 import {traceArtwork} from '@/lib/trace';
 import {artworkPixels, sampleArtwork} from '@/lib/artwork-color';
@@ -94,12 +96,12 @@ function ProfiledStudio(){return <Profiler id="Studio" onRender={recordRender}><
 function recordRender(id:string,phase:string,ms:number){performance.measure(`${id}:${phase}`,{start:performance.now()-ms,duration:ms});}
 function StudioEditor() {
   const {t,lang,setLang,formatNumber}=useT();
-  const pathHint=t("Left click to plot straight lines; right-click or double-click to plot curves. Enter to complete.");
+  const pathHint=t("Left click: corner · Right/double-click: smooth · Ctrl / ⌘: 15° snap · Enter: finish");
   const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
     {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
     {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
     {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t("Drag to measure a distance in millimetres.")},
-    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:pathHint},
+    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Sews as a satin column.",{v0:pathHint})},
     {id:'freehand',icon:'pen',label:t("Freehand"),key:'4',title:t("Drawing Freehand"),hint:t("Click and drag to draw, release to complete.")},
@@ -130,7 +132,9 @@ function StudioEditor() {
   const [corners,saveCorners]=useState<boolean[]>([]),cornersRef=useRef<boolean[]>([]);
   function setCorners(next:boolean[]|((c:boolean[])=>boolean[])){const value=typeof next==='function'?next(cornersRef.current):next;cornersRef.current=value;saveCorners(value);}
   function popDraft(){setDraft(d=>d.slice(0,-1));setCorners(c=>c.slice(0,-1));}
-  const [hover,setHover]=useState<Point|null>(null);
+  const [hover,setHover]=useState<Point|null>(null),[angleSnap,setAngleSnap]=useState(false);
+  const clickHistory=useRef<Pick<DraftState,'lastLeft'|'lastRight'>>({});
+  const draftPress=useRef<{start:Point;button:number;moved:boolean;detail:number}|null>(null);
   const [measure,setMeasure]=useState<{a:Point;b:Point}|null>(null),measuring=useRef(false);
   const [shapeKind,setShapeKind]=useState<ShapeKind>('circle'),[shapeDraft,setShapeDraft]=useState<{start:Point;end:Point;square:boolean}|null>(null);
   const shapePress=useRef<{client:Point;moved:boolean}|null>(null);
@@ -342,26 +346,27 @@ function StudioEditor() {
   function point(e:ReactPointerEvent<SVGSVGElement>):Point {
     return clientToWorld(viewport.current,[e.clientX,e.clientY],svg.current!.getBoundingClientRect(),hoop);
   }
-  function cancelDrawing(){moveQueue.current?.cancel();draftDrag.current=null;setPanMode(false);setDraft([]);setCorners([]);setShapeDraft(null);shapePress.current=null;setDrawing(false);setHover(null);setError('');if(continuation){setTool('select');setEditPoints(true);}setContinuation(null);if(pathTarget)setSelected(pathTarget);setPathTarget(null);}
-  function finish(points=draftRef.current, automatic=false){
-    if(points.length<(closedDraft?3:2))return;
-    const kind:Kind=closedDraft?'fill':tool==='blocks'?'satin':tool==='points'?'manual':'running';
-    const flags=cornersRef.current.slice(0,points.length);
-    const rings=pathTool(tool)?[curvePoints(points,closedDraft,flags)]:[tool==='freehand'?simplifyPath(points):points];
-    if(rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError(t("Curve exceeds the hoop. Drag its points inward, then finish."));return;}
+  function cancelDrawing(){moveQueue.current?.cancel();draftDrag.current=null;draftPress.current=null;clickHistory.current={};setPanMode(false);setDraft([]);setCorners([]);setShapeDraft(null);shapePress.current=null;setDrawing(false);setHover(null);setError('');if(continuation){setTool('select');setEditPoints(true);}setContinuation(null);if(pathTarget)setSelected(pathTarget);setPathTarget(null);}
+  function finish(points=draftRef.current,how:'enter'|'first'|'switch'='enter'){
+    const fit=tool==='freehand'?fitFreehand(points):null,flags=fit?.corners??cornersRef.current.slice(0,points.length);
+    points=fit?.points??points;
+    if(fit&&points.length<2){cancelDrawing();return true;}
+    const completion=completeDraft(pathTool(tool)||tool==='points'?tool:'open',points,flags,how);if(!completion)return false;
+    const closed=fit?.closed??completion.closed,kind:Kind=fit?'running':completion.kind;
+    const reverse=continuation?.fromStart,anchors=reverse?[...points].reverse():points,anchorCorners=reverse?[...flags].reverse():flags;
+    const existing=continuation&&project.objects.find(o=>o.id===continuation.id);
+    const curve:StitchObject['curve']=tool==='points'?undefined:{points:anchors.map(p=>[...p]),closed,corners:anchorCorners,...(existing?.curve?.spline||!existing?{spline:'levien' as const}:{})};
+    const rings=curve?[curveRing(curve,!isFillKind(closed?kind:existing?.kind??kind))]:[points];
+    if(outsideHoop(rings,hoop)){setError(t("Curve exceeds the hoop. Drag its points inward, then finish."));return false;}
     const target=pathTarget&&project.objects.find(o=>o.id===pathTarget);
     if(target&&target.text){
       const next=layoutObject({...target,text:{...target.text,layout:'path',path:rings[0]}});
-      commit({...project,objects:project.objects.map(o=>o.id===target.id?next:o)});setGuide(null);cancelDrawing();setTool('select');setSelected(target.id);return;
+      commit({...project,objects:project.objects.map(o=>o.id===target.id?next:o)});setGuide(null);cancelDrawing();setTool('select');setSelected(target.id);return true;
     }
-    const reverse=continuation?.fromStart,anchors=reverse?[...points].reverse():points,anchorCorners=reverse?[...flags].reverse():flags;
-    const existing=continuation&&project.objects.find(o=>o.id===continuation.id);
-    const next=existing?{...existing,rings:[curvePoints(anchors,false,anchorCorners)]}:object(closedDraft?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
+    const next=existing?{...existing,rings,...(closed?{kind,name:t("Closed shape"),fillPattern:'tatami' as const}:{})}:object(closed&&!fit?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
     if(!existing&&kind==='fill')next.fillPattern='tatami';
-    if(pathTool(tool))next.curve={points:anchors.map(p=>[...p]),closed:closedDraft,corners:anchorCorners};
-    const wasContinuing=!!continuation;
-    commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,next]});setSelected(next.id);setActivePoint(null);cancelDrawing();
-    if(!automatic){setTool('select');setEditPoints(wasContinuing);}
+    if(curve)next.curve=curve;
+    commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,next]});setSelected(next.id);setActivePoint(null);cancelDrawing();setEditPoints(false);setTool(tool);return true;
   }
   function shapeOf(d:{start:Point;end:Point;square:boolean}){
     if(shapeKind==='rect')return rect(d.start,fitRect(d.start,d.end,hoop,d.square),d.square);
@@ -372,8 +377,8 @@ function StudioEditor() {
     setShapeDraft(null);shapePress.current=null;
     const shape=shapeOf(d),xs=shape.points.map(p=>p[0]),ys=shape.points.map(p=>p[1]);
     if(Math.max(...xs)-Math.min(...xs)<1||Math.max(...ys)-Math.min(...ys)<1){setError(t("Click again a little further away to size the shape."));return;}
-    const curve={points:shape.points,closed:true,corners:shape.corners},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),fillPattern:'tatami' as const,curve};
-    commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);setError('');
+    const curve={points:shape.points,closed:true,corners:shape.corners,spline:'levien' as const},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),fillPattern:'tatami' as const,curve};
+    commit({...project,objects:[...project.objects,o]});setSelected(o.id);setEditPoints(false);setError('');
   }
   function toggleCorner(index:number){
     if(!item?.curve)return;const corner=!(item.curve.corners?.[index]??false);
@@ -415,7 +420,7 @@ function StudioEditor() {
     if(next.rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError(t("That adjustment extends outside the hoop. Move the point inward."));return false;}
     commit({...project,objects:project.objects.map(o=>o.id===next.id?next:o)});return true;
   }
-  function addPoint(ring:number,index:number,p:Point){if(!item)return;const next=insertGeometryPoint(item,ring,index,p);if(next===item)return;if(savePointChange(next)){setActivePoint([ring,index]);setPointMode('move');}}
+  function addPoint(ring:number,index:number,p:Point,corner=false){if(!item)return;const next=insertGeometryPoint(item,ring,index,p,corner);if(next===item)return;if(savePointChange(next)){setActivePoint([ring,index]);setPointMode('move');}}
   function removePoint(location=activePoint){if(!item||!location)return;const next=removeGeometryPoint(item,...location);if(next===item){setError(t("Keep at least {v0} points in this path.",{v0:item.curve?.closed||isFillKind(item.kind)?3:2}));return;}if(savePointChange(next)){setActivePoint(null);svg.current?.focus({preventScroll:true});}}
   function continueCurve(){
     if(!item?.curve||item.curve.closed)return;
@@ -426,6 +431,7 @@ function StudioEditor() {
   useEffect(()=>{
     const typing=(target:EventTarget|null)=>target instanceof HTMLElement&&!!target.closest('input,select,textarea,[contenteditable="true"]');
     const keydown=(e:KeyboardEvent)=>{
+      setAngleSnap(e.ctrlKey||e.metaKey);
       if(e.key==='Escape'&&colourPickRef.current){e.preventDefault();cancelColourPick();return;}
       if(typing(e.target)||document.querySelector('[popover]:popover-open'))return;
       if(e.target instanceof HTMLElement&&e.target.closest('button,a')&&(e.key==='Enter'||e.code==='Space'))return;
@@ -441,10 +447,10 @@ function StudioEditor() {
       if(e.key==='Enter'&&hasDraft){e.preventDefault();finish();return;}
       if(e.key==='Enter'&&editing){e.preventDefault();finishEditing();return;}
       if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();if(hasDraft){if(canUndoDraft)popDraft();}else if(editing)removePoint();else deleteSelected();return;}
-      const key=e.key.toLowerCase(),next=tools.find(t=>t.key.toLowerCase()===key||t.alt?.toLowerCase()===key);if(next&&(!hasDraft||next.id==='pan')){e.preventDefault();chooseTool(next.id);}
+      const key=e.key.toLowerCase(),next=tools.find(t=>t.key.toLowerCase()===key||t.alt?.toLowerCase()===key);if(next){e.preventDefault();chooseTool(next.id);}
     };
-    const keyup=(e:KeyboardEvent)=>{if(e.code==='Space')setSpacePan(false);};
-    const blur=()=>{setSpacePan(false);};
+    const keyup=(e:KeyboardEvent)=>{setAngleSnap(e.ctrlKey||e.metaKey);if(e.code==='Space')setSpacePan(false);};
+    const blur=()=>{setSpacePan(false);setAngleSnap(false);};
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
   });
@@ -465,14 +471,14 @@ function StudioEditor() {
         moveQueue.current?.cancel();
         touchNavigation.current=true;setNavigating(true);const points=Array.from(touches.current.values()).slice(0,2),center:Point=[(points[0][0]+points[1][0])/2,(points[0][1]+points[1][1])/2];
         if(touchStart.current){setDraft(touchStart.current.draft);setCorners(touchStart.current.corners);if(drag.current){dragUndo.current.cancel();current.current=touchStart.current.project;setProject(touchStart.current.project);}}
-        setDrawing(false);draftDrag.current=null;drag.current=null;panDrag.current=null;measuring.current=false;shapePress.current=null;
+        setDrawing(false);draftDrag.current=null;drag.current=null;panDrag.current=null;measuring.current=false;shapePress.current=null;draftPress.current=null;
         pinch.current={view:viewport.current,anchor:clientToWorld(viewport.current,center,e.currentTarget.getBoundingClientRect(),hoop),center,distance:Math.max(1,Math.hypot(points[0][0]-points[1][0],points[0][1]-points[1][1]))};return;
       }
       if(touchNavigation.current)return;
     }
     endDrag();pressedAnchor.current=null;if(e.button>2)return;
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
-    const smooth=e.button===2&&pathTool(tool)&&!panMode&&!spacePan;
+    const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
     if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan};capture(e);return;}
     if(e.button!==0&&!smooth)return;
     const p=point(e);
@@ -485,14 +491,10 @@ function StudioEditor() {
     }
     if(tool==='freehand'){setDraft([p]);setDrawing(true);capture(e);}
     else if(pathTool(tool)||tool==='points'){
-      const scale=canvasScale;
-      const target=e.target as SVGElement;
-      const anchor=target.closest('[data-draft-point]')?.getAttribute('data-draft-point');
-      const index=smooth?-1:anchor!==undefined&&anchor!==null?Number(anchor):closedDraft&&canFinish&&Math.hypot(p[0]-draft[0][0],p[1]-draft[0][1])*scale<12?0:-1;
-      if(index>=0){draftDrag.current={index,start:[e.clientX,e.clientY],before:draft,moved:false};capture(e);return;}
-      if(pathTool(tool)&&draft.length>=200){setError(t("Use at most 200 curve points. Finish this curve to start another."));return;}
-      if(!draft.length||Math.hypot(p[0]-draft[draft.length-1][0],p[1]-draft[draft.length-1][1])*scale>3){setDraft(d=>[...d,p]);setCorners(c=>[...c,!smooth]);}
-      else if(smooth)setCorners(c=>c.map((v,i)=>i===c.length-1?false:v));
+      const anchor=(e.target as SVGElement).closest('[data-draft-point]')?.getAttribute('data-draft-point');
+      draftPress.current={start:p,button:e.button,moved:false,detail:e.detail};
+      if(e.button===0&&anchor!==undefined&&anchor!==null)draftDrag.current={index:Number(anchor),start:[e.clientX,e.clientY],before:draft,moved:false};
+      capture(e);
     }
     else if(tool==='text'){
       const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object'),hit=project.objects.find(o=>o.id===id&&o.text);
@@ -502,21 +504,23 @@ function StudioEditor() {
       const target=e.target as SVGElement;
       const id=target.closest('[data-object]')?.getAttribute('data-object');
       const source=current.current.objects.find(o=>o.id===id&&!o.hidden);
-      if(source&&(e.ctrlKey||e.metaKey)){selectObject(source.id,e);return;}
+      if(source&&!editing&&(e.ctrlKey||e.metaKey)){selectObject(source.id,e);return;}
       const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]'),end=target.closest('[data-end]')?.getAttribute('data-end');
       if(ends&&item&&(end==='entry'||end==='exit')){startDrag({id:item.id,start:p,source:current.current.objects.find(o=>o.id===item.id)??item,end},e);return;}
       if(editing&&item){
-        if(insertion){const handle=handles.find(h=>h.ring===Number(insertion.getAttribute('data-ring'))&&h.index===Number(insertion.getAttribute('data-insert')));if(handle)addPoint(handle.ring,handle.index,handle.point);return;}
+        if(insertion){const handle=handles.find(h=>h.ring===Number(insertion.getAttribute('data-ring'))&&h.index===Number(insertion.getAttribute('data-insert')));if(handle)addPoint(handle.ring,handle.index,handle.point,e.button===0);return;}
         if(source?.id===item.id&&node){const location:[number,number]=[Number(node.getAttribute('data-ring')),Number(node.getAttribute('data-point'))];setActivePoint(location);pressedAnchor.current=location[1];if(pointMode==='remove'){removePoint(location);return;}startDrag({id:source.id,start:p,source,point:location},e);return;}
-        if(pointMode==='add'){const nearest=closestInsertion(item,p);if(nearest&&nearest.distance*scaleForCanvas()<16)addPoint(nearest.ring,nearest.index,nearest.point);return;}
+        if(pointMode!=='remove'&&!node){const nearest=closestInsertion(item,p);if(nearest&&nearest.distance*scaleForCanvas()<5){addPoint(nearest.ring,nearest.index,p,e.button===0);return;}}
         if(source?.id===item.id){setActivePoint(null);return;}
       }
+      if(e.button!==0)return;
       if(source){const ids=selection.includes(source.id)?selection:[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
       else if(!editing)setSelected(null);
     }
   }
   function scaleForCanvas(){return viewportScale(viewport.current,svg.current!.getBoundingClientRect(),hoop);}
   function pointerMove(event:ReactPointerEvent<SVGSVGElement>){
+    if(draftPress.current&&movedForDrawing(draftPress.current.start,point(event)))draftPress.current.moved=true;
     const e={pointerType:event.pointerType,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,ctrlKey:event.ctrlKey,metaKey:event.metaKey,currentTarget:event.currentTarget} as ReactPointerEvent<SVGSVGElement>;
     if(event.pointerType==='touch'||drawing||panDrag.current||!drag.current&&!measuring.current&&!shapeDraft&&!draftDrag.current){applyPointerMove(e);return;}
     moveQueue.current!.push(()=>applyPointerMove(e));
@@ -531,16 +535,17 @@ function StudioEditor() {
       }
     }
     const p=point(e);
+    setAngleSnap(e.ctrlKey||e.metaKey);
     if(pathTool(tool)||tool==='points'||(editing&&pointMode==='add'))setHover(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height?p:null);
     if(measuring.current){setMeasure(m=>m&&{...m,b:p});return;}
     if(tool==='shape'&&shapeDraft){const press=shapePress.current;if(press&&Math.hypot(e.clientX-press.client[0],e.clientY-press.client[1])>4)press.moved=true;setShapeDraft({...shapeDraft,end:p,square:e.ctrlKey||e.metaKey});return;}
     if(panDrag.current){const d=panDrag.current;applyViewport(panViewport({zoom:viewport.current.zoom,pan:d.source},[e.clientX-d.start[0],e.clientY-d.start[1]],scaleForCanvas()));return;}
     if(draftDrag.current){const d=draftDrag.current;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(d.moved)setDraft(d.before.map((a,i)=>i===d.index?[Math.max(0,Math.min(hoop.width,p[0])),Math.max(0,Math.min(hoop.height,p[1]))]:a));return;}
-    if(drawing){if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>!d.length||Math.hypot(p[0]-d[d.length-1][0],p[1]-d[d.length-1][1])>0.5?[...d,p]:d);}
+    if(drawing){if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>!d.length||Math.hypot(p[0]-d[d.length-1][0],p[1]-d[d.length-1][1])>1e-6?[...d,p]:d);}
     const d=drag.current;
     if(d){
-      const dx=p[0]-d.start[0],dy=p[1]-d.start[1];
-      if(!d.moved&&Math.hypot(dx,dy)*canvasScale<.5)return;
+      const q=d.point&&(e.ctrlKey||e.metaKey)?lockAxis(d.start,p):p,dx=q[0]-d.start[0],dy=q[1]-d.start[1];
+      if(!d.moved&&Math.hypot(dx,dy)*canvasScale<(d.point?3:.5))return;
       d.moved=true;
       if(d.end){const next=withEnd(d.source,d.end,p);dragTo({...d.before,objects:d.before.objects.map(o=>o.id===d.id?next:o)});return;}
       const ids=d.point?[d.id]:d.ids??[d.id],objects=d.before.objects.map(o=>ids.includes(o.id)?moveGeometry(o,([x,y],ri,i)=>d.point&&(d.point[0]!==ri||d.point[1]!==i)?[x,y]:[x+dx,y+dy]):o);
@@ -553,19 +558,33 @@ function StudioEditor() {
     moveQueue.current?.flush();
     if(e.pointerType==='touch'){touches.current.delete(e.pointerId);if(touchNavigation.current){pinch.current=null;if(!touches.current.size){touchNavigation.current=false;touchStart.current=null;setNavigating(false);}return;}if(!touches.current.size)touchStart.current=null;}
     setNavigating(false);
-    panDrag.current=null;measuring.current=false;
+    const wasPanning=!!panDrag.current;panDrag.current=null;measuring.current=false;
+    if(wasPanning){draftPress.current=null;return;}
     if(shapePress.current){const press=shapePress.current;shapePress.current=null;if(press.moved&&shapeDraft)finishShape({...shapeDraft,end:point(e),square:e.ctrlKey||e.metaKey});return;}
-    if(draftDrag.current){const d=draftDrag.current;draftDrag.current=null;if(d.index===0&&closedDraft&&canFinish&&!d.moved)finish();return;}
+    const dragged=draftDrag.current?.moved;draftDrag.current=null;
+    const press=draftPress.current;draftPress.current=null;
+    if(press){
+      const p=point(e);if(dragged||press.moved||movedForDrawing(press.start,p)||panMode||spacePan)return;
+      if(p[0]<0||p[1]<0||p[0]>hoop.width||p[1]>hoop.height)return;
+      const points=draftRef.current,onFirst=(tool==='open'||tool==='closed')&&points.length>2&&Math.hypot(p[0]-points[0][0],p[1]-points[0][1])*canvasScale<12;
+      const next=draftClick({points,corners:cornersRef.current,...clickHistory.current},{p,button:press.button,time:e.timeStamp,detail:press.detail,scale:canvasScale,ctrl:e.ctrlKey||e.metaKey,onFirst,tool:pathTool(tool)?tool:'points'});
+      if(next.action==='close'){finish(points,'first');return;}
+      if(pathTool(tool)&&next.points.length>200){setError(t("Use at most 200 curve points. Finish this curve to start another."));return;}
+      clickHistory.current={lastLeft:next.lastLeft,lastRight:next.lastRight};setDraft(next.points);setCorners(next.corners);return;
+    }
     endDrag();
-    if(drawing){setDrawing(false);if(draftRef.current.length>=2)finish(draftRef.current,true);else cancelDrawing();}
+    if(drawing){setDrawing(false);const p=point(e);if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>[...d,p]);if(draftRef.current.length>=2)finish(draftRef.current);else cancelDrawing();}
   }
-  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
-  function chooseTool(next:Tool){cancelColourPick();if(draftRef.current.length){if(next==='pan')setPanMode(p=>!p);else if(next===tool)setPanMode(false);return;}setTool(next);cancelDrawing();setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
+  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
+  function chooseTool(next:Tool){cancelColourPick();if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
   function fitArtwork(width=project.artwork?.width||hoop.width,height=project.artwork?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
   function editObject(){setTool('select');setEditPoints(true);setActivePoint(null);setPointMode('move');}
-  const displayDraft=useMemo(()=>pathTool(tool)?curvePoints(draft,closedDraft,corners):draft,[tool,draft,closedDraft,corners]);
-  const shapePreview=useMemo(()=>tool==='shape'&&shapeDraft?(()=>{const s=shapeOf(shapeDraft);return curvePoints(s.points,true,s.corners);})():null,[tool,shapeDraft,shapeKind,hoop]);
+  const draftSpline=continuation?project.objects.find(o=>o.id===continuation.id)?.curve?.spline:'levien';
+  const displayDraft=useMemo(()=>pathTool(tool)?curvePoints(draft,false,corners,draftSpline):draft,[tool,draft,corners,draftSpline]);
+  const closeHover=(tool==='open'||tool==='closed')&&draft.length>2&&!!hover&&Math.hypot(hover[0]-draft[0][0],hover[1]-draft[0][1])*canvasScale<12;
+  const reference=draft[draft.length-(tool==='blocks'?2:1)],bandHover=closeHover?draft[0]:hover&&angleSnap&&reference?snapAngle(reference,hover):hover;
+  const shapePreview=useMemo(()=>tool==='shape'&&shapeDraft?(()=>{const s=shapeOf(shapeDraft);return curvePoints(s.points,true,s.corners,'levien');})():null,[tool,shapeDraft,shapeKind,hoop]);
   function changeHoop(value:string){
     const nextHoop=hoops[value],dx=(nextHoop.width-hoop.width)/2,dy=(nextHoop.height-hoop.height)/2;
     commit({...project,hoop:value,objects:project.objects.map(o=>moveGeometry(o,([x,y])=>[x+dx,y+dy])),artwork:project.artwork?{...project.artwork,x:project.artwork.x+dx,y:project.artwork.y+dy}:undefined});fit();
@@ -688,7 +707,6 @@ function StudioEditor() {
         {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} artwork={showImage?project.artwork:undefined} imageOpacity={imageOpacity}/>}
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current)endDrag();}} onPointerLeave={()=>setHover(null)} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
-            if(pathTool(tool)&&draftRef.current.length){if(cornersRef.current.length>(continuation?.base||0))setCorners(c=>c.map((v,i)=>i===c.length-1?false:v));return;}
             if(editing&&item?.curve&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
             const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object');if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
               <defs><pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
@@ -706,7 +724,7 @@ function StudioEditor() {
               {focus&&<IssueMarker focus={focus} canvasScale={canvasScale}/>}
               {ends&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
-              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closedDraft={closedDraft} hover={hover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} corners={corners} canFinish={canFinish} canvasScale={canvasScale}/>}
+              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'} closeHover={closeHover} color={item?.color||palette[3]} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} corners={corners} canvasScale={canvasScale}/>}
               {shapePreview&&shapeDraft&&<ShapeOverlay shapePreview={shapePreview} shapeDraft={shapeDraft} canvasScale={canvasScale}/>}
               {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale}/>}
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
@@ -720,7 +738,7 @@ function StudioEditor() {
       </header>
       <div className="top-actions">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title={t("Design check: problems that could spoil the stitch-out")} aria-label={t("Design check: {v0}{v1}",{v0:badge,v1:fails?t(', {v0} likely to fail',{v0:fails}):''})}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={t('exportWarning.other',{count:fails})}>{t('failsSummary',{count:fails})}</small>}</button>}<Button label={t("Export PES")} size="sm" variant="primary" isLoading={busy} isDisabled={hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}/></div>
       {<div className="tool-banner">
-        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):editing?t("Drag a point · Click + to add · Delete removes the selected point{v0}",{v0:item?.curve?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
+        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
         {!colourPick&&(pathTool(tool)||tool==='points'||editing||tool==='select'&&item)&&<div className="banner-actions">
           {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</button><button title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</button><Button label={closedDraft?t("Close shape"):t("Done")} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
           {editing&&<div className="point-actions" role="group" aria-label={t("Point editing tools")}>
@@ -778,7 +796,7 @@ function StudioEditor() {
         {tool==='shape'&&<div className="shape-flyout" role="radiogroup" aria-label={t("Shape")}>{shapeKinds.map(k=><button key={k} role="radio" aria-checked={shapeKind===k} aria-label={t(shapeNames[k])} title={t(shapeNames[k])} onClick={()=>{setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}><Icon name={k} size={17}/></button>)}</div>}
         <div className="dock" role="toolbar" aria-label={t("Editor tools")}>
           {tools.map((toolInfo,i)=>{const active=(toolInfo.id==='pan'?(tool==='pan'||panMode):tool===toolInfo.id&&!panMode);
-            return <span key={toolInfo.id} className="tool-slot">{(i===3||i===8)&&<span className="toolbar-divider"/>}<button className={active?'tool active':'tool'} disabled={hasDraft&&toolInfo.id!==tool&&toolInfo.id!=='pan'} title={`${toolInfo.id==='shape'?t("Draw shape: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.title} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key})`} aria-label={toolInfo.id==='shape'?t("Shapes: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.id==='shape'?shapeKind:toolInfo.icon}/><span>{toolInfo.label}</span></button></span>;})}
+            return <span key={toolInfo.id} className="tool-slot">{(i===3||i===8)&&<span className="toolbar-divider"/>}<button className={active?'tool active':'tool'} title={`${toolInfo.id==='shape'?t("Draw shape: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.title} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key})`} aria-label={toolInfo.id==='shape'?t("Shapes: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.id==='shape'?shapeKind:toolInfo.icon}/><span>{toolInfo.label}</span></button></span>;})}
           <span className="toolbar-divider"/>
           <button className={`tool ${timeline?'active':''}`} aria-label={timeline?t("Hide stitch playback"):t("Play stitches")} aria-busy={busy} title={timeline?t("Hide stitch playback"):t("Play the stitch-out from the start")} disabled={hasDraft||busy||outside||(!project.objects.length&&!compiled)} onClick={()=>void play()}><Icon name="play"/><span>{t("Play")}</span></button>
           <button className={`tool ${look==='thread'?'active':''}`} aria-label={t("Realistic view")} aria-pressed={look==='thread'} aria-busy={busy} title={t("Toggle realistic view: how the stitches will look on your fabric")} disabled={!project.objects.length&&!compiled} onClick={toggleRealistic}><Icon name="eye"/><span>{busy?t("Working…"):t("Realistic")}</span></button>

@@ -231,3 +231,19 @@ test('Marker positions show explicit points and estimate automatic ones',()=>{
   assert.deepEqual([two.entry,two.exit],[[59,47],[41,47]]);
   assert.equal(routeEnds(p,'missing'),null);
 });
+
+test('Levien curves retain their model through edits, validation, compiler payload and SVG export',()=>{
+  const {curveRing,setCorner}=load('curves'),{exportSVG}=load('svg-export');
+  const curve={points:anchors,closed:true,corners:[true,false,true,false],spline:'levien'},o={...object('Levien',[curveRing(curve)]),curve};
+  const project={version:1,name:'Levien',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[o]};
+  assert.ok(validProject(project));assert.ok(!validProject({...project,objects:[{...o,curve:{...curve,spline:'other'}}]}));
+  const added=insertGeometryPoint(o,0,1,[28,30],true);assert.deepEqual(added.curve.corners,[true,true,false,true,false]);assert.equal(added.curve.spline,'levien');
+  const removed=removeGeometryPoint(added,0,1);assert.deepEqual(removed.curve,curve);
+  for(const changed of [added,removed,setCorner(o,1,true),moveGeometry(o,([x,y])=>[x+1,y+1])]){
+    assert.equal(changed.curve.spline,'levien');assert.deepEqual(changed.rings,[curveRing(changed.curve)]);
+    const stale={...changed,rings:[[[0,0],[1,0],[1,1]]]};
+    assert.deepEqual(geometryPayload({...project,objects:[stale]}).objects[0].rings,changed.rings);
+    assert.equal(exportSVG({...project,objects:[stale]}),exportSVG({...project,objects:[changed]}));
+    const handle=insertionHandles(changed)[0];assert.ok(closestInsertion(changed,handle.point).distance<1e-8);
+  }
+});
