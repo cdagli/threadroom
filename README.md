@@ -342,10 +342,17 @@ artwork first to enable the button.
 
 - **Open shape / Closed shape / Blocks:** left-click plots a corner (straight
   lines meet sharply); right-click, or double-click, plots a curve point (the path
-  bends smoothly through it). Drag draft points to adjust; Enter or **Done** /
-  **Close shape** finishes, and clicking the first point closes a closed shape.
-  Corners show as squares, curve points as circles. Closed shapes are fills, open
-  shapes running stitch and blocks satin; change the stitch style afterwards.
+  bends smoothly through it). Points land on release; moving at least 0.5 mm
+  before release places nothing. A double-click replaces its first click with one
+  smooth point; a rapid second right-click is ignored. Ctrl/⌘ snaps placement and
+  the cursor line to 15° steps. Drag draft points to adjust.
+  Drafts stay open and unfilled, with a solid straight cursor line. After three
+  points, hovering the first enlarges its marker; clicking it closes either Open
+  or Closed shape as a fill. Enter or **Done** / **Close shape** finishes (Open
+  stays open; Closed closes). The tool stays active and the result is selected.
+  Switching tools completes a valid draft; incomplete drafts are discarded.
+  Corners are blue squares, smooth points green circles. Closed shapes are fills,
+  open shapes running stitch and blocks centre-line satin; change styles afterwards.
 - **Shapes:** pick circle, rectangle, star, triangle, diamond, hexagon or heart
   above the toolbar (the last one is remembered). Rectangle: click one corner,
   then the opposite corner (hold Ctrl/⌘ for a square). The others: click the
@@ -353,13 +360,17 @@ artwork first to enable the button.
   Escape cancels. The preview shows the outline and the radius; shapes stop at
   the hoop edge. Each becomes an ordinary editable closed curve with a fill.
 - **Points:** click to place stitch points, then **Done**.
-- **Freehand:** draw and release to save the stroke; tiny jitter is simplified.
-- **Undo point / Backspace:** remove the last draft point. **Cancel / Escape:**
+- **Freehand:** draw and release to fit an editable curve, simplifying jitter and
+  retaining sharp bends. Ending within 2 mm of the start closes the curve as a
+  running-stitch loop. The Freehand tool stays active for another stroke.
+- **Undo point / Backspace / Delete:** remove the last draft point. **Cancel / Escape:**
   discard the unfinished path. Exports wait until the path is finished.
 - **Select:** move an object. **Edit points** or double-click the object exposes
   draggable anchors. Drag points
-  to reshape; click a small **+** between points or choose **Add point** and click
-  the curve. **Remove** lets you click points to delete them; Delete/Backspace
+  to reshape; Ctrl/⌘ locks the drag horizontally or vertically. Click the path
+  to insert a corner or right-click it to insert a smooth point (within 5 screen
+  pixels). Small **+** midpoint handles and **Add point** also remain available.
+  Selected nodes are yellow; hovered nodes enlarge. **Remove** lets you click points to delete them; Delete/Backspace
   removes the selected point. Double-click a point, or select it and use
   **Corner / Curve**, to switch it between a sharp corner and a smooth curve
   point. Arrow keys nudge a focused point (Shift for larger
@@ -375,6 +386,12 @@ artwork first to enable the button.
   Ctrl/⌘-scroll zooms. Two-finger touch gestures pan and pinch-zoom without adding
   drawing points. The zoom buttons and +/− keys work during a trace as well.
 - Ctrl/⌘ Z undo and Ctrl/⌘ Shift Z redo. Text fields keep normal typing.
+
+New curves (including presets and freehand) use Levien's interpolating spline;
+existing saved curves without `curve.spline: 'levien'` keep their Catmull–Rom
+geometry through editing and continuation. Escape-to-discard and draggable draft
+points are deliberate differences from Ember. Open paths need two points and
+closed shapes three. Two-rail Blocks remain a separate feature.
 
 Curve previews use fine samples; running/bean PES exports sample the curve at
 the selected stitch length. Resizing and moving keep anchors and geometry in sync.

@@ -4,7 +4,7 @@ import {load} from './load-lib.mjs';
 const shapes=load('shapes'),{circle,rect,star,triangle,diamond,hexagon,heart,shapeNames,fitRadius,fitRect}=shapes;
 const {curvePoints}=load('curves');
 const near=(a,b)=>Math.abs(a-b)<1e-9;
-const outline=(kind,c,r)=>{const s=kind==='rect'?rect([c[0]-r,c[1]-r],[c[0]+r,c[1]+r]):shapes[kind](c,r);return curvePoints(s.points,true,s.corners);};
+const outline=(kind,c,r)=>{const s=kind==='rect'?rect([c[0]-r,c[1]-r],[c[0]+r,c[1]+r]):shapes[kind](c,r);return curvePoints(s.points,true,s.corners,'levien');};
 const inside=(pts,h)=>pts.every(([x,y])=>x>=-1e-9&&y>=-1e-9&&x<=h.width+1e-9&&y<=h.height+1e-9);
 
 test('Shape names and radial node layouts use millimetres with their top point facing up',()=>{
@@ -37,7 +37,7 @@ test('Heart keeps its eight asymmetric-height nodes, with only the tip and dip s
   const expected=[[10,30],[1.8,22.5],[1.2,16.5],[7,14.5],[10,17.8],[13,14.5],[18.8,16.5],[18.2,22.5]];
   s.points.forEach((p,i)=>p.forEach((n,k)=>assert.ok(near(n,expected[i][k]))));
   assert.deepEqual(s.corners,[true,false,false,false,true,false,false,false]);
-  const ring=curvePoints(s.points,true,s.corners);
+  const ring=curvePoints(s.points,true,s.corners,'levien');
   for(const p of s.points)assert.ok(ring.some(q=>near(q[0],p[0])&&near(q[1],p[1])));
 });
 

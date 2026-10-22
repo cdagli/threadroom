@@ -22,7 +22,7 @@ export type StitchObject = {
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
   entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
   tieIn?: Lock; tieOff?: Lock; lockSize?: number; // unset follows the project's locks
-  curve?: {points: Point[]; closed: boolean; corners?: boolean[]};
+  curve?: {points: Point[]; closed: boolean; corners?: boolean[]; spline?: 'levien'};
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
 };
@@ -231,6 +231,7 @@ export function validProject(value: unknown): value is Project {
     if([o.entry,o.exit].some(pt=>pt!==undefined&&!validPoint(pt)))return false;
     if([o.tieIn,o.tieOff].some(v=>v!==undefined&&!validLock(v))||o.lockSize!==undefined&&!validSize(o.lockSize))return false;
     if(o.curve){
+      if(o.curve.spline!==undefined&&o.curve.spline!=='levien')return false;
       if(typeof o.curve.closed!=='boolean'||!Array.isArray(o.curve.points)||o.curve.points.length<(o.curve.closed?3:2)||o.curve.points.length>200) return false;
       if(!o.curve.points.every(validPoint))return false;
       if(o.curve.corners!==undefined&&(!Array.isArray(o.curve.corners)||o.curve.corners.length!==o.curve.points.length||Array.from(o.curve.corners).some(c=>typeof c!=='boolean')))return false;
