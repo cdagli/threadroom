@@ -52,6 +52,14 @@ export const en={
   "Show ties": "Show ties",
   "Show selected needle points": "Show selected needle points",
 
+  'Text style': 'Text style',
+  'Fill / outline': 'Fill / outline',
+  'Satin lettering': 'Satin lettering',
+  'Satin font': 'Satin font',
+  'Column width': 'Column width',
+  'For 4–10 mm text. Columns are limited to 1–10 mm.': 'For 4–10 mm text. Columns are limited to 1–10 mm.',
+  'Converting this text would exceed 80 objects. Shorten the text first.': 'Converting this text would exceed 80 objects. Shorten the text first.',
+
   "The result would extend outside the hoop.": "The result would extend outside the hoop.",
   "The result has too many points or objects for one design.": "The result has too many points or objects for one design.",
   "Select a fill and the closed shapes to cut out of it.": "Select a fill and the closed shapes to cut out of it.",
@@ -1240,6 +1248,14 @@ export const tr={
   "Show trims": "Kesimleri göster",
   "Show ties": "Bağlama dikişlerini göster",
   "Show selected needle points": "Seçili iğne batışlarını göster",
+
+  'Text style': 'Metin stili',
+  'Fill / outline': 'Dolgu / dış hat',
+  'Satin lettering': 'Saten yazı',
+  'Satin font': 'Saten yazı tipi',
+  'Column width': 'Sütun genişliği',
+  'For 4–10 mm text. Columns are limited to 1–10 mm.': '4–10 mm metinler içindir. Sütun genişliği 1–10 mm ile sınırlıdır.',
+  'Converting this text would exceed 80 objects. Shorten the text first.': 'Bu metnin dönüştürülmesi 80 nesne sınırını aşar. Önce metni kısaltın.',
 
   "The result would extend outside the hoop.": "Sonuç kasnağın dışına taşar.",
   "The result has too many points or objects for one design.": "Sonuçta tek bir tasarım için çok fazla nokta veya nesne var.",

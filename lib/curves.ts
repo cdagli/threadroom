@@ -3,6 +3,7 @@ import {fabrics, isFillKind, isRopeKind, profileDefault, resolve, ropeDefaults, 
 import {splineBeziers,sampleCubic} from './spline';
 import {mergedOutline, transformText} from './text';
 import {transformGuides} from './angle-guides';
+import {satinTextShapes} from './satin-lettering';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
 // The compiler receives flattened millimetre geometry; projects retain anchors.
@@ -87,14 +88,14 @@ export function isClosedShape(o:StitchObject):boolean {
 export type StitchGroup={label:string;kinds:Kind[]};
 export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGroup[] {
   const line:Kind[]=['running','bean','backstitch','double-rope','triple-rope','satin','zigzag','e-stitch','underlay'];
-  if(o.rails)return [{label:t("Blocks"),kinds:['satin-block']}];
+  if(o.rails||o.text?.satin)return [{label:t("Blocks"),kinds:['satin-block']}];
   if(o.kind==='redwork')return [{label:t("Redwork"),kinds:['redwork']}];
   return isClosedShape(o)?[{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}]:[{label:t("Line"),kinds:[...line,'manual']}];
 }
 // Text is relaid out by the editor; manual curves become their anchor stitches.
 // Blocks keep their rails and kind; a rope run starts at Ember's 1.5 mm stitch length.
 export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
-  if(kind===o.kind||o.rails||kind==='satin-block'||kind==='redwork'||o.kind==='redwork')return o;
+  if(kind===o.kind||o.rails||o.text?.satin||kind==='satin-block'||kind==='redwork'||o.kind==='redwork')return o;
   const next=switchKind(o,kind);
   return next!==o&&isRopeKind(kind)&&!isRopeKind(o.kind)?{...next,length:ropeDefaults.length}:next;
 }
@@ -282,6 +283,10 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'images'
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
   return {...rest,objects:rest.objects.filter(o=>o.rings.length&&!o.layoutOnly).map(o=>ends(resolve(withoutSources(o),fabric,locks))).flatMap(o=>{
+    if(o.text?.satin){
+      const {objects,characters}=satinTextShapes(o),{text,...plain}=o;void text;
+      return objects.length?[{...plain,rings:objects.map(b=>b.rings[0]),satinColumns:objects.map((b,i)=>({railPaths:b.rails!.points,character:characters[i]})),entry:undefined,exit:undefined}]:[];
+    }
     if(o.rails)return [{...o,rings:[blockCentre(o.rails)],railPaths:railSamples(o.rails)}];
     if(!o.text){const rings=o.curve?[curveRing(o.curve,!isFillKind(o.kind))]:o.rings;return [o.curve&&line(o.kind)&&!tolerant(o)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);

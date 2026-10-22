@@ -325,3 +325,22 @@ Click to stitch adds one region per click, so its results keep the click order; 
 entry of `project.images`; design SVG layering is stitches < density < trims/ties/needle
 points < travel < selection/handles; path bindings survive locks, hiding and the
 transform box.
+
+- **Satin block fonts for small lettering (done; backlog 23)**. Bundled public-domain
+  Hershey Roman Simplex and Script Simplex, regenerated offline from checksum-verified
+  packed Hershey data with advances and em-unit stroke polylines. Turkish characters
+  compose Hershey marks; no Ember data. `lib/satin-lettering.ts` offsets strokes into
+  paired rails, splits sharp corners and shares the existing text layout for all
+  baseline shapes and affine transforms. Live panel style/font/column-width controls;
+  ordinary Blocks on conversion, grouped per character within the 80-object budget.
+  Live compiler columns retain one owner, sew in character order, connect nearby
+  strokes and travel under previously sewn columns when connected. SVG rail export,
+  typed formal Turkish copy, every-glyph validity and deterministic generation/PES
+  tests; 6 mm Turkish names are quiet in both design checks. Desktop checks pending:
+  live typing/style switching, all layouts, undo/save/reload, conversion/rail editing,
+  Lines/Thread preview and PES export. No browser used for this implementation.
+
+  Merged with SVG import, PNG export, density, trace order, overlays, measure, map to path, pixel art,
+  angle guides and redwork: live satin text stays excluded from shape operations, redwork and Edit
+  points/angles; map-to-path copies, locks, hiding and the transform box keep it live; SVG export skips
+  hidden guides (`layoutOnly`) before expanding columns. Convert to shapes gives ordinary Blocks.
