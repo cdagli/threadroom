@@ -112,7 +112,7 @@ export function removeGeometryPoint(o:StitchObject,ring:number,index:number):Sti
 
 // Entry/exit points and text specs move as ring -1, so dragging one anchor leaves them in place.
 export function moveGeometry(o:StitchObject, move:(p:Point,ring:number,index:number)=>Point):StitchObject {
-  const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)})};
+  const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)}),...(o.center&&{center:move(o.center,-1,-1)})};
   if(o.text)return {...o,...ends,text:transformText(o.text,p=>move(p,-1,-1)),rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
   if(o.curve){
     const curve={...o.curve,points:o.curve.points.map((p,i)=>move(p,0,i))};

@@ -866,7 +866,7 @@ class RunToleranceTests(unittest.TestCase):
 class FillPatternTests(unittest.TestCase):
     def test_cycles_alignment_skip_last_and_lengths(self):
         rows = [(30+i*.5, 20, 60) for i in range(12)]
-        for pattern in C.FILL_PATTERNS:
+        for pattern in (id for id,p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
             piece = C.Rows(rows, 0, pattern, [40,30], .5)
             paths = piece.paths((False, 0), 4)
             self.assertEqual(paths, piece.paths((False, 0), 4), pattern)
@@ -887,7 +887,7 @@ class FillPatternTests(unittest.TestCase):
     def test_even_is_identical_and_patterns_survive_exit_split(self):
         p = project(angle=35, underlay="tatami", exit=[60,45])
         self.assertEqual(compile_project(p)["pes"], compile_project(project(angle=35, underlay="tatami", exit=[60,45], fillPattern="even"))["pes"])
-        for pattern in C.FILL_PATTERNS:
+        for pattern in (id for id,p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
             result = compile_project(project(angle=0, fillPattern=pattern, exit=[60,45]))
             self.assertNotIn("short-stitches", [w["code"] for w in result["warnings"]], pattern)
         for settings in ({"fillPattern":"unknown"}, {"fillPattern":[]}, {"patternParams":None}, {"patternParams":{"steps":1.1}}, {"patternParams":{"steps":101}}, {"patternParams":{"amplitude":-1}}, {"patternParams":{"extra":1}}):
@@ -942,7 +942,7 @@ class FillPatternTests(unittest.TestCase):
     def test_square_penetration_fixtures_machine_limit_and_unbroken_tile_floats(self):
         import hashlib
         expected = json.loads(Path("tests/fill-pattern-penetrations.json").read_text())
-        for id in C.FILL_PATTERNS:
+        for id in (id for id,p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
             p = project(fillPattern=id,fillLength=4,angle=0,spacing=.4,tieIn="none",tieOff="none")
             result = compile_project(p)
             digest = hashlib.sha256(json.dumps(result["commands"],separators=(",",":")).encode()).hexdigest()
@@ -962,7 +962,7 @@ class FillPatternTests(unittest.TestCase):
             for f in p.get("params",[]):
                 for value in (f["min"],f["default"],f["max"],float(f["default"])):
                     C.validate(project(fillPattern=id,patternParams={f["key"]:value}))
-                    C.pattern_cycle(id,4,.2,{f["key"]:value})
+                    C.pattern_cycle(id,4,.2,{f["key"]:value}) if p["mode"] != "engine" else None
                 for value in (None,True,"3",math.nan,math.inf,f["min"]-f["step"],f["max"]+f["step"],f["min"]+f["step"]*.5):
                     with self.assertRaises(ValueError,msg=(id,f["key"],value)):
                         C.validate(project(fillPattern=id,patternParams={f["key"]:value}))
@@ -1068,9 +1068,168 @@ class FillSettingsTests(unittest.TestCase):
         import hashlib
         bear = node("demo",None)
         self.assertEqual(hashlib.sha256(compile_project(bear)["pes"].encode()).hexdigest(),"ed5cb6963af3c5e265158a214cda92f09787818a163805888bb7aca0a18debab")
-        for pattern in C.FILL_PATTERNS:
+        for pattern in (id for id,p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
             p = copy.deepcopy(bear)
             for o in p["objects"]:
                 if o["kind"] == "fill":
                     o["fillPattern"] = pattern
             self.assertEqual(compile_project(p)["warnings"],[],pattern)
+
+
+class NonRowFillTests(unittest.TestCase):
+    def test_satin_splits_columns_and_uses_satin_settings(self):
+        from embroidery.engines import satin_columns
+        shell = [[20,20],[70,20],[70,60],[20,60]]
+        hole = [[35,30],[55,30],[55,50],[35,50]]
+        p = project(rings=[shell,hole],fillPattern="sweepSatin",angle=0,spacing=.32,underlay="center")
+        columns = satin_columns(p["objects"][0])
+        self.assertGreaterEqual(len(columns),4)
+        for rows in columns:
+            for y,a,b in rows:
+                self.assertTrue(all(inside(q,[shell,hole]) for q in C.interpolate([a,y],[b,y],.1)))
+        result = compile_project(p)
+        self.assertEqual(result["pes"],compile_project(p)["pes"])
+        self.assertLessEqual(result["stats"]["maxStitch"],7.15)
+        self.assertNotIn("long-stitches",[w["code"] for w in result["warnings"]])
+        for key,value in (("spacing",.19),("spacing",1.01),("splitLength",13),("shortStitches",None)):
+            with self.assertRaises(ValueError):
+                compile_project(project(fillPattern="sweepSatin",**{key:value}))
+
+    def test_satin_demo_is_quiet(self):
+        p = node("demo",None)
+        for o in p["objects"]:
+            if o["kind"] == "fill":
+                o.update(fillPattern="sweepSatin",spacing=.32,underlay="center",pullCompensation=.4,splitLength=7,shortStitches=True)
+        self.assertEqual(compile_project(p)["warnings"],[])
+
+    def test_circular_true_spacing_center_clipping_and_determinism(self):
+        from embroidery.engines import circular_arms,clip_lines
+        arms = circular_arms([50,50],20,.5,4)
+        self.assertEqual(arms[0][0],[49.5,50])
+        self.assertAlmostEqual(math.dist(arms[0][0],arms[1][0]),1)
+        shell,hole = [[20,20],[80,20],[80,80],[20,80]],[[40,40],[60,40],[60,60],[40,60]]
+        for line in clip_lines(arms,[shell,hole],'evenodd'):
+            self.assertTrue(all(inside(p,[shell,hole],tolerance=.01) for a,b in zip(line,line[1:]) for p in C.interpolate(a,b,.1)))
+        p = project(fillPattern='circular',spacing=.5)
+        result = compile_project(p)
+        self.assertEqual(result['pes'],compile_project(p)['pes'])
+        self.assertEqual(result['pes'],compile_project(project(fillPattern='circular',spacing=.5,center=[45,45]))['pes'])
+        self.assertNotEqual(result['pes'],compile_project(project(fillPattern='circular',spacing=.5,center=[42,46]))['pes'])
+        self.assertLessEqual(result['stats']['maxStitch'],4.15)
+        for center in ([],[1],[1,2,3],[math.nan,40],[-1,40],[101,40]):
+            with self.assertRaises(ValueError):
+                compile_project(project(fillPattern='circular',center=center))
+
+    def test_circular_demo_is_quiet(self):
+        p = node('demo',None)
+        for o in p['objects']:
+            if o['kind']=='fill':
+                o.update(fillPattern='circular')
+        self.assertEqual(compile_project(p)['warnings'],[])
+
+    def test_cross_styles_cycles_coverage_dense_repeats_and_legacy(self):
+        from embroidery.cross import cells,cross_cycle
+        self.assertEqual(cross_cycle(0,0,'cross',1),[(2,0),(1,1),(0,0),(2,2),(1,1),(0,2),(2,0)])
+        self.assertEqual(cross_cycle(0,0,'upright',1),[(1,0),(1,1),(0,1),(2,1),(1,1),(1,2),(1,0)])
+        seen = set()
+        for style in ('cross','upright','double','smyrna','half'):
+            p = project('cross',crossStyle=style,crossSize=3,threadCount=2,coverage=50)
+            r = compile_project(p)
+            self.assertEqual(r['pes'],compile_project(p)['pes'])
+            self.assertLessEqual(r['stats']['maxStitch'],4.15)
+            seen.add(r['pes'])
+            dense = compile_project(project('cross',crossStyle=style,crossSize=3,dense=True))
+            repeat = compile_project(project('cross',crossStyle=style,crossSize=3,threadCount=8))
+            self.assertGreater(dense['stats']['stitches'],r['stats']['stitches'])
+            self.assertGreater(repeat['stats']['stitches'],r['stats']['stitches'])
+        self.assertEqual(len(seen),5)
+        p = project('cross',crossStyle='cross',rings=[[[30,30],[37.5,30],[37.5,39],[30,39]]])['objects'][0]
+        low = cells(p)[0]
+        high = cells({**p,'coverage':100})[0]
+        self.assertGreater(len(low),len(high))
+        self.assertNotEqual(compile_project(project('cross',crossStyle='half',flipped=True))['pes'],compile_project(project('cross',crossStyle='half'))['pes'])
+        for key,value in [('crossStyle','rows'),('crossSize',.5),('crossSize',3.2),('threadCount',1.5),('threadCount',9),('coverage',0),('dense',1),('flipped',None)]:
+            with self.assertRaises(ValueError):
+                compile_project(project('cross',**{key:value}))
+
+    def test_cross_demo_is_quiet(self):
+        for style in ('cross','upright','double','smyrna','half'):
+            p = node('demo',None)
+            for o in p['objects']:
+                if o['kind']=='fill':
+                    o.update(fillPattern='crossStitchFill',crossStyle=style)
+            self.assertEqual(compile_project(p)['warnings'],[],style)
+
+    def test_streamlines_field_separation_clipping_and_determinism(self):
+        from embroidery.streamlines import generate,rk4,flow_field
+        shell = [[30,30],[60,30],[60,60],[30,60]]
+        lines = generate([shell],0,3)
+        self.assertEqual(lines,generate([shell],0,3))
+        self.assertGreater(len(lines),4)
+        self.assertNotEqual(lines,generate([shell],60,3))
+        self.assertLess(len(generate([shell],0,6)),len(lines))
+        self.assertAlmostEqual(math.dist([45,45],rk4([45,45],.1,flow_field(0,[45,45]))),.1,places=5)
+        # Accepted curves cannot collide closer than the dTest separation guard.
+        for i,line in enumerate(lines):
+            for other in lines[:i]:
+                self.assertGreaterEqual(min(math.dist(a,b) for a in line[::10] for b in other[::10]),1.49)
+        p = project(fillPattern='streamlines',angle=20)
+        r = compile_project(p)
+        self.assertEqual(r['pes'],compile_project(p)['pes'])
+        self.assertLessEqual(r['stats']['maxStitch'],4.15)
+        self.assertEqual(r['pes'],compile_project(project(fillPattern='streamlines',angle=20,underlay='tatami',pullCompensation=.8))['pes'])
+        for separation in (.4,1.2,20.5):
+            with self.assertRaises(ValueError):
+                compile_project(project(fillPattern='streamlines',patternParams={'separation':separation}))
+
+    def test_streamlines_demo_is_quiet(self):
+        p = node('demo',None)
+        for o in p['objects']:
+            if o['kind']=='fill':
+                o.update(fillPattern='streamlines')
+        self.assertEqual(compile_project(p)['warnings'],[])
+
+
+    def test_legacy_pes_remains_byte_identical_to_original_compiler(self):
+        import hashlib
+        fixtures = [(node('demo',None),'ed5cb6963af3c5e265158a214cda92f09787818a163805888bb7aca0a18debab'),
+                    (resolved(json.loads(Path('tests/stitch-library.project.json').read_text())),'9eec449e41875b5dc3669d05f727f12bba6b8def0937e178c9a278d497bb0a89')]
+        for p,expected in fixtures:
+            self.assertEqual(hashlib.sha256(compile_project(p)['pes'].encode()).hexdigest(),expected)
+
+    def test_cross_coverage_respects_holes_overlaps_and_nonzero(self):
+        from embroidery.cross import box_area
+        a,b = [[0,0],[2,0],[2,2],[0,2]],[[1,0],[3,0],[3,2],[1,2]]
+        self.assertAlmostEqual(box_area([a,b],0,0,3,'evenodd'),4)
+        self.assertAlmostEqual(box_area([a,b],0,0,3,'nonzero'),6)
+        shell,hole = [[0,0],[4,0],[4,4],[0,4]],[[1,1],[3,1],[3,3],[1,3]]
+        self.assertAlmostEqual(box_area([shell,hole],0,0,4),12)
+        self.assertAlmostEqual(box_area([shell,hole[::-1]],0,0,4,'nonzero'),12)
+        self.assertAlmostEqual(box_area([[[0,0],[4,0],[0,4]]],0,0,4),8)
+
+    def test_non_row_pes_keeps_holes_and_forces_near_disconnected_trims(self):
+        shell = [[20,20],[80,20],[80,80],[20,80]]
+        hole = [[35,35],[65,35],[65,65],[35,65]]
+        for pattern in ('sweepSatin','circular','streamlines'):
+            p = project(rings=[shell,hole],fillPattern=pattern,angle=35,tieIn='none',tieOff='none',spacing=.32 if pattern=='sweepSatin' else .45)
+            r = compile_project(p)
+            for c in r['commands']:
+                if c['type']=='stitch':
+                    self.assertTrue(all(inside(q,[shell,hole],tolerance=.15) for q in C.interpolate([c['fromX'],c['fromY']],[c['x'],c['y']],.1)),pattern)
+            pieces = [[[30,30],[35,30],[35,45],[30,45]],[[36,30],[41,30],[41,45],[36,45]]]
+            r = compile_project(project(rings=pieces,fillPattern=pattern,spacing=.32 if pattern=='sweepSatin' else .45,tieIn='none',tieOff='none'))
+            self.assertGreaterEqual(r['stats']['trims'],1,pattern)
+
+    def test_satin_settings_and_explicit_non_row_ends(self):
+        triangle = [[[30,30],[60,30],[30,40]]]
+        settings = dict(rings=triangle,fillPattern='sweepSatin',spacing=.32,angle=0)
+        short = compile_project(project(**settings,shortStitches=True))
+        full = compile_project(project(**settings,shortStitches=False))
+        self.assertNotEqual(short['pes'],full['pes'])
+        self.assertNotEqual(full['pes'],compile_project(project(**settings,pullCompensation=.4,shortStitches=False))['pes'])
+        self.assertGreater(full['stats']['stitches'],compile_project(project(**settings,splitLength=12,shortStitches=False))['stats']['stitches'])
+        for pattern in ('sweepSatin','circular','crossStitchFill','streamlines'):
+            r = compile_project(project(fillPattern=pattern,entry=[30,45],exit=[60,45],spacing=.32 if pattern=='sweepSatin' else .45))
+            sewn = [c for c in r['commands'] if c['type']=='stitch']
+            self.assertEqual([sewn[0]['x'],sewn[0]['y']],[30,45],pattern)
+            self.assertEqual([sewn[-1]['x'],sewn[-1]['y']],[60,45],pattern)

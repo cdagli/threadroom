@@ -17,6 +17,9 @@ export type StitchObject = {
   fillLength?: number; handStitch?: 0|1|2|3|4|5; gradient?: FillGradient;
   fillUnderlays?: FillUnderlay[];
   fillPattern?: FillPattern; patternParams?: PatternParams;
+  crossStyle?: 'cross'|'upright'|'double'|'smyrna'|'half';
+  crossSize?: number; threadCount?: number; coverage?: number; dense?: boolean; flipped?: boolean;
+  center?: Point; // Circular fill; unset uses the area centroid
   tolerance?: number; // explicit run tolerance; unset keeps legacy sampling
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
@@ -53,6 +56,7 @@ export const hoops: Record<string, {width: number; height: number; label: Key}> 
 export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
 export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
 export const isFillKind=(kind:Kind)=>kind==='fill'||kind==='cross';
+export const hasCrossStyle=(o:StitchObject)=>o.crossStyle!==undefined||(['crossSize','threadCount','coverage','dense','flipped'] as const).some(k=>o[k]!==undefined);
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
 export type FabricProfile = {label: Key; fill: number; satin: number; fillUnderlay: Underlay; satinUnderlay: Underlay; pull: number; stabilizer: Key; topping: Key};
 // The only fabric table: geometryPayload sends resolved values, so the compiler has no fabric defaults.
@@ -98,7 +102,9 @@ export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPu
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
 export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean};
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
-  const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??profileDefault(o.kind,fabric,key);
+  const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin';
+  const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults};
+  const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??(sweep?sweepDefaults[key]??profileDefault(o.kind,fabric,key):profileDefault(o.kind,fabric,key));
   const underlay=(value('underlay')??'none') as Underlay;
   return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true,
     tieIn: o.tieIn??locks.tieIn, tieOff: o.tieOff??locks.tieOff, lockSize: o.lockSize??locks.lockSize};
@@ -227,9 +233,13 @@ export function validProject(value: unknown): value is Project {
     if(o.fillPattern!==undefined&&!fillPatterns.some(p=>p.id===o.fillPattern))return false;
     if(o.patternParams!==undefined&&!validPatternParams(o.fillPattern,o.patternParams))return false;
     if(o.tolerance!==undefined&&(typeof o.tolerance!=='number'||!(o.tolerance>=.1&&o.tolerance<=1)))return false;
-    if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=.3&&o.spacing<=2)))return false;
+    if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=(o.kind==='fill'&&o.fillPattern==='circular'?.05:o.kind==='fill'&&o.fillPattern==='sweepSatin'?.2:.3)&&o.spacing<=(o.kind==='fill'&&o.fillPattern==='circular'?50:o.kind==='fill'&&o.fillPattern==='sweepSatin'?1:2))))return false;
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
-    if(o.underlay!==undefined&&!underlayOptions(o.kind).includes(o.underlay))return false;
+    if(o.underlay!==undefined&&!(o.kind==='fill'&&o.fillPattern==='sweepSatin'?underlayOptions('satin'):underlayOptions(o.kind)).includes(o.underlay))return false;
+    if(o.crossStyle!==undefined&&!['cross','upright','double','smyrna','half'].includes(o.crossStyle))return false;
+    for(const f of fillPatterns.find(p=>p.id==='crossStitchFill')!.params){const v=o[f.key as 'crossSize'];if(v!==undefined&&(!inRange(v,f.min,f.max)||Math.abs((v-f.min)/f.step-Math.round((v-f.min)/f.step))>1e-7))return false;}
+    if([o.dense,o.flipped].some(v=>v!==undefined&&typeof v!=='boolean'))return false;
+    if(o.center!==undefined&&(!validPoint(o.center)||o.center.some((n,i)=>n<0||n>(i?hoops[p.hoop].height:hoops[p.hoop].width))))return false;
     if([o.entry,o.exit].some(pt=>pt!==undefined&&!validPoint(pt)))return false;
     if([o.tieIn,o.tieOff].some(v=>v!==undefined&&!validLock(v))||o.lockSize!==undefined&&!validSize(o.lockSize))return false;
     if(o.curve){
@@ -241,4 +251,12 @@ export function validProject(value: unknown): value is Project {
   }
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;
   return true;
+}
+
+// Area centroid, with even-odd holes subtracted (matching the compiler).
+export function fillCenter(o:StitchObject):Point {
+  let total=0,cx=0,cy=0;
+  const inside=(p:Point,r:Point[])=>{let n=0;for(let i=0;i<r.length;i++){const a=r[i],b=r[(i+1)%r.length];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<a[0]+(p[1]-a[1])*(b[0]-a[0])/(b[1]-a[1]))n++;}return n%2===1;};
+  for(const ring of o.rings){let area=0,x=0,y=0;ring.forEach((a,i)=>{const b=ring[(i+1)%ring.length],v=a[0]*b[1]-b[0]*a[1];area+=v;x+=(a[0]+b[0])*v;y+=(a[1]+b[1])*v;});if(Math.abs(area)<1e-9)continue;const weight=o.fillRule==='nonzero'?area:Math.abs(area)*(o.rings.filter(r=>r!==ring&&inside(ring[0],r)).length%2?-1:1);cx+=x/(3*area)*weight;cy+=y/(3*area)*weight;total+=weight;}
+  return Math.abs(total)>1e-9?[cx/total,cy/total]:o.rings[0]?.[0]??[0,0];
 }

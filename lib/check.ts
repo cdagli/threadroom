@@ -1,5 +1,5 @@
 import {createT,errorText,type Translator,type Key} from './i18n';
-import {defaultTrimJump, hoops, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
+import {defaultTrimJump, hoops, hasCrossStyle, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
 import {moveGeometry, reclose} from './curves';
 
 // Design check: fast geometry checks run in the editor; stitch checks (short/long stitches, density,
@@ -107,12 +107,12 @@ export function checkProject(p: Project): Warning[] {
     const margin = Math.min(g[0], g[1], hoop.width-g[2], hoop.height-g[3]);
     if (margin < -.001) add('outside-hoop', o, g, 'fail', {by: round(-margin)});
     else if (margin < limits.edge) add('near-edge', o, g, 'check', {margin: round(margin), limit: limits.edge});
-    if(o.kind==='fill'&&(o.fillLength??o.length)>5&&['jersey','rib','fleece'].includes(p.fabric))add('fill-long',o,b,'check',{length:o.fillLength??o.length,limit:5});
+    if(o.kind==='fill'&&o.fillPattern!=='sweepSatin'&&o.fillPattern!=='crossStitchFill'&&(o.fillLength??o.length)>5&&['jersey','rib','fleece'].includes(p.fabric))add('fill-long',o,b,'check',{length:o.fillLength??o.length,limit:5});
     if (o.text) {
       const min = limits.text[textGroup(o.kind)];
       if (o.text.size < min) add('text-small', o, b, o.text.size < min*2/3 ? 'fail' : 'check', {size: round(o.text.size), limit: min});
     } else if (isFillKind(o.kind)) {
-      const r = raster(o.rings), cross = o.kind === 'cross' ? resolve(o, p.fabric, p.locks).spacing : 0;
+      const r = raster(o.rings), cross = o.kind === 'cross'&&!hasCrossStyle(o) ? resolve(o, p.fabric, p.locks).spacing : 0;
       const [fail, check] = cross ? [cross, 2*cross] : limits.fillWidth;
       if (r.area < limits.fillArea[1]) add('fill-small', o, b, r.area < limits.fillArea[0] ? 'fail' : 'check', {area: round(r.area), limit: limits.fillArea[1]});
       else if (r.thickness < check) add('fill-narrow', o, b, r.thickness < fail ? 'fail' : 'check', {width: round(r.thickness), limit: check});

@@ -67,6 +67,8 @@ def _cycle(pattern, L, s, items):
     mode = p['mode']
     rows, shear = [], 0
     offsets = lambda values: [(o,[L]) for o in values]
+    if mode == 'engine':
+        return [], 0
     if mode == 'even':
         rows = [(0,[L])]
     elif mode == 'offsets':
