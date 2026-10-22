@@ -13,7 +13,11 @@ export async function traceArtwork(art: Artwork&{rotation?:number}, colours: num
   const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
   const ctx=canvas.getContext('2d', {willReadFrequently:true})!;
   ctx.drawImage(image,0,0,w,h); const rgba=ctx.getImageData(0,0,w,h).data;
-  return orderTrace(traceRaster({width:w,height:h,data:rgba},art,colours,ignoreBackground,t).map(o=>simplifyTrace(o,traceTolerance(Math.max(art.width,art.height)))));
+  return tracePixels({width:w,height:h,data:rgba},art,colours,ignoreBackground,t);
+}
+
+export function tracePixels(image:ImagePixels,art:Artwork,colours:number,ignoreBackground:boolean,t:Translator=createT('en')):StitchObject[]{
+  return orderTrace(traceRaster(image,art,colours,ignoreBackground,t).map(o=>simplifyTrace(o,traceTolerance(Math.max(art.width,art.height)))));
 }
 
 // Pure raster entry point also used by the headless sewing-order benchmark.

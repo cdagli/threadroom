@@ -322,15 +322,18 @@ test('Non-row settings validate, retain defaults and carry centers through geome
 });
 
 test('Non-row panels render translated controls and hide settings the engine ignores',async()=>{
-  const {createRequire}=await import('node:module'),{readFileSync}=await import('node:fs'),ts=(await import('typescript')).default;
+  const {createRequire}=await import('node:module'),{readFileSync,existsSync}=await import('node:fs'),ts=(await import('typescript')).default;
   const requireNode=createRequire(import.meta.url),React=requireNode('react'),{renderToStaticMarkup}=requireNode('react-dom/server');
+  // Render controls after their lazy chunks resolve; the loading fallback has no engine settings.
+  const pending=[],dynamic=loader=>{let Component;pending.push(loader().then(m=>{Component=m.default??m;}));return props=>Component?React.createElement(Component,props):null;};
   const {resolve}=load('project'),{createT}=load('i18n');
   const code=ts.transpileModule(readFileSync(new URL('../app/fill-settings.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
   for(const lang of ['en','tr']){
     const t=createT(lang),module={exports:{}};
     // Sibling app components (./angle-settings) are transpiled with the same loader.
-    const require=id=>id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?(()=>{const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(new URL(`../app/${id.slice(2)}.tsx`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;})():requireNode(id);
+    const require=id=>id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?(()=>{const file=new URL(`../app/${id.slice(2)}.tsx`,import.meta.url);if(!existsSync(file))file.pathname=file.pathname.replace(/\.tsx$/,'.ts');const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;})():requireNode(id);
     new Function('module','exports','require',code)(module,module.exports,require);
+    await Promise.all(pending);
     const {FillSettings,CrossSettings}=module.exports;
     const render=fillPattern=>{const item={...object('Fill',[square]),fillPattern};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100}}));};
     for(const id of ['sweepSatin','circular','crossStitchFill','streamlines']){

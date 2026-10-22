@@ -1,5 +1,6 @@
 import {createT,TranslationError,type Translator,type Key} from './i18n';
-import {parse, type Font} from 'opentype.js';
+import type {Font} from 'opentype.js';
+const parser=()=>import('opentype.js');
 import type {FontRef} from './text';
 
 // Open-license Google Fonts served by Fontsource. Each weight/style/subset is a
@@ -44,7 +45,7 @@ function fetchFont(key:string,load:()=>Promise<ArrayBuffer>):Promise<Font> {
   const done=loaded.get(key);if(done)return Promise.resolve(done);
   let request=pending.get(key);
   if(!request){
-    request=load().then(buffer=>{const font=parse(buffer);loaded.set(key,font);return font;}).finally(()=>pending.delete(key));
+    request=load().then(async buffer=>{const {parse}=await parser();const font=parse(buffer);loaded.set(key,font);return font;}).finally(()=>pending.delete(key));
     pending.set(key,request);
   }
   return request;
@@ -107,7 +108,7 @@ export async function uploadFont(file:File,t:Translator=createT('en')):Promise<F
   if(file.size>15*1024*1024)throw new TranslationError(t,"Choose a font file smaller than 15 MB.");
   if(/\.woff2$/i.test(file.name))throw new TranslationError(t,"WOFF2 is not supported here. Upload the TTF, OTF or WOFF version.");
   const data=await file.arrayBuffer();let font:Font;
-  try{font=parse(data);}catch{throw new TranslationError(t,"This file is not a readable TTF, OTF or WOFF font.");}
+  try{const {parse}=await parser();font=parse(data);}catch{throw new TranslationError(t,"This file is not a readable TTF, OTF or WOFF font.");}
   if(!font.charToGlyphIndex('A')&&!font.charToGlyphIndex('a')&&font.numGlyphs<3)throw new TranslationError(t,"This font has no usable letters.");
   const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',data));
   const id=`u${Array.from(digest.slice(0,10),b=>b.toString(16).padStart(2,'0')).join('')}`;

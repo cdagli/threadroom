@@ -1,0 +1,405 @@
+{
+  "directory": ".next",
+  "units": "bytes (kB = bytes / 1000); gzip per file; modern script tags in prerendered HTML, excludes nomodule polyfill; excludes on-demand chunks",
+  "buildOutput": "\n> threadroom-poc@0.1.0 build\n> next build --webpack\n\n▲ Next.js 16.3.8 (webpack)\n✓ Running next.config.ts took 10ms\n\n  Creating an optimized production build ...\n✓ Compiled successfully in 1049ms\n  Running TypeScript ...\n  Finished TypeScript in 1174ms ...\n  Collecting page data using 4 workers ...\n  Generating static pages using 4 workers (0/3) ...\n✓ Generating static pages using 4 workers (3/3) in 185ms\n  Finalizing page optimization ...\n  Collecting build traces ...\n\nRoute (app)\n┌ ○ /\n└ ○ /_not-found\n\n\n○  (Static)  prerendered as static content\n\n",
+  "routes": [
+    {
+      "route": "/_global-error",
+      "initial": [
+        {
+          "file": "static/chunks/0937d497-4bac4f7c73c04ac9.js",
+          "bytes": 201053,
+          "gzipBytes": 63298
+        },
+        {
+          "file": "static/chunks/858-780fccd00a249d06.js",
+          "bytes": 241448,
+          "gzipBytes": 66442
+        },
+        {
+          "file": "static/chunks/main-app-433e6fb03e8415ae.js",
+          "bytes": 512,
+          "gzipBytes": 221
+        },
+        {
+          "file": "static/chunks/webpack-6f433383dbfabb4f.js",
+          "bytes": 3855,
+          "gzipBytes": 2076
+        }
+      ],
+      "bytes": 446868,
+      "gzipBytes": 132037
+    },
+    {
+      "route": "/_not-found",
+      "initial": [
+        {
+          "file": "static/chunks/0937d497-4bac4f7c73c04ac9.js",
+          "bytes": 201053,
+          "gzipBytes": 63298
+        },
+        {
+          "file": "static/chunks/858-780fccd00a249d06.js",
+          "bytes": 241448,
+          "gzipBytes": 66442
+        },
+        {
+          "file": "static/chunks/main-app-433e6fb03e8415ae.js",
+          "bytes": 512,
+          "gzipBytes": 221
+        },
+        {
+          "file": "static/chunks/886-a59cf4eb05817538.js",
+          "bytes": 140183,
+          "gzipBytes": 41303
+        },
+        {
+          "file": "static/chunks/app/layout-02d24c4384b8b240.js",
+          "bytes": 250,
+          "gzipBytes": 189
+        },
+        {
+          "file": "static/chunks/webpack-6f433383dbfabb4f.js",
+          "bytes": 3855,
+          "gzipBytes": 2076
+        }
+      ],
+      "bytes": 587301,
+      "gzipBytes": 173529
+    },
+    {
+      "route": "/",
+      "initial": [
+        {
+          "file": "static/chunks/0937d497-4bac4f7c73c04ac9.js",
+          "bytes": 201053,
+          "gzipBytes": 63298
+        },
+        {
+          "file": "static/chunks/858-780fccd00a249d06.js",
+          "bytes": 241448,
+          "gzipBytes": 66442
+        },
+        {
+          "file": "static/chunks/main-app-433e6fb03e8415ae.js",
+          "bytes": 512,
+          "gzipBytes": 221
+        },
+        {
+          "file": "static/chunks/886-a59cf4eb05817538.js",
+          "bytes": 140183,
+          "gzipBytes": 41303
+        },
+        {
+          "file": "static/chunks/app/layout-02d24c4384b8b240.js",
+          "bytes": 250,
+          "gzipBytes": 189
+        },
+        {
+          "file": "static/chunks/675-8ab75837ca0f9a93.js",
+          "bytes": 120688,
+          "gzipBytes": 37901
+        },
+        {
+          "file": "static/chunks/app/page-6808853056e20a37.js",
+          "bytes": 307884,
+          "gzipBytes": 102458
+        },
+        {
+          "file": "static/chunks/webpack-6f433383dbfabb4f.js",
+          "bytes": 3855,
+          "gzipBytes": 2076
+        }
+      ],
+      "bytes": 1015873,
+      "gzipBytes": 313888
+    }
+  ],
+  "chunks": [
+    {
+      "file": "static/chunks/app/page-6808853056e20a37.js",
+      "bytes": 307884,
+      "gzipBytes": 102458,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/858-780fccd00a249d06.js",
+      "bytes": 241448,
+      "gzipBytes": 66442,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/a3bc2aad.119388384a8e7d8a.js",
+      "bytes": 236031,
+      "gzipBytes": 65175,
+      "imports": [
+        "lib/fonts.ts -> opentype.js"
+      ]
+    },
+    {
+      "file": "static/chunks/framework-a9acfc9e3cf1ed45.js",
+      "bytes": 218899,
+      "gzipBytes": 69015,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/0937d497-4bac4f7c73c04ac9.js",
+      "bytes": 201053,
+      "gzipBytes": 63298,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/814.277806a8444ff805.js",
+      "bytes": 142228,
+      "gzipBytes": 42360,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/886-a59cf4eb05817538.js",
+      "bytes": 140183,
+      "gzipBytes": 41303,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/main-4de96bd24ad1520e.js",
+      "bytes": 139152,
+      "gzipBytes": 40382,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/675-8ab75837ca0f9a93.js",
+      "bytes": 120688,
+      "gzipBytes": 37901,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/polyfills-42372ed130431b0a.js",
+      "bytes": 112594,
+      "gzipBytes": 39627,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/225.fada7a8889aed407.js",
+      "bytes": 54708,
+      "gzipBytes": 6684,
+      "imports": [
+        "lib/satin-lettering.ts -> ./fonts-satin/script.json"
+      ]
+    },
+    {
+      "file": "static/chunks/942.fc56a2e15e6c6564.js",
+      "bytes": 32905,
+      "gzipBytes": 4235,
+      "imports": [
+        "lib/satin-lettering.ts -> ./fonts-satin/simplex.json"
+      ]
+    },
+    {
+      "file": "static/chunks/171.bdb7d9a5e0fcaf89.js",
+      "bytes": 27581,
+      "gzipBytes": 9451,
+      "imports": [
+        "lib/editor-jobs.ts -> ./pixel-cross",
+        "lib/editor-jobs.ts -> ./svg-import",
+        "lib/editor-jobs.ts -> ./trace"
+      ]
+    },
+    {
+      "file": "static/chunks/483.b581a72711604f9d.js",
+      "bytes": 13842,
+      "gzipBytes": 5728,
+      "imports": [
+        "app/studio.tsx -> @/lib/svg-import",
+        "lib/editor-jobs.ts -> ./svg-import"
+      ]
+    },
+    {
+      "file": "static/chunks/342.52c2d65f7da406d2.js",
+      "bytes": 9820,
+      "gzipBytes": 3225,
+      "imports": [
+        "app/studio.tsx -> ./text-panel"
+      ]
+    },
+    {
+      "file": "static/chunks/200.72d579f79dc8e5ed.js",
+      "bytes": 6464,
+      "gzipBytes": 2956,
+      "imports": [
+        "app/pixel-cross.tsx -> ./pixel-cross-dialog"
+      ]
+    },
+    {
+      "file": "static/chunks/368.55b0a4a65694987e.js",
+      "bytes": 6230,
+      "gzipBytes": 2580,
+      "imports": [
+        "app/text-panel.tsx -> ./font-picker"
+      ]
+    },
+    {
+      "file": "static/chunks/8.1c67afc137fd4664.js",
+      "bytes": 5651,
+      "gzipBytes": 2733,
+      "imports": [
+        "lib/editor-jobs.ts -> ./click-to-stitch"
+      ]
+    },
+    {
+      "file": "static/chunks/479.325e818fe63a042d.js",
+      "bytes": 4230,
+      "gzipBytes": 2074,
+      "imports": [
+        "lib/editor-jobs.ts -> ./trace"
+      ]
+    },
+    {
+      "file": "static/chunks/871.003f56dfb1f8d762.js",
+      "bytes": 4212,
+      "gzipBytes": 1694,
+      "imports": [
+        "app/worksheet.tsx -> ./worksheet-dialog"
+      ]
+    },
+    {
+      "file": "static/chunks/266.9df336edffc0dcf2.js",
+      "bytes": 3955,
+      "gzipBytes": 1603,
+      "imports": [
+        "app/map-to-path-control.tsx -> ./map-to-path"
+      ]
+    },
+    {
+      "file": "static/chunks/952.72b2fdfd0d36ae77.js",
+      "bytes": 3928,
+      "gzipBytes": 1884,
+      "imports": [
+        "app/io-controls.tsx -> ./image-options"
+      ]
+    },
+    {
+      "file": "static/chunks/webpack-6f433383dbfabb4f.js",
+      "bytes": 3855,
+      "gzipBytes": 2076,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/497.d8d16e6b3a43043f.js",
+      "bytes": 3396,
+      "gzipBytes": 1749,
+      "imports": [
+        "lib/editor-jobs.ts -> ./pixel-cross"
+      ]
+    },
+    {
+      "file": "static/chunks/411.3007e9d9ab061d17.js",
+      "bytes": 3122,
+      "gzipBytes": 1310,
+      "imports": [
+        "app/fill-settings.tsx -> ./pattern-picker"
+      ]
+    },
+    {
+      "file": "static/chunks/527.ac94958f86e9f709.js",
+      "bytes": 2902,
+      "gzipBytes": 1160,
+      "imports": [
+        "app/studio.tsx -> ./shape-tools"
+      ]
+    },
+    {
+      "file": "static/chunks/app/_not-found/page-045732ce39cbf220.js",
+      "bytes": 2667,
+      "gzipBytes": 991,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/581.669f8ceaff05fe9d.js",
+      "bytes": 2502,
+      "gzipBytes": 1128,
+      "imports": [
+        "app/studio.tsx -> ./thread-picker"
+      ]
+    },
+    {
+      "file": "static/chunks/650.b4ea707ed948ec15.js",
+      "bytes": 1921,
+      "gzipBytes": 867,
+      "imports": [
+        "../../../node_modules/@astryxdesign/core/dist/Text/Text.js -> ../Tooltip/Tooltip.js"
+      ]
+    },
+    {
+      "file": "static/chunks/36.c435f49fe6f555fc.js",
+      "bytes": 1675,
+      "gzipBytes": 872,
+      "imports": [
+        "lib/editor-jobs.ts -> ./density"
+      ]
+    },
+    {
+      "file": "static/chunks/954.e8cb14f4d6450b52.js",
+      "bytes": 1459,
+      "gzipBytes": 712,
+      "imports": [
+        "app/thread-picker.tsx -> ./thread-catalogue"
+      ]
+    },
+    {
+      "file": "static/chunks/550.eb547a57672be5d7.js",
+      "bytes": 1127,
+      "gzipBytes": 565,
+      "imports": [
+        "app/io-controls.tsx -> ./svg-import-choice"
+      ]
+    },
+    {
+      "file": "static/chunks/main-app-433e6fb03e8415ae.js",
+      "bytes": 512,
+      "gzipBytes": 221,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/app/layout-02d24c4384b8b240.js",
+      "bytes": 250,
+      "gzipBytes": 189,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/next/dist/client/components/builtin/global-error-c1a4a91b789f30c5.js",
+      "bytes": 178,
+      "gzipBytes": 159,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/app/_global-error/page-7c6d865aa589b191.js",
+      "bytes": 147,
+      "gzipBytes": 135,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/next/dist/client/components/builtin/app-error-7c6d865aa589b191.js",
+      "bytes": 147,
+      "gzipBytes": 135,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/next/dist/client/components/builtin/forbidden-7c6d865aa589b191.js",
+      "bytes": 147,
+      "gzipBytes": 135,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/next/dist/client/components/builtin/not-found-7c6d865aa589b191.js",
+      "bytes": 147,
+      "gzipBytes": 135,
+      "imports": []
+    },
+    {
+      "file": "static/chunks/next/dist/client/components/builtin/unauthorized-7c6d865aa589b191.js",
+      "bytes": 147,
+      "gzipBytes": 135,
+      "imports": []
+    }
+  ]
+}

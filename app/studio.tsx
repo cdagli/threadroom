@@ -1,7 +1,9 @@
 'use client';
+import dynamic from 'next/dynamic';
+import {Loading} from './panel-loading';
 import {StitchOverlays,OverlayControls} from './stitch-overlays';
 import {measurePoint} from '@/lib/measure';
-import {MapToPath} from './map-to-path';
+import {MapToPath} from './map-to-path-control';
 import {syncPathBindings} from '@/lib/map-to-path';
 import {PixelCrossButton} from './pixel-cross';
 import {useT} from './i18n';
@@ -20,25 +22,24 @@ import {fitFreehand} from '@/lib/spline';
 import {clientToWorld, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
 import {canvasMenu, objectMenu, type MenuAction, type MenuEntry} from '@/lib/context-menu';
 import {ContextMenu} from './context-menu';
-import {traceArtwork} from '@/lib/trace';
-import {artworkPixels, sampleArtwork} from '@/lib/artwork-color';
-import {clickToStitch, defaultTolerance, downsample, toleranceLimits, type Pixels} from '@/lib/click-to-stitch';
+import {editorTask,taskCancelled} from '@/lib/editor-task';
+import {artworkPixels, traceArtworkPixels, sampleArtwork} from '@/lib/artwork-color';
+import {defaultTolerance, toleranceLimits, type Pixels} from '@/lib/click-to-stitch';
 import {activeImage, imageBounds, imageLimits, insideImage, migrateImages, moveImage, removeImage, toImageFrame, transformImage, updateImage} from '@/lib/images';
 import ImagesPanel from './images-panel';
 import {parse} from '@/lib/pes-parser';
-import {importSVG} from '@/lib/svg-import';
 import {SVGImportChoice,ExportImageButton} from './io-controls';
 import {DensityHeat,DensityLegend,StitchDiagnostics,useDensity} from './density-view';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
 import {defaultText, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
-import {layoutSatinText,convertSatinText} from '@/lib/satin-lettering';
+import {layoutSatinText,convertSatinText,ensureSatinFonts,satinFontsLoaded} from '@/lib/satin-lettering';
 import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
 import StitchSelector from './stitch-selector';
-import TextPanel from './text-panel';
+const TextPanel=dynamic(()=>import('./text-panel'),{loading:Loading});
 import ThreadView from './thread-view';
-import ThreadPicker from './thread-picker';
+const ThreadPicker=dynamic(()=>import('./thread-picker'),{loading:Loading});
 import {SewingSpeed,SewingTime,WorksheetButton} from './worksheet';
 import {recolorObject} from '@/lib/threads';
 import LayersPanel from './layers-panel';
@@ -46,7 +47,8 @@ import {IssueMarker, EndHandles, DraftOverlay, ShapeOverlay, MeasureOverlay, Nee
 import {CanvasObject} from './canvas-object';
 import {PointHandles} from './point-handles';
 import {useStableCallback} from './use-stable-callback';
-import {ShapeTools,KnifeOverlay} from './shape-tools';
+import {KnifeOverlay} from './knife-overlay';
+const ShapeTools=dynamic(()=>import('./shape-tools').then(m=>m.ShapeTools),{loading:Loading});
 import {combineShapes,cutHole,cutHoles,flattenOverlaps,knifeShapes,shapeRegion,type ShapeResult} from '@/lib/shape-ops';
 import {AngleGuideEditor} from './angle-guides';
 import {RedworkAction} from './redwork-action';
@@ -176,7 +178,12 @@ function StudioEditor() {
   // Click to stitch: the image chosen when the tool starts, its working-resolution pixels and the hovered region.
   const [tolerance,setTolerance]=useState(defaultTolerance),[stitchImage,setStitchImage]=useState<string|null>(null),[stitchHover,setStitchHover]=useState<Point[][]|null>(null);
   const stitchPixels=useRef<{src:string;promise:Promise<Pixels>;px?:Pixels}|null>(null),lastStitch=useRef<{key:string;rings:Point[][]|null}|null>(null);
-  useEffect(()=>{setStitchHover(null);lastStitch.current=null;},[tool]);
+  const tasks=useRef<ReturnType<typeof editorTask>[]|null>(null);
+  if(!tasks.current)tasks.current=Array.from({length:5},()=>editorTask());
+  const [traceTask,svgTask,pixelsTask,hoverTask,clickTask]=tasks.current;
+  const traceRequest=useRef(0),svgRequest=useRef(0),stitchSession=useRef(0),clickQueue=useRef(Promise.resolve());
+  useEffect(()=>{setStitchHover(null);lastStitch.current=null;stitchSession.current++;hoverTask.cancel();clickTask.cancel();},[tool,stitchImage,tolerance]);
+  useEffect(()=>()=>{revision.current++;stitchSession.current++;stitchPixels.current=null;tasks.current?.forEach(task=>task.cancel());},[]);
   const clickHistory=useRef<Pick<DraftState,'lastLeft'|'lastRight'>>({});
   const draftPress=useRef<{start:Point;button:number;moved:boolean;detail:number}|null>(null);
   const [measure,setMeasure]=useState<{a:Point;b:Point}|null>(null),measuring=useRef(false);
@@ -184,7 +191,7 @@ function StudioEditor() {
   const shapePress=useRef<{client:Point;moved:boolean}|null>(null);
   // Point capture retargets double-clicks to the canvas, so remember which anchor was pressed.
   const pressedAnchor=useRef<number|null>(null);
-  const [settingsCollapsed,setSettingsCollapsed]=useState(false);
+  const [settingsCollapsed,setSettingsCollapsed]=useState(false),[focusOffset,setFocusOffset]=useState(0);
   const [cutKeep,setCutKeep]=useState(false);
   // A selected reference image (never together with selected objects) is moved and transformed on the canvas.
   const [imageSel,setImageSel]=useState<string|null>(null);
@@ -216,7 +223,7 @@ function StudioEditor() {
   const [continuation,setContinuation]=useState<{id:string;fromStart:boolean;base:number}|null>(null);
   const [pathTarget,setPathTarget]=useState<string|null>(null),[guide,setGuide]=useState<{text:string;id:string;name:string}|null>(null);
   const [fontLoading,setFontLoading]=useState(0),[fontsReady,setFontsReady]=useState(0);
-  const textArea=useRef<HTMLTextAreaElement>(null),lastFont=useRef(defaultFont),lastMerge=useRef<{key:string;time:number}|null>(null);
+  const textFocus=useRef(false),textArea=useRef<HTMLTextAreaElement>(null),lastFont=useRef(defaultFont),lastMerge=useRef<{key:string;time:number}|null>(null);
   const [zoom,setZoom]=useState(1), [pan,setPan]=useState<Point>([0,0]);
   const [canvasSize,setCanvasSize]=useState({width:1,height:1});
   const [playing,setPlaying]=useState(false), [progress,setProgress]=useState(1);
@@ -267,7 +274,7 @@ function StudioEditor() {
   useEffect(()=>{if(tool!=='open')setPathTarget(null);},[tool]);
   const missingGlyphs=useMemo(()=>{
     if(!item?.text||fontLoading)return [];void fontsReady;
-    if(item.text.satin)return layoutSatinText(item.text).missing;
+    if(item.text.satin)return satinFontsLoaded()?layoutSatinText(item.text).missing:[];
     const fonts=loadedFonts(item.text.font);if(!fonts.length)return [];
     return [...new Set(item.text.content.replace(/\s/g,''))].filter(c=>!fonts.some(f=>f.charToGlyphIndex(c)>0));
   },[item?.text,fontLoading,fontsReady]);
@@ -296,9 +303,12 @@ function StudioEditor() {
     let initialT=t;try{if(localStorage.getItem('threadroom-lang')==='en')initialT=createT('en');}catch{/* Storage is optional. */}
     try{setViewSettings(readViewSettings(localStorage.getItem('threadroom-view-v1')));clipboard.current=readClipboard(localStorage.getItem('threadroom-clipboard-v1'));}catch{/* Storage is optional. */}
     let p:Project=demo(initialT);
-    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=syncPathBindings(normalizeGroups(value));}}catch{/* Storage is optional. */}
-    p=migrateImages(normalizeGroups(p));current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);
+    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
+    let live=true;
+    const restore=()=>{if(!live)return;try{p=syncPathBindings(migrateImages(normalizeGroups(p)));}catch{p=migrateImages(demo(initialT));}current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);};
+    if(p.objects.some(o=>o.text?.satin))void ensureSatinFonts().then(restore).catch(e=>setError(errorText(e,t,'The font could not be loaded.')));else restore();
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
+    return()=>{live=false;};
   },[]);
   useEffect(()=>{
     if(!ready)return;
@@ -351,7 +361,7 @@ function StudioEditor() {
     current.current=next;setProject(next);setSelection(ids=>ids.filter(id=>next.objects.some(o=>o.id===id)));invalidate();setSaved(false);if(label)setMessage(label);
   }
   function stopPlayback(){playRequest.current++;setPlaying(false);setProgress(1);}
-  function invalidate(){revision.current++;compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
+  function invalidate(){revision.current++;traceTask.cancel();svgTask.cancel();hoverTask.cancel();clickTask.cancel();lastStitch.current=null;setStitchHover(null);compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
   function layoutObject(o:StitchObject):StitchObject{
     if(!o.text)return o;if(o.text.satin)return {...o,kind:'satin-block',rings:layoutSatinText(o.text).rings};
     const fonts=loadedFonts(o.text.font);if(!fonts.length)return o;
@@ -367,8 +377,9 @@ function StudioEditor() {
     setFontLoading(n=>n+1);
     ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
   }
-  function updateText(patch:Partial<TextSpec>,merge?:string){
+  async function updateText(patch:Partial<TextSpec>,merge?:string){
     if(!item?.text||item.locked)return;
+    if(patch.satin&&!satinFontsLoaded()){const version=revision.current;setFontLoading(n=>n+1);try{await ensureSatinFonts();}catch(e){setError(errorText(e,t,'The font could not be loaded.'));return;}finally{setFontLoading(n=>n-1);}if(version!==revision.current)return;setFontsReady(n=>n+1);}
     const text={...item.text,...patch},name=patch.content!==undefined&&item.name===textName(item.text.content)?textName(text.content):item.name;
     if(patch.font)lastFont.current=text.font;
     const next=layoutObject({...item,name,text,...(patch.satin&&!item.text.satin?{kind:'satin-block' as const,underlay:undefined,spacing:undefined}:item.text.satin&&!text.satin?{kind:'fill' as const,underlay:undefined,spacing:undefined}:{})});
@@ -379,9 +390,9 @@ function StudioEditor() {
     const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
     loadTextFonts(o.id,text);setSettingsCollapsed(false);
-    requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});
+    textFocus.current=true;requestAnimationFrame(focusTextReady);
   }
-  function focusText(){setSettingsCollapsed(false);requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});}
+  function focusText(){setSettingsCollapsed(false);textFocus.current=true;requestAnimationFrame(focusTextReady);}
   function convertText(){
     if(!item?.text)return;
     if(!item.rings.length){setError(t("Type some text before converting it to shapes."));return;}
@@ -769,7 +780,7 @@ function StudioEditor() {
     else if(action==='knife')chooseTool('knife');
     else if(action==='offset'){
       // Offset… opens the Shape tools distance field; Grow / Shrink there apply it.
-      setSettingsCollapsed(false);requestAnimationFrame(()=>{const field=document.querySelector<HTMLInputElement>('.shape-offset input');field?.focus();field?.select();});return;
+      setSettingsCollapsed(false);setFocusOffset(n=>n+1);return;
     }
     else if(action==='fit')fit();else setViewSettings(v=>({...v,showGrid:!v.showGrid}));
     svg.current?.focus({preventScroll:true});
@@ -777,33 +788,36 @@ function StudioEditor() {
   function stitchTarget(){return current.current.images?.find(i=>i.id===stitchImage&&!i.hidden);}
   function workingPixels(image:RefImage){
     const cached=stitchPixels.current;if(cached?.src===image.src)return cached.promise;
-    const entry:{src:string;promise:Promise<Pixels>;px?:Pixels}={src:image.src,promise:artworkPixels(image.src,t).then(px=>{const small=downsample(px);entry.px=small;return small;})};
+    const entry:{src:string;promise:Promise<Pixels>;px?:Pixels}={src:image.src,promise:artworkPixels(image.src,t).then(px=>{if(stitchPixels.current!==entry)throw new DOMException('Cancelled','AbortError');return pixelsTask.run({kind:'downsample',pixels:px});}).then(small=>{entry.px=small;return small;})};
     stitchPixels.current=entry;void entry.promise.catch(()=>{if(stitchPixels.current===entry)stitchPixels.current=null;});return entry.promise;
   }
   // Hover previews the region a click would take; a pixel and tolerance already shown is not recomputed.
   function hoverStitch(p:Point|null,tol=tolerance){
     const image=stitchTarget(),px=image&&stitchPixels.current?.src===image.src?stitchPixels.current.px:undefined;
-    if(!p||!image||!px||!insideImage(image,p)){lastStitch.current=null;setStitchHover(null);return;}
+    if(!p||!image||!px||!insideImage(image,p)){hoverTask.cancel();lastStitch.current=null;setStitchHover(null);return;}
     const q=toImageFrame(image,p),u=Math.floor((q[0]-image.x)/image.width*px.width),v=Math.floor((q[1]-image.y)/image.height*px.height),key=[image.id,image.x,image.y,image.width,image.height,image.rotation,u,v,tol].join();
     if(lastStitch.current?.key===key)return;
-    const rings=clickToStitch(px,image,q,tol)?.rings??null;lastStitch.current={key,rings};setStitchHover(rings);
+    lastStitch.current={key,rings:null};setStitchHover(null);
+    void hoverTask.run({kind:'click',pixels:px,image:{x:image.x,y:image.y,width:image.width,height:image.height,rotation:image.rotation},point:q,tolerance:tol}).then(r=>{if(lastStitch.current?.key!==key)return;const rings=r?.rings??null;lastStitch.current={key,rings};setStitchHover(rings);}).catch(e=>{if(!taskCancelled(e))setError(errorText(e,t,'Could not read the reference image.'));});
   }
-  async function stitchAt(p:Point,outline:boolean){
+  function stitchAt(p:Point,outline:boolean){const session=stitchSession.current,tol=tolerance;clickQueue.current=clickQueue.current.then(async()=>{if(session===stitchSession.current)await stitchRegion(p,outline,tol);});}
+  async function stitchRegion(p:Point,outline:boolean,tol:number){
     const image=stitchTarget();if(!image){setError(t("Show a reference image to use Click to stitch."));return;}
     if(!insideImage(image,p)){setError(t("Click inside the reference image."));return;}
     try{
-      const px=await workingPixels(image),before=current.current;if(!before.images?.includes(image))return;
-      const r=clickToStitch(px,image,toImageFrame(image,p),tolerance);
+      const version=revision.current,session=stitchSession.current,px=await workingPixels(image),before=current.current;if(!before.images?.includes(image)||version!==revision.current||session!==stitchSession.current)return;
+      const r=await clickTask.run({kind:'click',pixels:px,image:{x:image.x,y:image.y,width:image.width,height:image.height,rotation:image.rotation},point:toImageFrame(image,p),tolerance:tol});
+      if(version!==revision.current||session!==stitchSession.current)return;
       if(!r){setError(t("No colour area here. Try another point or a higher tolerance."));return;}
       if(before.objects.length>=80){setError(t("A design holds at most 80 objects. Delete some objects first."));return;}
       const n=before.objects.length+1,o:StitchObject=outline?object(t("Region outline {v0}",{v0:n}),reclose(r.rings,true),'running',r.color):{...object(t("Stitched region {v0}",{v0:n}),r.rings,'fill',r.color),fillPattern:'tatami'};
       const next={...before,objects:[...before.objects,o]};
       if(!validProject(next)){setError(t("This area is too complex. Lower the tolerance or choose a simpler area."));return;}
       commit(next,outline?t("Outline added"):t("Fill added"));setSelected(o.id);setError('');
-    }catch(e){setError(errorText(e,t,'Could not read the reference image.'));}
+    }catch(e){if(!taskCancelled(e))setError(errorText(e,t,'Could not read the reference image.'));}
   }
   function chooseTool(next:Tool){cancelColourPick();
-    if(next==='stitch'&&next!==tool){const image=activeImage(current.current,imageSel);if(!image||image.hidden){setError(t("Show a reference image to use Click to stitch."));return;}setStitchImage(image.id);setShowImage(true);void workingPixels(image).catch(e=>setError(errorText(e,t,'Could not read the reference image.')));}if(next==='holes'&&next!==tool&&!(item&&!multi&&isFillKind(item.kind)&&!item.hidden&&!item.locked&&shapeRegion(item))){setError(t("Select a fill to cut holes in."));return;}if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
+    if(next==='stitch'&&next!==tool){const image=activeImage(current.current,imageSel);if(!image||image.hidden){setError(t("Show a reference image to use Click to stitch."));return;}setStitchImage(image.id);setShowImage(true);void workingPixels(image).catch(e=>{if(!taskCancelled(e))setError(errorText(e,t,'Could not read the reference image.'));});}if(next==='holes'&&next!==tool&&!(item&&!multi&&isFillKind(item.kind)&&!item.hidden&&!item.locked&&shapeRegion(item))){setError(t("Select a fill to cut holes in."));return;}if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
   function fitArtwork(width=art?.width||hoop.width,height=art?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
   // Edit angles (A): a fill without guides starts with one across its bounds at the current angle.
@@ -832,11 +846,17 @@ function StudioEditor() {
       if(f.size>8*1024*1024)throw new TranslationError(t,"Choose a file smaller than 8 MB.");
       if(/\.svg$/i.test(f.name)){
         if(asShapes===undefined){setPendingSVG(f);return;}
-        if(asShapes){const before=current.current,p=importSVG(await f.text(),f.name,before,t);commit(p);setSelected(p.objects[before.objects.length]?.id??null);fit();leavePanel();return;}
+        if(asShapes){
+          const request=++svgRequest.current;svgTask.cancel();setBusy(true);const before=current.current,version=revision.current;
+          try{const [{readSVGSources},source]=await Promise.all([import('@/lib/svg-import'),f.text()]);if(version!==revision.current||request!==svgRequest.current)return;
+            const p=await svgTask.run({kind:'svg',sources:readSVGSources(source,t),filename:f.name,project:before,lang});if(version!==revision.current||request!==svgRequest.current)return;
+            commit(p);setSelected(p.objects[before.objects.length]?.id??null);fit();leavePanel();return;
+          }finally{if(request===svgRequest.current)setBusy(false);}
+        }
       }
       if(/\.json$/i.test(f.name)){
         const p:unknown=JSON.parse(await f.text());if(!validProject(p))throw new TranslationError(t,"This is not a supported Threadroom project.");
-        commit(p);setSelected(p.objects[0]?.id||null);fit();leavePanel();return;
+        const version=revision.current;if(p.objects.some(o=>o.text?.satin))await ensureSatinFonts();if(version!==revision.current)return;commit(p);setSelected(p.objects[0]?.id||null);fit();leavePanel();return;
       }
       if(/\.(pes|pec)$/i.test(f.name)){
         const data=await f.arrayBuffer(), parsed=parse(data,f.name), h=hoops[project.hoop];
@@ -850,7 +870,7 @@ function StudioEditor() {
       if(!/\.(png|jpe?g|webp|svg)$/i.test(f.name))throw new TranslationError(t,"Choose PNG, JPG, WebP, SVG, PES, PEC, or a Threadroom JSON project.");
       const src=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(f);});
       await loadImage(src,f.name);leavePanel();
-    }catch(e){setError(errorText(e,t,'This file could not be opened.'));}
+    }catch(e){if(!taskCancelled(e))setError(errorText(e,t,'This file could not be opened.'));}
   }
   async function loadImage(src:string,name:string){
     const img=new Image();img.src=src;await img.decode();
@@ -862,10 +882,10 @@ function StudioEditor() {
     commit({...p,...(!p.objects.length&&!list.length&&{name:name.replace(/\.[^.]+$/,'').slice(0,40)}),images:[...list,image]});selectImage(image.id);setShowImage(true);fitArtwork(width,height);setTool('closed');
   }
   async function trace(){
-    if(!art||hasDraft)return;setBusy(true);setError('');
+    if(!art||hasDraft)return;const request=++traceRequest.current;traceTask.cancel();setBusy(true);setError('');
     const before=project, version=revision.current, source=art;
     // Traced regions are added after the existing objects; the traced image fades to show them.
-    try{const objects=await traceArtwork(source,colours,ignoreBg,t);if(revision.current!==version)return;if(before.objects.length+objects.length>80)throw new TranslationError(t,"A design holds at most 80 objects. Delete some objects first.");commit(updateImage({...before,objects:[...before.objects,...objects]},source.id,{opacity:.25}),t('regions.other',{count:objects.length}));setSelected(objects[0]?.id||null);setShowImage(true);setEditPoints(false);setTool('select');leavePanel();}catch(e){setError(errorText(e,t,'Tracing failed.'));}finally{setBusy(false);}
+    try{const pixels=await traceArtworkPixels(source.src);if(revision.current!==version||request!==traceRequest.current)return;const objects=await traceTask.run({kind:'trace',pixels,art:{...source,src:''},colours,ignoreBackground:ignoreBg,lang});if(revision.current!==version||request!==traceRequest.current)return;if(before.objects.length+objects.length>80)throw new TranslationError(t,"A design holds at most 80 objects. Delete some objects first.");commit(updateImage({...before,objects:[...before.objects,...objects]},source.id,{opacity:.25}),t('regions.other',{count:objects.length}));setSelected(objects[0]?.id||null);setShowImage(true);setEditPoints(false);setTool('select');leavePanel();}catch(e){if(request===traceRequest.current&&!taskCancelled(e))setError(errorText(e,t,'Tracing failed.'));}finally{if(request===traceRequest.current)setBusy(false);}
   }
   async function generate(exportFile=false):Promise<boolean>{
     if(hasDraft){setError(t("Finish or cancel the current path before previewing."));return false;}
@@ -881,6 +901,7 @@ function StudioEditor() {
   }
   function toggleRealistic(){setLook(l=>l==='lines'?'thread':'lines');}
   function exported(){if(fails)setMessage(t('exportProblems.other',{count:fails}));}
+  const focusTextReady=useStableCallback(()=>{if(textFocus.current&&textArea.current){textArea.current.focus();textArea.current.select();textFocus.current=false;}});
   const resetEnd=useStableCallback((key:'entry'|'exit')=>updateObject({[key]:undefined}));
   const stableAddPoint=useStableCallback(addPoint),stableSavePoint=useStableCallback(savePointChange),stableRemovePoint=useStableCallback(removePoint);
   const sewn=compiled?Math.floor(compiled.commands.length*progress):0;
@@ -1021,9 +1042,9 @@ function StudioEditor() {
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
         <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected}/>
-        <ShapeTools project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
+        <ShapeTools focusOffset={focusOffset} project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
         {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><RedworkAction project={project} selection={selection} onRun={redwork}/><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
-        {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
+        {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel onReady={focusTextReady} spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
         <fieldset disabled={hasDraft||allLocked} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}

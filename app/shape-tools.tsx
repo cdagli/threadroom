@@ -1,12 +1,13 @@
 'use client';
-import {memo,useState} from 'react';
+import {useEffect,useState} from 'react';
 import {useT} from './i18n';
 import {shapeOptions,cutHoles,flattenOverlaps,combineShapes,offsetShapes,type ShapeResult} from '@/lib/shape-ops';
-import {pathData,type Point,type Project} from '@/lib/project';
+import {type Project} from '@/lib/project';
 
 // Shape section of the object settings: booleans, cut holes, flatten, offset and the two drawing modes.
 // keep (Keep cutting shapes) lives in the studio so the canvas menu's Cut holes follows the same choice.
-export function ShapeTools({project,selection,disabled,keep,onKeep,onResult,onMode}:{project:Project;selection:string[];disabled:boolean;keep:boolean;onKeep:(keep:boolean)=>void;onResult:(run:()=>ShapeResult)=>void;onMode:(mode:'holes'|'knife')=>void}){
+export function ShapeTools({project,selection,disabled,keep,onKeep,onResult,onMode,focusOffset=0}:{project:Project;selection:string[];disabled:boolean;keep:boolean;onKeep:(keep:boolean)=>void;onResult:(run:()=>ShapeResult)=>void;onMode:(mode:'holes'|'knife')=>void;focusOffset?:number}){
+  useEffect(()=>{if(focusOffset){const field=document.querySelector<HTMLInputElement>('.shape-offset input');field?.focus();field?.select();}},[focusOffset]);
   const {t}=useT(),[mm,setMm]=useState(1),[copy,setCopy]=useState(true);
   const can=shapeOptions(project,selection),single=selection.length===1;
   const amount=Math.abs(mm);
@@ -26,6 +27,3 @@ export function ShapeTools({project,selection,disabled,keep,onKeep,onResult,onMo
     </div>
   </fieldset>;
 }
-export const KnifeOverlay=memo(function KnifeOverlay({a,b,canvasScale}:{a:Point;b:Point;canvasScale:number}){
-  return <g pointerEvents="none"><path d={pathData([[a,b]],false)} stroke="var(--surface-raised)" strokeWidth={4/canvasScale} strokeLinecap="round"/><path d={pathData([[a,b]],false)} stroke="var(--danger)" strokeWidth={1.5/canvasScale} strokeDasharray={`${5/canvasScale} ${3/canvasScale}`}/>{[a,b].map((q,i)=><circle key={i} cx={q[0]} cy={q[1]} r={3/canvasScale} fill="var(--danger)"/>)}</g>;
-});
