@@ -68,7 +68,7 @@ const LayerObjectRow=memo(function LayerObjectRow({o,i,selected,grouped,disabled
   const {t,formatNumber}=useT();
   return <div data-layer={`object:${o.id}`} className={`object-row ${selected?'selected':''} ${o.hidden?'hidden-object':''} ${grouped?'group-member':''}`} role="button" tabIndex={disabled?-1:0} aria-label={o.name} aria-pressed={selected} aria-disabled={disabled} onPointerDown={e=>onDown(o.id,e)} onClick={e=>{onClick(o.id,e);}} onKeyDown={e=>{if(e.target!==e.currentTarget)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!disabled)onSelect(o.id,e);}}}>
         <span className="order">{formatNumber(i+1).padStart(2,'0')}</span><LayerPreview o={o}/>
-        <span className="layer-name">{renameInput?renameInput:<strong onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(o);}}>{o.name}</strong>}<small>{o.text?t("Text · {v0} · {v1}",{v0:o.text.font.family,v1:t(kindNames[o.kind])}):t(kindNames[o.kind])}</small></span>
+        <span className="layer-name">{renameInput?renameInput:<strong title={o.name} onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(o);}}>{o.name}</strong>}<small>{o.text?t("Text · {v0} · {v1}",{v0:o.text.font.family,v1:t(kindNames[o.kind])}):t(kindNames[o.kind])}</small></span>
         <button className="icon-button layer-eye" disabled={disabled} aria-label={t(o.hidden?'showNamed':'hideNamed',{name:o.name})} aria-pressed={!o.hidden} title={o.hidden?t("Show object"):t("Hide object (still exported)")} onClick={e=>{e.stopPropagation();onHide([o.id]);}}><Eye hidden={!!o.hidden}/></button>
       </div>;
 });
@@ -77,7 +77,7 @@ const LayerGroupRow=memo(function LayerGroupRow({group,name,count,collapsed,hidd
   const {t}=useT();
             return <div data-layer={`group:${group}`} className={`object-row group-row ${selected?'selected':''} ${hidden?'hidden-object':''}`} role="button" tabIndex={disabled?-1:0} aria-label={t('groupSummary',{name,count})} aria-pressed={selected} aria-disabled={disabled} onPointerDown={e=>onDown(group,e)} onClick={()=>{onClick(group);}} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();if(!disabled)onSelect(group);}}}>
             <button className={`icon-button group-collapse ${collapsed?'':'open'}`} disabled={disabled} aria-label={t(collapsed?'expandNamed':'collapseNamed',{name})} aria-expanded={!collapsed} title={collapsed?t("Expand group"):t("Collapse group")} onClick={e=>{e.stopPropagation();onCollapse(group);}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
-            <span className="layer-name">{renameInput?renameInput:<strong onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(group,name);}}>{name}</strong>}<small>{t('objects.other',{count})}</small></span>
+            <span className="layer-name">{renameInput?renameInput:<strong title={name} onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(group,name);}}>{name}</strong>}<small>{t('objects.other',{count})}</small></span>
             <button className="icon-button layer-eye" disabled={disabled} aria-label={t(hidden?'showNamed':'hideNamed',{name})} aria-pressed={!hidden} title={hidden?t("Show group"):t("Hide group (still exported)")} onClick={e=>{e.stopPropagation();onHide(group);}}><Eye hidden={hidden}/></button>
           </div>;
 });

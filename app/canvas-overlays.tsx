@@ -16,8 +16,8 @@ export const EndHandles=memo(function EndHandles({ends,canvasScale,onReset}:{end
 });
 export const DraftOverlay=memo(function DraftOverlay({draft,displayDraft,closeable,closeHover,color,hover,drawing,freehand,curved,corners,canvasScale}:{draft:Point[];displayDraft:Point[];closeable:boolean;closeHover:boolean;color:string;hover:Point|null;drawing:boolean;freehand:boolean;curved:boolean;corners:boolean[];canvasScale:number}){
   const {t}=useT();
-  return <><path d={pathData([displayDraft],false)} fill="none" stroke={color} strokeWidth={freehand?.1:1/canvasScale} pointerEvents="none"/>{hover&&!drawing&&<path d={pathData([[draft[draft.length-1],hover]],false)} fill="none" stroke="var(--drawing-band)" strokeWidth={1/canvasScale} pointerEvents="none"/>}{!freehand&&draft.map(([x,y],i)=>{
-    const first=i===0&&closeable&&draft.length>2,corner=!curved||corners[i],r=(corner?3:3.5)/canvasScale,c=corner?'var(--node-corner)':'var(--node-smooth)';
+  return <><path d={pathData([displayDraft],false)} fill="none" stroke={color} strokeWidth={freehand?.1:1/canvasScale} pointerEvents="none"/>{hover&&!drawing&&<path d={pathData([[draft[draft.length-1],hover]],false)} fill="none" stroke="var(--draft-cursor)" strokeWidth={1/canvasScale} pointerEvents="none"/>}{!freehand&&draft.map(([x,y],i)=>{
+    const first=i===0&&closeable&&draft.length>2,corner=!curved||corners[i],r=(corner?3:3.5)/canvasScale,c='var(--draft-node)';
     return <g key={i} data-draft-point={i} transform={`translate(${x} ${y})`}><g className="node-marker" style={{transform:first&&closeHover?'scale(2)':'scale(1)'}}>{corner?<rect x={-r} y={-r} width={2*r} height={2*r} fill="none" stroke={c} strokeWidth={2/canvasScale}/>:<circle r={r} fill="none" stroke={c} strokeWidth={2/canvasScale}/>}</g><circle r={12/canvasScale} fill="transparent"><title>{first?t("Click to close shape · drag to move point"):t("Drag to adjust point")}</title></circle></g>;
   })}</>;
 });

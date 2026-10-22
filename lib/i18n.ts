@@ -2,6 +2,8 @@
 export type Lang='tr'|'en';
 export const en={
   "Reset pattern parameters": "Reset pattern parameters",
+  "Reset {v0} to {v1}": "Reset {v0} to {v1}",
+  "{v0} · mm": "{v0} · mm",
   "Intensity": "Intensity",
   "Tightness": "Tightness",
   "Rotations": "Rotations",
@@ -708,6 +710,8 @@ export const en={
 export type Key=keyof typeof en;
 export const tr={
   "Reset pattern parameters": "Desen ayarlarını sıfırla",
+  "Reset {v0} to {v1}": "{v0} değerini {v1} olarak sıfırla",
+  "{v0} · mm": "{v0} · mm",
   "Intensity": "Şiddet",
   "Tightness": "Sıkılık",
   "Rotations": "Dönüş sayısı",

@@ -42,6 +42,7 @@ const checks=[
   ['Warning dots / icons',3,pairs(['--warning-icon'],['--surface-raised','--surface-hover','--selected','--warning-soft'])],
   ['Canvas handles / selection',3,pairs(['--accent','--success','--danger'],[...canvasSurfaces,'--surface-raised'])],
   ['Canvas issue halo',3,pairs(['--warning','--danger'],canvasSurfaces)],
+  ['Draft nodes / cursor',3,pairs(['--draft-node','--draft-cursor'],canvasSurfaces)],
   ['Measure line',3,pairs(['--measure-line'],canvasSurfaces)],
   ['Measure label',4.5,pairs(['--measure-line'],['--surface-raised'])],
   ['Travel overlay',3,pairs(['--travel-jump','--travel-line','--danger'],[...canvasSurfaces,'--surface-raised'])],
