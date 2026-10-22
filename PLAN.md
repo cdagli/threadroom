@@ -429,8 +429,8 @@ radius/playback, satin reload and font catalogue in Turkish and English.
 All 26 tasks in `docs/ember-feature-gap.md`, every Ember fill/run type in `docs/ember-patterns-spec.md`
 and the drawing mechanics in `docs/ember-drawing-spec.md` are on `main`, plus compile and front-end
 performance work. Open items:
-- Branch `qa-pass` holds unfinished, unverified changes from an interrupted browser QA pass (commit
-  7419647); review or drop it. Its two finished fixes are merged.
+- The interrupted QA pass changes (branch `qa-pass`, 7419647) were reviewed and merged after tests and
+  build passed; they still need a hands-on look.
 - Most features since the editing tools were verified by tests and builds only; a hands-on browser pass
   is still needed (each merge's "browser checks" notes above list what to try).
 - Restart `npm run dev` so the Python API runs the current compiler (object ids, plan cache).

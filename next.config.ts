@@ -8,6 +8,7 @@ const config: NextConfig = {
   distDir: localAPI ? '.next' : '.next-build',
   images: { unoptimized: true },
   trailingSlash: false,
+  allowedDevOrigins: ['127.0.0.1'],
   ...(localAPI ? {
     async rewrites() { return [{source: '/api/export', destination: `${localAPI}/api/export`}]; }
   } : {}),

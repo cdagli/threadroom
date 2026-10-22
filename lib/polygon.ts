@@ -88,6 +88,8 @@ export function offsetRegion(g:Region,d:number,tol=.02):Region{
 // Both ends must lie outside the filled area; null when the line doesn't split the region.
 export function splitRegion(g:Region,a:Point,b:Point,gap=.01):[Region,Region]|null{
   const dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy);if(l<1e-6||insideRegion(g,a)||insideRegion(g,b))return null;
+  // The line must cross the shape: a line between two separate parts is not a cut.
+  if(!g.some(poly=>poly.some(r=>splitPolyline([...r,r[0]],a,b,0))))return null;
   const nx=-dy/l*gap/2,ny=dx/l*gap/2,strip:Region=[[[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]]]];
   const parts=difference(g,strip),left:Region=[],right:Region=[];
   for(const poly of parts){const c=regionCentroid(poly);(dx*(c[1]-a[1])-dy*(c[0]-a[0])>0?left:right).push(poly);}

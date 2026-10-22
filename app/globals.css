@@ -257,3 +257,8 @@ button.order{border:0;background:transparent;padding:2px 0;border-radius:3px;tex
 .shape-offset .selection-actions{grid-template-columns:repeat(2,minmax(0,1fr));align-self:end;margin-bottom:12px}
 .stage:has(.check-badge.fail) .tool-banner{max-width:min(720px,calc(100% - 2*var(--gap) - 760px))}
 .object-row{user-select:none;-webkit-user-select:none}.object-row input{user-select:text;-webkit-user-select:text}
+.redwork-action{align-self:flex-start;margin-bottom:12px}
+.stitch-diagnostics h3{margin-bottom:8px}.design-summary>button{margin:2px 0 16px}
+/* Rulers run along the top and left edges; the overlays there move clear of them. */
+.stage:has(.canvas-rulers) :is(.project-chip,.top-actions,.tool-banner,.settings-overlay){margin-top:20px}body:has(.canvas-rulers) .panel-rail{margin-top:20px}.stage:has(.canvas-rulers) :is(.project-chip,.settings-overlay,.corner-controls){margin-left:20px}
+.view-settings-heading{margin-bottom:10px}.setup-shortcuts{display:block;margin:4px 0 16px}
