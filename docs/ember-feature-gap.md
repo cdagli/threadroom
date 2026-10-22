@@ -114,7 +114,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Convert to redwork (W) | ≥ 1 outline object (or existing redwork plus more). Merges them into one `redwork` object that keeps its sources, with a stitch length (default 2 mm). Stitches come from one route over all the source lines that sews each line twice with no trims (`5729` module 56547, class `c`, `canConvertSelection`). Resizing transforms the sources. | **Pro** | **no** (in TODO "More stitch types") |
 | Break apart redwork | Restores the source outline objects | **Pro** | **no** |
 | Flatten | ≥ 2 unlocked fill objects. For every pair whose outlines overlap by ≥ 1 unit², taken in sew order, the **later** object's outline is added as a hole in the **earlier** one, so the lower fill no longer sews under the upper one. One undo step ("Flatten N holes into shape"; `2723` class `ec`, planner `lJ` in module 43408, which uses polygon-clipping `intersection`). | free | **no** |
-| Split SVG | One SVG image. Converts it into native shapes: fills become fill objects, strokes become outline objects, holes are flattened into the fills, and stroke gaps under 1 mm are joined (`rA(image,{flattenHoles:true, joinStrokeGapMm:1})`). | free | **no** (SVG is rasterised and traced) |
+| Split SVG | One SVG image. Converts it into native shapes: fills become fill objects, strokes become outline objects, holes are flattened into the fills, and stroke gaps under 1 mm are joined (`rA(image,{flattenHoles:true, joinStrokeGapMm:1})`). | free | yes: native shapes (one group) or a reference image to trace; fills/holes, running/satin strokes, basic CSS and transforms |
 | Click to stitch (7) | One image. Traces it into candidate regions (raster images via server `/api/vectorize`, SVG directly), then shows them. "Click on a region to convert it to stitches. Drag to select multiple regions at once." Converted regions use the current run/fill template (`rQ`). | **Pro** | yes: Click to stitch (7) flood-fills the clicked colour (tolerance slider) with a hover preview; click adds a Tatami fill, Shift-click a running outline. No drag-select of several regions |
 | Auto digitize (8) | One image. Traces it (`rY`) and then: simplifies with RDP ε = clamp(0.0028 × max(w,h), 0.32, 2.5) and a touch pad of clamp(0.003 × max, 1.25, 2.5) (`rV`); filled paths become fills (with the default fill applied) and strokes become outlines; regions are grouped by colour, colour groups sorted by **hue**, and each group is ordered nearest-neighbour from its top-left centroid; the largest region with holes in a non-dominant colour keeps only the holes it needs. All regions are added in one undo step. | **Pro** | partial: Auto trace (80 px grid, colour count, background removal); regions are grouped in colour order without the hue and nearest-neighbour ordering |
 
@@ -146,10 +146,10 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Feature | Ember | Threadroom |
 |---|---|---|
 | Design summary: Overview | Stitch preview of the complete design, or of one step; **Thread preparation** list (swatch, name, brand · catalogue code or "Custom thread · hex", and which steps use it); a step list in sew order. Reads back the exported file ("Read from this PES file"). | **no** (TODO "Production worksheet") |
-| Design summary: Diagnostics | Advisory analysis of the export plan: short stitches (threshold 0.1–2 mm, default list), mean/longest stitch, stationary needles, trims/jumps and total jump distance, a stitch-length histogram, short-stitch regions clustered on a physical grid (top 20, click to magnify), a local needle-density heat map (penetrations/mm², chosen radius), and a step breakdown ranked by short stitches, trims or jumps. "Exclude export ties from length checks" option. | partial: the Design check covers short and long stitches, density, trims and travel with fixes; no histogram or heat map |
+| Design summary: Diagnostics | Advisory analysis of the export plan: short stitches (threshold 0.1–2 mm, default list), mean/longest stitch, stationary needles, trims/jumps and total jump distance, a stitch-length histogram, short-stitch regions clustered on a physical grid (top 20, click to magnify), a local needle-density heat map (penetrations/mm², chosen radius), and a step breakdown ranked by short stitches, trims or jumps. "Exclude export ties from length checks" option. | partial: the Design check covers short and long stitches, density, trims and travel with fixes; histogram, short-stitch counts and density heat map available in Info/timeline |
 | Worksheet PDF | Download with paper size Letter/A4, "Single Sheet" option and "Include Diagnostics" | **no** |
 | Export dialog | Filename, format, **Origin point** (9 positions: "Sets this point as (0, 0) in the exported file") | partial: PES export. No filename field or origin choice |
-| Export image | PNG of the realistic render ("Open the realistic view to generate a preview first") | **no** |
+| Export image | PNG of the realistic render ("Open the realistic view to generate a preview first") | yes: Project → Export image, scale and fabric/transparency options |
 | Upload embroidery | Open an existing machine file in the editor to modify it | partial: PES/PEC preview only |
 | Measurements | Editor menu unit switch in/cm | n/a (Threadroom uses mm) |
 | Measure tool | Magenta arrow; the readout shows mm, inches and the **angle** in degrees | partial: mm only |
@@ -294,7 +294,7 @@ tests and README.
     adds several; Enter converts them with the current stitch template (style chosen in the banner); Escape
     cancels. Regions not converted are discarded.
 
-17. **Native SVG import ("Split SVG")** · M · no dependencies (benefits from 13)
+17. **Native SVG import ("Split SVG") — done** · M · no dependencies (benefits from 13)
     *Value:* many beginner files are SVG cut files; tracing them through the 80 px raster loses precision.
     *Scope:* parse paths, basic shapes and transforms (no external library if possible; flatten béziers to
     curve points marked as corners or smooth), scale to mm by viewBox. Filled paths become fills with holes and
@@ -310,7 +310,7 @@ tests and README.
     *Scope:* the measure readout adds the angle (0° = +x, clockwise like the stitch angle) so it can be copied
     into the fill angle, plus inches in small text.
 
-20. **Export PNG of the realistic view** · S · no dependencies
+20. **Export PNG of the realistic view — done** · S · no dependencies
     *Value:* a local mock-up to show family before stitching (no sharing service). *Scope:* render the thread
     canvas at 300 dpi of the design bounds + 5 mm (optionally with the fabric texture) and download it.
 
@@ -339,7 +339,7 @@ tests and README.
     (kept but not stitched or listed). Live binding re-lays copies when the path changes; Detach makes them
     ordinary objects.
 
-25. **Needle-density heat map in the design check** · M · no dependencies
+25. **Needle-density heat map in the design check — done** · M · no dependencies
     *Value:* shows *where* dense spots are. *Scope:* overlay coloured by penetrations/mm² (radius 1.5 mm,
     fixed scale per design) from the compiled stitches, toggled from the density warning.
 

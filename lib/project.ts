@@ -35,7 +35,7 @@ export type StitchObject = {
   eFlipped?: boolean; // E-stitch: teeth on the other side; unset keeps the original side
   text?: TextSpec;
   rotation?:number; // accumulated editor rotation, degrees
-  fillRule?: 'nonzero'; // set by geometryPayload for text
+  fillRule?: 'nonzero'; // SVG winding, also set by geometryPayload for text
 };
 // Legacy single reference image (read from old files; migrateImages turns it into images[0]).
 export type Artwork = {src: string; name: string; x: number; y: number; width: number; height: number};
@@ -241,6 +241,7 @@ export function validProject(value: unknown): value is Project {
   for (const o of p.objects) {
     if(o?.rotation!==undefined&&(typeof o.rotation!=='number'||!Number.isFinite(o.rotation)||Math.abs(o.rotation)>360))return false;
     if (!o || typeof o.id !== 'string' || typeof o.name !== 'string' || !Object.hasOwn(kindNames,o.kind) || !/^#[0-9a-f]{6}$/i.test(o.color) || !Array.isArray(o.rings) || (!o.rings.length && !o.text)) return false;
+    if(o.fillRule!==undefined&&o.fillRule!=='nonzero')return false;
     if(o.thread!==undefined&&!validThread(o.thread,o.color))return false;
     if(o.hidden!==undefined&&typeof o.hidden!=='boolean'||o.locked!==undefined&&typeof o.locked!=='boolean'||o.group!==undefined&&(typeof o.group!=='string'||!groups.has(o.group)))return false;
     if (o.text !== undefined && (!validText(o.text) || o.curve)) return false;

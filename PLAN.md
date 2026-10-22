@@ -246,3 +246,25 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   are skipped (or the operation is refused); two-rail satin Blocks are excluded. The object context menu has Cut holes, Flatten overlaps,
   Union/Subtract/Intersect, Offset… (opens the Shape tools distance) and Knife, enabled as the section's buttons. Node and Python
   tests (compiled fills with Cut holes holes and flattened overlaps). Desktop browser checks pending.
+- **Native SVG import / Split SVG (backlog 17, done)**. Import dialog offers native
+  shapes or adding the SVG to `project.images` as a reference image to trace. DOMParser handles paths/basic shapes, nested transforms,
+  physical dimensions/viewBox, basic CSS and solid paints. Fill rules preserve holes;
+  strokes become running/satin and compatible gaps under 1 mm join. One named, unlocked group
+  replaces the design in one undo step; reference images are kept. Exact straight paths retain corner curves; arbitrary
+  Béziers/arcs use bounded 0.04 mm flattening. Unsupported rendering features and
+  model-limit violations return translated errors; no imported markup is mounted.
+- **Export image (backlog 20, done)**. Project-menu PNG options share the realistic
+  thread renderer and fabric texture. Visible objects only (hidden ones are left out, as in
+  the thread view), visible stitch bounds + 5 mm margin; visible reference images are drawn
+  under the threads only with "Include reference images" (off by default),
+  default 300 dpi, selectable scale, optional transparency and 8,000 px side cap.
+- **Needle-density diagnostics (backlog 25, done)**. Density beside Travel and density
+  warning clicks enable a cached heat image inside the design SVG, above the
+  stitches and under travel, selection, snapping guides and the playback needle (no hit area). Disk-count grid in penetrations/mm²,
+  selectable radius (default 1.5 mm), fixed per-design ramp and legend. Info histogram,
+  adjustable short-stitch threshold, short/stationary counts, mean/longest stitches.
+  All diagnostics include ties, omit jumps and require a fresh compiled plan.
+  Native SVG, density and PNG sizing tests join the standard test command.
+  Desktop browser checks pending: both SVG import choices/undo/editing; PNG downloads
+  with fabric/transparency and large resolution; density alignment during pan/zoom,
+  radius changes, timeline playback, fresh recompilation and English/Turkish labels.
