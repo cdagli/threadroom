@@ -220,3 +220,14 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
 - **Merge follow-ups (done)**. Worksheet design and hoop sizes use the View settings display
   units (shared `formatLength`); Turkish instructions and messages moved to the formal
   register, with a dictionary test. Sewing time has no lengths, so it is unchanged.
+- **Shape operations from Ember (done)**. `lib/polygon.ts` wraps `polygon-clipping` 0.15.7
+  (MIT, the clipper Ember uses; inputs snapped to 1e-6 mm with coarser retries) and adds round
+  offsets (union of edge capsules) and the knife split; `lib/shape-ops.ts` works on objects:
+  Cut holes (selection, keep or remove cutters; O drawing mode), Flatten overlaps (sew order,
+  0.4 mm inset, hidden fills deleted, design-check "Flatten overlaps" fix on stacked fills),
+  Union/Subtract/Intersect (first object keeps settings), Offset (grow/shrink, in place or as a
+  copy) and Knife (K, straight line, left/right parts named "Name 1/2"). One undo step each;
+  results become plain-ring objects (curve anchors dropped). Shape tools section in the object
+  settings; Cut holes and Knife modes are shortcuts and buttons, not dock tools. Locked objects
+  are skipped (or the operation is refused); two-rail satin Blocks are excluded. Node and Python
+  tests (compiled fills with Cut holes holes and flattened overlaps). Desktop browser checks pending.

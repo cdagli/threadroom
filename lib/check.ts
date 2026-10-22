@@ -1,6 +1,7 @@
 import {createT,errorText,type Translator,type Key} from './i18n';
 import {defaultTrimJump, hoops, hasCrossStyle, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
 import {blockOutline, moveGeometry, railSamples, reclose} from './curves';
+import {flattenOverlaps} from './shape-ops';
 
 // Design check: fast geometry checks run in the editor; stitch checks (short/long stitches, density,
 // jumps, trims) come from the compiler (embroidery/compiler.py design_check). Bounds are [x0, y0, x1, y1] mm.
@@ -211,6 +212,12 @@ export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix 
       if (cx-(cx-x0)*k-grow >= 0 && cy-(cy-y0)*k-grow >= 0 && cx+(x1-cx)*k+grow <= hoop.width && cy+(y1-cy)*k+grow <= hoop.height)
         return {label: t("Make {v0} mm tall",{v0:w.values.limit}), title: t("Enlarge the text around its centre"), apply: q => replace(q, moveGeometry(o, ([x, y]) => [cx+(x-cx)*k, cy+(y-cy)*k]))};
       return isFillKind(o.kind) || isWideKind(o.kind) ? {label: t("Use bean outline"), title: t("Outline the letters with a triple running stitch"), apply: q => replace(q, kindFix(o, 'bean'))} : null;
+    }
+    case 'dense': {
+      // Stacked fills: flatten the visible, unlocked fills under the marked area (checked when applied).
+      const ids = p.objects.filter(x => !x.hidden && !x.locked && !x.text && isFillKind(x.kind) && x.rings.length && overlaps(box(x.rings.flat()), w.bounds)).map(x => x.id);
+      if (!(w.values.objects > 1) || ids.length < 2) return null;
+      return {label: t("Flatten overlaps"), title: t("Remove fill hidden under later fills, keeping a 0.4 mm overlap"), apply: q => {try {const r = flattenOverlaps(q, ids, undefined, t); return 'error' in r ? q : r.project;} catch {return q;}}};
     }
     case 'satin-long': {
       const next = {...o}; delete next.splitLength;

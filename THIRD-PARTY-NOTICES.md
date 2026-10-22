@@ -26,6 +26,14 @@ SOFTWARE.
 
 ---
 
+polygon-clipping 0.15.7 (https://github.com/mfogel/polygon-clipping) computes the
+union, difference, intersection and XOR of polygons for the shape tools. MIT License,
+Copyright (c) 2018 Mike Fogel, with portions Copyright (c) 2016 Alexander Milevski
+(martinez). Its dependency splaytree 3.2.3 (https://github.com/w8r/splay-tree) is MIT
+licensed, by Alexander Milevski. robust-predicates 3.0.3
+(https://github.com/mourner/robust-predicates) is listed as a dependency and is in
+the public domain (Unlicense).
+
 opentype.js (https://github.com/opentypejs/opentype.js) parses font outlines in
 the browser. MIT License, Copyright (c) 2020 Frederik De Bleser.
 
