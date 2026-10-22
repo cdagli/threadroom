@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {load} from './load-lib.mjs';
+await load('satin-lettering').ensureSatinFonts();
 const {satinFonts,layoutSatinText,satinTextShapes,convertSatinText,columnWidth,strokeRails}=load('satin-lettering');
 const {defaultText,validText,transformText}=load('text'),{defaultFont}=load('fonts');
 const {object,demo,validProject,bounds}=load('project'),{geometryPayload,moveGeometry}=load('curves'),{checkProject}=load('check');

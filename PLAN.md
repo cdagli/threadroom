@@ -130,7 +130,7 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Pure geometry, clipboard, text regeneration and preference tests. Desktop browser checks pending.
 - **Single design-check pill** (done). Merge the issue-count badge and the "likely to fail" pill into one pill
   (red with the likely-to-fail count when any fail, amber for warnings only, green when ready).
-- **Editor performance** (done). Moving or editing one object currently re-renders everything. Memoised canvas
+- **Editor performance** (done; expanded below). Moving and editing one object use memoised subtrees. Memoised canvas
   objects, layer rows and previews; derived data cached per object; drag updates batched per animation
   frame; only the edited object goes faint while the others keep their stitches until the compile
   returns. Measure before/after on the bear sample and a large traced design.
@@ -384,3 +384,43 @@ a separate instrumented pass, not portions of the uninstrumented median.
 
 Verification: `npm run typecheck`, `THREADROOM_PYTHON=.venv/bin/python npm test`
 and `THREADROOM_PYTHON=.venv/bin/python npm run build`. No browser used; no commits.
+
+
+## Front-end performance — implemented 2026-10-22
+
+- Recorded production route HTML scripts, every emitted JS chunk (raw/gzip bytes)
+  and original build output using the dependency-free `editor-sizes.mjs`; recorded
+  DOM-free React drag benchmarks for the 7-object bear and 60 objects / 9,600 points.
+  Repaired benchmark JSON/i18n loading and added Colours view and read-only revision
+  baselines. Original baseline: `5e389ec97f968dd09b1ff857fc39eca240acb653`.
+- Split worksheet, pixel art, PNG options, SVG choice, shape/text UI, map-to-path,
+  thread and font catalogue UI, fill thumbnails, OpenType parser and Hershey JSON.
+  Lightweight launchers, translated loading, cold text/Offset focus and shortcuts
+  remain available. Collapsed map previews do no layout work.
+- Worker wraps pure lib functions for trace, downsampling, click flood/vectorisation,
+  quantisation, density and SVG geometry. Browser XML/CSS decoding is retained;
+  curves/transforms/joining/validation move off-thread. Superseded computations are
+  terminated; revision/session checks prevent late edits, clicks retain their order
+  and unmount cancels jobs. Idle workers reuse loaded modules.
+- Memoised fill picker, stable colour-run rows and selection-keyed stitch overlays
+  remove repeated work. Density and its heat image remain independent of viewport
+  changes. Existing object caches, transform geometry and rAF drag batching retained.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Editor initial JS, kB | 1,387.5 | 1,015.9 |
+| Editor initial JS, gzip kB | 406.8 | 313.9 |
+| Bear (7 objects), host ms/move | 20.10 | 3.74 |
+| 60 objects / 9,600 points, host ms/move | 20.48 | 3.48 |
+
+Renders/move (Studio / changed canvas / object row / preview): 1 / 1 / 1 / 1
+before and after; four-move bursts remain 0.25 each. Colours rows: bear 4 → 0,
+large 1 → 0. Timings are synthetic host/React CPU, without browser layout or paint.
+All route/chunk data and full mode results: [performance report](performance/editor-performance.md).
+
+Verification: typecheck; 132 Python + 237 Node tests; production build; separate
+10-test i18n run; emitted webpack worker smoke test for all six job types and error
+metadata. No browser, new dependencies or commits. Desktop checks still needed:
+cold loading / keyboard / focus, trace and rapid click cancellation/order, pixel
+painting/quantisation, SVG import choices, PNG/worksheet output, density pan/zoom /
+radius/playback, satin reload and font catalogue in Turkish and English.

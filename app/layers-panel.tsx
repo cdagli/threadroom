@@ -16,7 +16,15 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
   const [view,setView]=useState<'objects'|'colours'>('objects'),[positioning,setPositioning]=useState<{id:string;value:string}|null>(null),position=useRef(positioning);position.current=positioning;
   useEffect(()=>{try{if(localStorage.getItem('threadroom-layers-view')==='colours')setView('colours');}catch{/* Storage is optional. */}},[]);
   function chooseView(next:'objects'|'colours'){setView(next);try{localStorage.setItem('threadroom-layers-view',next);}catch{/* The view still switches. */}}
-  const runs=useMemo(()=>view==='colours'?colourRuns(project,compiled):[],[view,project,compiled]);
+  const priorRuns=useRef<ColourRun[]>([]);
+  const runs=useMemo(()=>{
+    if(view!=='colours')return [];
+    const previous=new Map(priorRuns.current.map(r=>[r.key,r]));
+    return priorRuns.current=colourRuns(project,compiled).map(r=>{
+      const old=previous.get(r.key);
+      return old&&old.color===r.color&&old.thread===r.thread&&old.index===r.index&&old.end===r.end&&old.stitches===r.stitches&&old.ids.length===r.ids.length&&old.ids.every((id,i)=>id===r.ids[i])?old:r;
+    });
+  },[view,project.objects,compiled]);
   const list=useRef<HTMLDivElement>(null),drag=useRef<{ids:string[];start:[number,number];active:boolean;index:number;group:string|null;wholeGroup?:string;run?:boolean}|null>(null),skipClick=useRef(false);
   const [collapsed,setCollapsed]=useState(new Set<string>()),[line,setLine]=useState<number|null>(null),[targetGroup,setTargetGroup]=useState<string|null>(null),[renaming,setRenaming]=useState<{id:string;name:string;group:boolean}|null>(null),rename=useRef(renaming);rename.current=renaming;
   const rows=useMemo(()=>layerRows(project,collapsed),[project,collapsed]);

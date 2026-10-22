@@ -799,6 +799,64 @@ The endpoint is intentionally public for this POC, with a 2 MB request limit,
 geometry limits, a 100,000-command generation budget, and a 60-second Function
 limit. Add authentication, rate limiting, and job handling before a public product.
 
+
+## Editor performance
+
+Worksheet, pixel-art and PNG dialogs, SVG import choice, shape and text panels,
+thread catalogue, font picker and fill thumbnails use `next/dynamic` with a small
+translated loading state. The launch buttons and tool shortcuts stay available;
+text and Offset focus requests survive their first chunk load. Map-to-path loads
+when expanded and stops calculating previews while collapsed, keeping its settings.
+OpenType parsing and both bundled Hershey/satin JSON tables load on demand. Saved
+satin projects wait for those tables before geometry, checks or export run. Pure
+library consumers call `await ensureSatinFonts()` once before satin layout.
+
+Cancellable browser workers wrap the existing pure trace, downsample, flood-fill /
+vectorise, pixel quantisation, density and SVG geometry functions. New jobs terminate
+obsolete computations; project revisions and tool sessions reject stale results.
+Clicks are queued to retain click order. Browser image decoding and SVG XML/CSS
+reading remain on the main thread; SVG path parsing, curve flattening, physical
+transforms, stroke joining and validation run in the worker. Density fields and
+heat images depend on the compiled plan and physical radius, independent of pan,
+zoom and playback. Fill thumbnails, colour-run rows and overlay paths retain their
+results across geometry-only drag frames. Existing per-object caches and animation
+frame batching remain in place.
+
+Measured with Node v24.14.0, Next 16.3.8 webpack production output and the DOM-free
+React development benchmark (200 measured moves after 40 warm-up moves):
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Editor initial JS, kB | 1,387.5 | 1,015.9 |
+| Editor initial JS, gzip kB | 406.8 | 313.9 |
+| Bear (7 objects), host ms/move | 20.10 | 3.74 |
+| 60 objects / 9,600 points, host ms/move | 20.48 | 3.48 |
+
+Studio, changed canvas object, layer row and layer preview each render once per move
+before and after; four moves in one frame produce 0.25 renders/move. In Colours view,
+colour rows fall from 4 to 0 renders/move for the bear and 1 to 0 for the large fixture.
+These CPU timings exclude browser layout/paint, real compiler latency and worker
+execution. Initial JS means unique modern script tags in route HTML; legacy-only
+polyfills and on-demand chunks are excluded. Default object settings may fetch their
+own chunks immediately after local project restoration.
+
+Reproduce (no browser or additional dependencies):
+
+```sh
+THREADROOM_PYTHON=.venv/bin/python npm run build
+node scripts/editor-sizes.mjs
+node scripts/editor-benchmark.mjs --compiled
+node scripts/editor-benchmark.mjs --compiled --colours
+node scripts/editor-benchmark.mjs --compiled --burst
+node scripts/editor-worker-smoke.mjs
+```
+
+The benchmark also accepts `--revision=<git-revision>` to read a baseline without
+changing the checkout. Full route/chunk sizes, all benchmark modes, verification,
+changed files and manual browser checks are in
+[the performance report](performance/editor-performance.md). Raw measurements are
+in `performance/editor-{sizes,benchmark}-{before,after}.{json,jsonl}`.
+
 ## Compiler performance
 
 Run the Python-only benchmark from the worktree (no browser):

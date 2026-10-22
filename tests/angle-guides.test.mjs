@@ -71,13 +71,16 @@ test('Convert to redwork merges lines and fill outlines; Break apart restores th
   assert.deepEqual(R.breakApart(plain,'r').project.objects.map(o=>[o.kind,o.length,o.rings.length]),[['running',2,1],['running',2,1]]);
 });
 test('Fill settings: Edit angles button, locked angle and Density control only while guides sweep',async()=>{
-  const {createRequire}=await import('node:module'),{readFileSync}=await import('node:fs'),ts=(await import('typescript')).default;
+  const {createRequire}=await import('node:module'),{readFileSync,existsSync}=await import('node:fs'),ts=(await import('typescript')).default;
   const requireNode=createRequire(import.meta.url),React=requireNode('react'),{renderToStaticMarkup}=requireNode('react-dom/server');
+  // Render controls after their lazy chunks resolve; the loading fallback has no engine settings.
+  const pending=[],dynamic=loader=>{let Component;pending.push(loader().then(m=>{Component=m.default??m;}));return props=>Component?React.createElement(Component,props):null;};
   const {resolve}=load('project'),{createT}=load('i18n');
-  const compile=(name,require)=>{const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(new URL(`../app/${name}.tsx`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;};
+  const compile=(name,require)=>{const file=new URL(`../app/${name}.tsx`,import.meta.url);if(!existsSync(file))file.pathname=file.pathname.replace(/\.tsx$/,'.ts');const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;};
   for(const lang of ['en','tr']){
-    const t=createT(lang),require=id=>id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?compile(id.slice(2),require):requireNode(id);
+    const t=createT(lang),require=id=>id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?compile(id.slice(2),require):requireNode(id);
     const {FillSettings}=compile('fill-settings',require);
+    await Promise.all(pending);
     const render=patch=>{const item={...object('Fill',[square]),...patch};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100},angles:{active:false,onToggle:()=>{}}}));};
     const plain=render({}),one=render({angleGuides:[fan[0]]}),sweep=render({angleGuides:fan});
     assert.ok(plain.includes(t('Edit angles')));assert.ok(plain.includes(t('Gradient')));assert.ok(!plain.includes(t('Density control')));

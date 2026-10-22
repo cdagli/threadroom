@@ -1,9 +1,18 @@
 'use client';
 import {memo,useEffect,useMemo,useRef,useState} from 'react';
-import {needleDensity,stitchLengths,lengthBins,type Density} from '@/lib/density';
+import {stitchLengths,lengthBins,type Density} from '@/lib/density';
 import type {Compiled} from '@/lib/project';
 import {useT} from './i18n';
-export const useDensity=(compiled:Compiled|null,radius:number)=>useMemo(()=>compiled?needleDensity(compiled.commands,radius):null,[compiled,radius]);
+import {editorTask,taskCancelled} from '@/lib/editor-task';
+export function useDensity(compiled:Compiled|null,radius:number){
+  const task=useRef<ReturnType<typeof editorTask>|null>(null),[result,setResult]=useState<{compiled:Compiled;radius:number;field:Density}|null>(null);
+  useEffect(()=>{
+    if(!compiled||result?.compiled===compiled&&result.radius===radius)return;const job=task.current??=editorTask();let live=true;
+    void job.run({kind:'density',commands:compiled.commands,radius}).then(field=>{if(live)setResult({compiled,radius,field});}).catch(e=>{if(!taskCancelled(e))console.error(e);});
+    return()=>{live=false;job.cancel();};
+  },[compiled,radius]);
+  return result?.compiled===compiled&&result.radius===radius?result.field:null;
+}
 // Heat map in canvas millimetres inside the design SVG: above the stitches, under travel, selection,
 // snapping guides and the playback needle. It takes no pointer events, so locks and hit-testing are unchanged.
 export const DensityHeat=memo(function DensityHeat({field}:{field:Density}){

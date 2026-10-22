@@ -1,11 +1,17 @@
-import simplex from './fonts-satin/simplex.json';
-import script from './fonts-satin/script.json';
 import {layoutText,type FontLike,type GlyphLike,type TextSpec} from './text';
 import type {Point,Project,Rails,StitchObject} from './project';
 
 export type SatinFontId='simplex'|'script';
 export type SatinFont={name:string;glyphs:Record<string,{advance:number;strokes:number[][][]}>};
-export const satinFonts:Record<SatinFontId,SatinFont>={simplex,script};
+// Names are small metadata; Hershey stroke tables load only for satin text.
+export const satinFonts:Record<SatinFontId,SatinFont>={simplex:{name:'Hershey Simplex',glyphs:{}},script:{name:'Hershey Script',glyphs:{}}};
+let fontData:Promise<void>|null=null;
+export function ensureSatinFonts():Promise<void>{
+  return fontData??=Promise.all([import('./fonts-satin/simplex.json'),import('./fonts-satin/script.json')]).then(([simplex,script])=>{
+    satinFonts.simplex=simplex.default;satinFonts.script=script.default;
+  }).catch(e=>{fontData=null;throw e;});
+}
+export const satinFontsLoaded=()=>Object.keys(satinFonts.simplex.glyphs).length>0;
 export const satinLetteringDefaults={font:'simplex' as SatinFontId,columnWidth:14};
 export const columnLimits=[5,40] as const;
 // One millimetre is the design check's reliable minimum; cap at the satin width limit.
@@ -52,6 +58,7 @@ export function strokeRails(source:Point[],width:number):Rails[] {
 
 const cache=new WeakMap<TextSpec,ReturnType<typeof buildLettering>>();
 function buildLettering(spec:TextSpec){
+  if(!satinFontsLoaded())throw new Error('Load satin fonts before laying out satin text.');
   const data=satinFonts[spec.satin?.font??'simplex'],chars=Object.keys(data.glyphs);
   const glyph=(c:string):GlyphLike=>({index:chars.indexOf(c)+1,advanceWidth:data.glyphs[c]?.advance??0,getPath:()=>({commands:[]})});
   const font:FontLike={unitsPerEm:1,tables:{os2:{sCapHeight:1}},charToGlyph:glyph,charToGlyphIndex:c=>chars.indexOf(c)+1,getKerningValue:()=>0};

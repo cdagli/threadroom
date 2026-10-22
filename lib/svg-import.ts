@@ -67,7 +67,10 @@ export function joinStrokes(objects:StitchObject[]):StitchObject[]{
   }
   return out;
 }
-export function importSVG(source:string,filename:string,project:Project,t:Translator=createT('en'),parser:Pick<DOMParser,'parseFromString'>=new DOMParser()):Project{
+export type SVGSources={sources:Source[];viewBox:number[]|null;width:number|null;height:number|null;aspect:string};
+// DOM/XML and CSS colour resolution stay on the browser; all path parsing, curve
+// flattening, physical transforms, joining and validation run on these plain values.
+export function readSVGSources(source:string,t:Translator=createT('en'),parser:Pick<DOMParser,'parseFromString'>=new DOMParser()):SVGSources{
   try{
     if(source.length>8*1024*1024||/<!DOCTYPE|<!ENTITY/i.test(source))throw Error('SVG');
     const doc=parser.parseFromString(source,'image/svg+xml'),root=doc.documentElement;
@@ -93,8 +96,18 @@ export function importSVG(source:string,filename:string,project:Project,t:Transl
     }
     walk(root,{fill:'#000000',stroke:'none','stroke-width':'1','fill-rule':'nonzero',color:'#000000'},identity,1,0);
     const vb=root.getAttribute('viewBox'),v=vb?numbers(vb):null;if(v&&(v.length!==4||v[2]<=0||v[3]<=0))throw Error('SVG');
-    let w=svgLength(root.getAttribute('width')??''),h=svgLength(root.getAttribute('height')??'');
+    const w=svgLength(root.getAttribute('width')??''),h=svgLength(root.getAttribute('height')??'');
     if(w!==null&&w<=0||h!==null&&h<=0)throw Error('SVG');
+    for(const s of sources)for(const key of ['fill','stroke'])s.style[key]=colour(s.style[key].trim().toLowerCase()==='currentcolor'?s.style.color:s.style[key])??'none';
+    return {sources,viewBox:v,width:w,height:h,aspect:root.getAttribute('preserveAspectRatio')??'xMidYMid meet'};
+  }catch(e){if(e instanceof TranslationError)throw e;throw new TranslationError(t,'This SVG could not be imported. Use paths, basic shapes, solid colours and transforms.');}
+}
+export function importSVG(source:string,filename:string,project:Project,t:Translator=createT('en'),parser:Pick<DOMParser,'parseFromString'>=new DOMParser()):Project{
+  return importSVGSources(readSVGSources(source,t,parser),filename,project,t);
+}
+export function importSVGSources(input:SVGSources,filename:string,project:Project,t:Translator=createT('en')):Project{
+  try{
+    const {sources,viewBox:v}=input;let {width:w,height:h}=input;
     let box=v;
     if(!box){
       if(w&&h)box=[0,0,w*96/25.4,h*96/25.4];
@@ -103,7 +116,7 @@ export function importSVG(source:string,filename:string,project:Project,t:Transl
     const hoop=hoops[project.hoop];if(w&&!h)h=w*box[3]/box[2];if(h&&!w)w=h*box[2]/box[3];
     if(!w||!h){const s=.75*Math.min(hoop.width/box[2],hoop.height/box[3]);w=box[2]*s;h=box[3]*s;}
     let sx=w/box[2],sy=h/box[3],ax=0,ay=0;
-    const aspect=(root.getAttribute('preserveAspectRatio')??'xMidYMid meet').trim();
+    const aspect=input.aspect.trim();
     if(aspect.includes('slice'))throw Error('SVG');
     if(aspect!=='none'){const scale=aspect.includes('slice')?Math.max(sx,sy):Math.min(sx,sy);ax=(w-box[2]*scale)*(aspect.includes('xMin')?0:aspect.includes('xMax')?1:.5);ay=(h-box[3]*scale)*(aspect.includes('YMin')?0:aspect.includes('YMax')?1:.5);sx=sy=scale;}
     let pointCount=0;

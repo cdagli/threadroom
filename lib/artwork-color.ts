@@ -30,3 +30,12 @@ export function artworkPixels(src:string,t:Translator=createT('en')):Promise<Ima
   })();
   cached={src,promise};void promise.catch(()=>{if(cached?.promise===promise)cached=undefined;});return promise;
 }
+
+// Match the tracer's original canvas resampling exactly (including upscaling small art).
+export async function traceArtworkPixels(src:string):Promise<ImagePixels>{
+  const image=new Image();image.src=src;await image.decode();
+  const factor=80/Math.max(image.naturalWidth,image.naturalHeight),canvas=document.createElement('canvas');
+  canvas.width=Math.max(2,Math.round(image.naturalWidth*factor));canvas.height=Math.max(2,Math.round(image.naturalHeight*factor));
+  const ctx=canvas.getContext('2d',{willReadFrequently:true})!;ctx.drawImage(image,0,0,canvas.width,canvas.height);
+  return ctx.getImageData(0,0,canvas.width,canvas.height);
+}
