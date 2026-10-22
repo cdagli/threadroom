@@ -360,9 +360,9 @@ A background compile runs 350 ms after edits settle and supplies both the view
 and design check. Stale requests are aborted and their revisions ignored; export
 shares the same request. While stitches are out of date, shapes appear faintly
 in their thread colours, with transparent shape hit targets always available.
-If the engine is offline, normal shapes and a small note remain visible. The bear
-sample compiled in 179–196 ms (five Python runs; median 182.4 ms) when choosing
-this debounce.
+If the engine is offline, normal shapes and a small note remain visible.
+The Python API reuses unchanged object plans; current cold and cached timings
+are recorded under **Compiler performance** below.
 
 - Each sewn stitch is a rounded thread 0.4 mm wide at true scale, in its thread
   colour, with darker flanks, a sheen along its length (light from the top
@@ -751,6 +751,70 @@ Keep a preview deployment until the machine stitch-out has been assessed.
 The endpoint is intentionally public for this POC, with a 2 MB request limit,
 geometry limits, a 100,000-command generation budget, and a 60-second Function
 limit. Add authentication, rate limiting, and job handling before a public product.
+
+## Compiler performance
+
+Run the Python-only benchmark from the worktree (no browser):
+
+```sh
+.venv/bin/python scripts/compile-benchmark.py --compare scripts/compile-baseline.json
+# To record a new timing report while checking the original output hashes:
+.venv/bin/python scripts/compile-benchmark.py --compare scripts/compile-baseline.json --record after
+```
+
+The fixtures are the editor's demo bear (with deterministic IDs), 60 traced-style
+128-point fills, every fill pattern/engine and cross style, satin blocks plus
+double/triple rope runs, and the stitch library. Recorded on 2026-10-22 with
+Python 3.14.6; milliseconds for the compiler only, excluding HTTP/JSON and
+editor geometry sampling. Cold and warm figures are medians of five unprofiled
+runs; edit is one measured last-object stitch-length change after priming the
+cache. Each edited compile replanned exactly one object and matched a cold
+compile of that edited payload.
+
+| Fixture | Before cold | After cold | Cached unchanged | One-object edit |
+|---|---:|---:|---:|---:|
+| bear | 217.8 | 124.4 | 24.9 | 24.6 |
+| traced-60 | 1125.9 | 667.4 | 111.8 | 130.4 |
+| all-patterns | 303.3 | 155.5 | 67.2 | 64.2 |
+| blocks-ropes | 15.9 | 13.4 | 12.4 | 12.6 |
+| stitch-library | 75.4 | 42.2 | 19.4 | 29.4 |
+
+`scripts/compile-baseline.json` and `scripts/compile-after.json` contain the
+per-fixture phase timings, cProfile top functions and SHA-256 hashes. Phase
+measurements use a separate instrumented pass: geometry, fill generation,
+routing, ties/trims plus preview construction, PES write/read, and design-check
+warnings. They include instrumentation overhead and do not sum to the
+uninstrumented median. PES writing includes round-trip readback. Every fixture's
+PES bytes and full response match the baseline, excluding only `durationMs`;
+`tests/stitch-library.json` also retains its original file hash.
+
+The speedups use span masks for the travel raster, precomputed region edge
+vectors, constant-time row endpoints in the routing search, fewer warning-scan
+allocations and cached per-cell density totals. Pattern descriptors and thread
+tables were already cached/loaded once; they did not need new parsing caches.
+No dependencies were added.
+
+`api/export.py` owns an in-memory LRU of immutable per-object planned stitch
+blocks (`embroidery/cache.py`), bounded to 256 variants and 200,000 retained
+points. SHA-256 keys cover the complete resolved object, hoop dimensions,
+trim threshold, preceding exit and following entry hint. Fabric and lock
+settings arrive resolved on each object. A changed routing hint can invalidate
+an unchanged neighbour, as required to preserve the cold compiler's stitch
+order. Exceptions are never cached; validation, global joins, locks/trims,
+command limits, PES write/read and warnings run on every request. Cache access
+is thread-safe, and concurrent misses may compute the same plan twice. Each
+API worker starts with its own empty cache; restart after Python changes.
+
+`test_one_object_edit_replans_only_that_object_and_matches_cold` and the other
+cases in `tests/test_compile_cache.py` cover reuse, routing-context invalidation,
+settings, reorder/insertion/removal, bounds, immutable values and concurrent
+requests. The compiler without a supplied cache remains the cold reference.
+
+The editor still sends the full resolved payload after its 350 ms debounce.
+Its existing abort, shared in-flight request and stale-revision handling stay
+in place. No revision ID was added: editor revisions are local to one mounted
+editor, so they are unsuitable as server cache identities. Content hashes reuse
+plans safely across retries and metadata-only requests without a new protocol.
 
 ## Verification
 

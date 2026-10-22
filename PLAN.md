@@ -306,3 +306,44 @@ Click to stitch adds one region per click, so its results keep the click order; 
 entry of `project.images`; design SVG layering is stitches < density < trims/ties/needle
 points < travel < selection/handles; path bindings survive locks, hiding and the
 transform box.
+
+
+## Stitch compiler performance — implemented 2026-10-22
+
+- Added `scripts/compile-benchmark.py` with demo bear, 60 traced-style objects,
+  all fill patterns/engines and cross styles, satin blocks/rope runs and the
+  stitch library. Baseline and after reports include five-run cold medians,
+  phase measurements, cProfile leaders and SHA-256 output hashes. Cached
+  unchanged and one-object edit timings are also recorded in the after report.
+- Replaced per-cell span generators with row masks in the travel raster,
+  precomputed region edge vectors, removed whole-row allocations for routing
+  endpoints, and reduced density/short-stitch warning overhead. Existing
+  pattern-cycle caching and module-level table loading remain sufficient.
+- API process LRU: 256 immutable object-plan variants / 200,000 retained needle
+  points; canonical resolved-payload SHA-256 plus hoop/trim and routing context.
+  Unchanged contexts reuse planned blocks; changed neighbouring endpoints
+  invalidate affected routes. Global joins, locks/trims, command limits, PES
+  output/readback and warnings always rerun after request validation.
+- Tests prove a middle-object length edit replans only that object and matches
+  a cold compile, and cover context invalidation, settings, reorder, insertion,
+  removal, eviction, mutation isolation, concurrent requests and API reuse.
+  Raster masks and row endpoints also have differential regression tests.
+- Kept the editor's full payload, debounce, abort and stale handling. No revision
+  ID protocol: local editor counters are not safe process-wide cache keys;
+  content-keyed plans already handle identical requests. No new dependencies.
+
+Measured milliseconds (before cold → after cold / cached unchanged / one edit):
+
+- bear: 217.8 → 124.4 / 24.9 / 24.6.
+- traced-60: 1125.9 → 667.4 / 111.8 / 130.4.
+- all-patterns: 303.3 → 155.5 / 67.2 / 64.2.
+- blocks-ropes: 15.9 → 13.4 / 12.4 / 12.6.
+- stitch-library: 75.4 → 42.2 / 19.4 / 29.4.
+
+All five fixtures retain identical PES and full-response hashes (only elapsed
+`durationMs` excluded), including warnings/ownership/ties/stats. The committed
+stitch-library JSON hash and PES bytes are unchanged. Phase figures are from
+a separate instrumented pass, not portions of the uninstrumented median.
+
+Verification: `npm run typecheck`, `THREADROOM_PYTHON=.venv/bin/python npm test`
+and `THREADROOM_PYTHON=.venv/bin/python npm run build`. No browser used; no commits.

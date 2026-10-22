@@ -1,0 +1,110 @@
+{
+  "runs": 5,
+  "fixtures": {
+    "bear": {
+      "ms": 124.352,
+      "hashes": {
+        "pes": "1b89679061009dd4af888db1341e146b362ab3a697ac0a59b1464a286cd8a9d3",
+        "result": "fd8c808782fd57b538e9929f8790c85d71210538f14b0e3010623f2cd3bd2c4f"
+      },
+      "phases_ms": {
+        "geometry": 29.145,
+        "fills": 0.523,
+        "routing": 73.995,
+        "ties/trims + preview": 7.343,
+        "PES write/read": 7.972,
+        "warnings": 9.095
+      },
+      "edit_replanned_objects": 1,
+      "warm_ms": 24.943,
+      "edit_ms": 24.582,
+      "profile": "         1582227 function calls (1581569 primitive calls) in 0.274 seconds\n\n   Ordered by: cumulative time\n   List reduced from 269 to 12 due to restriction <12>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.010    0.010    0.275    0.275 compiler.py:1548(compile_project)\n        7    0.000    0.000    0.203    0.029 compiler.py:1392(plan_object)\n        5    0.001    0.000    0.203    0.041 compiler.py:756(route_fill)\n       35    0.000    0.000    0.164    0.005 compiler.py:917(sequence)\n       39    0.000    0.000    0.099    0.003 compiler.py:826(travel)\n       76    0.055    0.001    0.082    0.001 compiler.py:557(reach)\n       45    0.001    0.000    0.044    0.001 compiler.py:836(sew_piece)\n     4267    0.001    0.000    0.041    0.000 compiler.py:845(<genexpr>)\n        5    0.009    0.002    0.029    0.006 compiler.py:467(__init__)\n        1    0.008    0.008    0.026    0.026 compiler.py:1440(design_check)\n     3839    0.016    0.000    0.025    0.000 compiler.py:394(contains)\n        7    0.000    0.000    0.021    0.003 compiler.py:873(plan)\n\n\n",
+      "objects": 7
+    },
+    "traced-60": {
+      "ms": 667.446,
+      "hashes": {
+        "pes": "305690d163fd4367c10a9ac78b3f9c53b702769e2a5d9daee38aec41af385a77",
+        "result": "be6c00fce6a549eb83f0603dc75e75ac516e76053e27138bbd1d0f73014714b9"
+      },
+      "phases_ms": {
+        "geometry": 259.942,
+        "fills": 7.797,
+        "routing": 562.468,
+        "ties/trims + preview": 36.003,
+        "PES write/read": 44.46,
+        "warnings": 44.583
+      },
+      "edit_replanned_objects": 1,
+      "warm_ms": 111.788,
+      "edit_ms": 130.385,
+      "profile": "         8903675 function calls (8903390 primitive calls) in 1.719 seconds\n\n   Ordered by: cumulative time\n   List reduced from 266 to 12 due to restriction <12>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.028    0.028    1.722    1.722 compiler.py:1548(compile_project)\n       60    0.001    0.000    1.429    0.024 compiler.py:1392(plan_object)\n       60    0.007    0.000    1.424    0.024 compiler.py:756(route_fill)\n      300    0.001    0.000    1.121    0.004 compiler.py:917(sequence)\n      179    0.006    0.000    0.567    0.003 compiler.py:836(sew_piece)\n      119    0.001    0.000    0.548    0.005 compiler.py:826(travel)\n    45762    0.007    0.000    0.533    0.000 compiler.py:845(<genexpr>)\n      238    0.329    0.001    0.493    0.002 compiler.py:557(reach)\n    43602    0.249    0.000    0.413    0.000 compiler.py:394(contains)\n    34368    0.005    0.000    0.307    0.000 compiler.py:844(<lambda>)\n       60    0.069    0.001    0.237    0.004 compiler.py:467(__init__)\n    26640    0.138    0.000    0.144    0.000 compiler.py:295(scan_spans)\n\n\n",
+      "objects": 60
+    },
+    "all-patterns": {
+      "ms": 155.526,
+      "hashes": {
+        "pes": "934100a8f1ecf2afbf9e2fe96e1f60c88a6a171c3d4417b061bb8b88a125ae10",
+        "result": "7f8dab0ead757fdf7d2d7a457f69d3ba7409c844785d633701beb894521ff4de"
+      },
+      "phases_ms": {
+        "geometry": 61.703,
+        "fills": 11.549,
+        "routing": 36.429,
+        "ties/trims + preview": 17.712,
+        "PES write/read": 19.799,
+        "warnings": 27.645
+      },
+      "edit_replanned_objects": 1,
+      "warm_ms": 67.17,
+      "edit_ms": 64.2,
+      "profile": "         2046317 function calls (2044225 primitive calls) in 0.383 seconds\n\n   Ordered by: cumulative time\n   List reduced from 327 to 12 due to restriction <12>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.019    0.019    0.383    0.383 compiler.py:1548(compile_project)\n       41    0.000    0.000    0.187    0.005 compiler.py:1392(plan_object)\n       33    0.003    0.000    0.128    0.004 compiler.py:756(route_fill)\n        1    0.025    0.025    0.093    0.093 compiler.py:1440(design_check)\n       41    0.044    0.001    0.083    0.002 compiler.py:467(__init__)\n      165    0.000    0.000    0.050    0.000 compiler.py:917(sequence)\n        1    0.000    0.000    0.043    0.043 __init__.py:832(write_pes)\n        1    0.000    0.000    0.042    0.042 EmbPattern.py:824(write_embroidery)\n       66    0.002    0.000    0.041    0.001 compiler.py:836(sew_piece)\n    31984    0.013    0.000    0.040    0.000 {built-in method builtins.sum}\n        1    0.000    0.000    0.032    0.032 streamlines.py:85(route_streamlines)\n        1    0.000    0.000    0.028    0.028 PesWriter.py:32(write)\n\n\n",
+      "objects": 41
+    },
+    "blocks-ropes": {
+      "ms": 13.404,
+      "hashes": {
+        "pes": "c2f260d9b73d137e3ade7508593916d559076019146f92c105fd3e45e81a4fc0",
+        "result": "ea0c8437230cddf7fa5c4f86e1e510d9d254b3ff300e5e9d493ab487bbad55a3"
+      },
+      "phases_ms": {
+        "geometry": 0.049,
+        "fills": 1.049,
+        "routing": 0.054,
+        "ties/trims + preview": 2.721,
+        "PES write/read": 3.201,
+        "warnings": 6.634
+      },
+      "edit_replanned_objects": 1,
+      "warm_ms": 12.393,
+      "edit_ms": 12.563,
+      "profile": "         233068 function calls (233057 primitive calls) in 0.037 seconds\n\n   Ordered by: cumulative time\n   List reduced from 219 to 12 due to restriction <12>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.003    0.003    0.037    0.037 compiler.py:1548(compile_project)\n        1    0.005    0.005    0.018    0.018 compiler.py:1440(design_check)\n     6344    0.003    0.000    0.009    0.000 {built-in method builtins.sum}\n        1    0.000    0.000    0.007    0.007 __init__.py:832(write_pes)\n        1    0.000    0.000    0.007    0.007 EmbPattern.py:824(write_embroidery)\n        1    0.000    0.000    0.005    0.005 PesWriter.py:32(write)\n        1    0.000    0.000    0.005    0.005 PesWriter.py:116(write_version_6)\n        1    0.000    0.000    0.004    0.004 PecWriter.py:40(write_pec)\n     8360    0.003    0.000    0.004    0.000 compiler.py:1447(add)\n    52017    0.003    0.000    0.003    0.000 {method 'get' of 'dict' objects}\n    22110    0.002    0.000    0.003    0.000 compiler.py:1489(<genexpr>)\n    22110    0.002    0.000    0.003    0.000 compiler.py:1490(<genexpr>)\n\n\n",
+      "objects": 12
+    },
+    "stitch-library": {
+      "ms": 42.153,
+      "hashes": {
+        "pes": "a66c912b49f7b1545e56a26c7a5a11d848dca36cc6ecdde54c586580b1add163",
+        "result": "77928bad83e047558eaac0bc7267f74dcfa77b842f4f506c601a2421259503a6"
+      },
+      "phases_ms": {
+        "geometry": 7.161,
+        "fills": 0.223,
+        "routing": 16.242,
+        "ties/trims + preview": 5.229,
+        "PES write/read": 6.172,
+        "warnings": 8.294
+      },
+      "edit_replanned_objects": 1,
+      "warm_ms": 19.384,
+      "edit_ms": 29.37,
+      "profile": "         590601 function calls (590590 primitive calls) in 0.107 seconds\n\n   Ordered by: cumulative time\n   List reduced from 292 to 12 due to restriction <12>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.006    0.006    0.107    0.107 compiler.py:1548(compile_project)\n       10    0.000    0.000    0.049    0.005 compiler.py:1392(plan_object)\n        2    0.000    0.000    0.030    0.015 compiler.py:756(route_fill)\n        1    0.007    0.007    0.023    0.023 compiler.py:1440(design_check)\n        1    0.000    0.000    0.018    0.018 compiler.py:1184(route_cross)\n        9    0.000    0.000    0.018    0.002 compiler.py:917(sequence)\n        2    0.000    0.000    0.017    0.008 compiler.py:826(travel)\n        1    0.001    0.001    0.016    0.016 compiler.py:1164(cross_cells)\n        3    0.010    0.003    0.016    0.005 compiler.py:557(reach)\n    10387    0.001    0.000    0.016    0.000 compiler.py:1179(<genexpr>)\n        1    0.000    0.000    0.015    0.015 __init__.py:832(write_pes)\n        1    0.000    0.000    0.015    0.015 EmbPattern.py:824(write_embroidery)\n\n\n",
+      "objects": 10
+    }
+  },
+  "library_sha256": "83f1168bb81468d8f5c16fec373a0df71ed053d90ffc336ecd517ba562aa7db3",
+  "environment": {
+    "python": "3.14.6",
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O"
+  }
+}
