@@ -37,3 +37,13 @@ export function layerTarget(row:LayerRow,after:boolean,wholeGroup=false){
   const index=row.type==='group'?(after&&(wholeGroup||row.collapsed)?row.end:row.index):row.index+(after?1:0);
   return {index,group:wholeGroup?null:row.type==='group'&&!after?null:row.group??null};
 }
+
+// Locks: locked objects stay selectable from Layers but are skipped by canvas hits, Select all and edits.
+export const unlockedIds=(p:Project,ids:readonly string[])=>ids.filter(id=>p.objects.some(o=>o.id===id&&!o.locked));
+export const selectableIds=(p:Project)=>p.objects.filter(o=>!o.locked&&!o.hidden).map(o=>o.id);
+const withLock=(o:StitchObject,locked:boolean):StitchObject=>{if(!!o.locked===locked)return o;const next={...o};delete next.locked;return locked?{...next,locked}:next;};
+export function toggleLock(p:Project,ids:readonly string[]):Project{
+  const chosen=p.objects.filter(o=>ids.includes(o.id));if(!chosen.length)return p;
+  const locked=!chosen.every(o=>o.locked);return {...p,objects:p.objects.map(o=>ids.includes(o.id)?withLock(o,locked):o)};
+}
+export const unlockAll=(p:Project):Project=>p.objects.some(o=>o.locked)?{...p,objects:p.objects.map(o=>withLock(o,false))}:p;

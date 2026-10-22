@@ -33,7 +33,7 @@ import {CanvasObject} from './canvas-object';
 import {PointHandles} from './point-handles';
 import {useStableCallback} from './use-stable-callback';
 import {changedObjectIds, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
-import {selectIds, visibleCommands} from '@/lib/layers';
+import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds} from '@/lib/layers';
 
 type PanelTab = 'layers' | 'artwork' | 'setup' | 'info';
 type Tool = 'select' | 'pan' | 'measure' | 'open' | 'closed' | 'blocks' | 'freehand' | 'points' | 'text' | 'shape';
@@ -83,6 +83,7 @@ const icons: Record<string,string> = {
   diamond:'m12 3 9 9-9 9-9-9 9-9',
   hexagon:'m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3',
   heart:'M12 20 4.6 12.6a4.5 4.5 0 0 1 7.4-5.2 4.5 4.5 0 0 1 7.4 5.2L12 20',
+  lock:'M6 11h12v10H6V11m2 0V8a4 4 0 0 1 8 0v3',
   route:'M6 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4m12-12a2 2 0 1 0 0-4 2 2 0 0 0 0 4M8 18h7a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7',
 };
 function Icon({name, size=18}: {name: string; size?: number}) {
@@ -197,19 +198,21 @@ function StudioEditor() {
   const touchNavigation=useRef(false);
   const pinch=useRef<{view:Viewport;anchor:Point;center:Point;distance:number}|null>(null);
   const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected), resolved=item&&resolve(item,project.fabric,project.locks), fabric=fabrics[project.fabric];
-  const items=selection.flatMap(id=>project.objects.filter(o=>o.id===id)),multi=items.length>1;
-  const selectionBox=useMemo(()=>selectionBounds(project,selection),[project.objects,selection.join('|')]);
+  const items=selection.flatMap(id=>project.objects.filter(o=>o.id===id)),multi=items.length>1,allLocked=items.length>0&&items.every(o=>o.locked);
+  // Transforms act on the unlocked part of the selection; a locked-only selection is read-only.
+  const movableIds=useMemo(()=>unlockedIds(project,selection),[project.objects,selection.join('|')]);
+  const selectionBox=useMemo(()=>selectionBounds(project,movableIds.length?movableIds:selection),[project.objects,movableIds,selection.join('|')]);
   const selectionRotation=items[0]?.rotation??items[0]?.text?.rotation??0;
   const size=useMemo(()=>designBounds(project.objects),[project.objects]);
   const viewWidth=hoop.width*1.18/zoom, viewHeight=hoop.height*1.18/zoom;
   const viewX=hoop.width/2-viewWidth/2+pan[0], viewY=hoop.height/2-viewHeight/2+pan[1];
   const canvasScale=viewportScale({zoom,pan},canvasSize,hoop)||1;
-  const editing=editPoints&&tool==='select'&&!!item&&!item.hidden&&!multi&&!item.text&&!hasDraft;
+  const editing=editPoints&&tool==='select'&&!!item&&!item.hidden&&!item.locked&&!multi&&!item.text&&!hasDraft;
   const handles=useMemo(()=>editing&&item?insertionHandles(item):[],[editing,item]);
   const addPreview=editing&&pointMode==='add'&&item&&hover?closestInsertion(item,hover):null;
   const canUndoDraft=hasDraft&&draft.length>(continuation?.base||0);
   const selectedIndex=project.objects.indexOf(item!),previousObject=project.objects[selectedIndex-1],nextObject=project.objects[selectedIndex+1];
-  const ends=useMemo(()=>tool==='select'&&item&&!item.hidden&&!multi&&!editing&&!hasDraft&&!continuation?routeEnds(project,item.id):null,[tool,item,multi,editing,hasDraft,continuation,previousObject,nextObject,project.fabric,project.locks]);
+  const ends=useMemo(()=>tool==='select'&&item&&!item.hidden&&!item.locked&&!multi&&!editing&&!hasDraft&&!continuation?routeEnds(project,item.id):null,[tool,item,multi,editing,hasDraft,continuation,previousObject,nextObject,project.fabric,project.locks]);
 
   useEffect(()=>{
     const canvas=svg.current;if(!canvas)return;
@@ -320,7 +323,7 @@ function StudioEditor() {
     ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
   }
   function updateText(patch:Partial<TextSpec>,merge?:string){
-    if(!item?.text)return;
+    if(!item?.text||item.locked)return;
     const text={...item.text,...patch},name=patch.content!==undefined&&item.name===textName(item.text.content)?textName(text.content):item.name;
     if(patch.font)lastFont.current=text.font;
     const next=layoutObject({...item,name,text});
@@ -349,7 +352,7 @@ function StudioEditor() {
   }
   function removeGuide(){if(!guide)return;commit({...project,objects:project.objects.filter(o=>o.id!==guide.id)});setGuide(null);}
   function drawTextPath(){if(!item?.text)return;const id=item.id;chooseTool('open');setPathTarget(id);}
-  function updateObject(patch:Partial<StitchObject>){if(!item)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
+  function updateObject(patch:Partial<StitchObject>){if(!item||item.locked)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
     let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};if(patch.color!==undefined&&!patch.thread)delete next.thread;for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
   function restoreSelection(p:Project){setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length?kept:p.objects[0]?[p.objects[0].id]:[];});}
@@ -401,18 +404,19 @@ function StudioEditor() {
     if(!item?.curve)return;const corner=!(item.curve.corners?.[index]??false);
     if(savePointChange(setCorner(item,index,corner)))setMessage(corner?t("Point is now a corner."):t("Point is now a curve point."));
   }
+  function editableSelection(){const ids=unlockedIds(current.current,selection);if(selection.length&&!ids.length)setMessage(t('Locked objects can’t be changed. Unlock them first.'));return ids;}
   function editSelection(m:Matrix,rotation=0,merge?:string){
-    const p=current.current,next=transformSelection(p,selection,m,rotation);if(!next){setError(t('Transform stays inside the hoop.'));return;}if(next!==p)commit(next,'',merge);
+    const p=current.current,ids=editableSelection();if(!ids.length)return;const next=transformSelection(p,ids,m,rotation);if(!next){setError(t('Transform stays inside the hoop.'));return;}if(next!==p)commit(next,'',merge);
   }
   function selectionAction(action:'flipH'|'flipV'|'rotate'){
-    const b=selectionBounds(current.current,selection);editSelection(around(centre(b),action==='flipH'?-1:1,action==='flipV'?-1:1,action==='rotate'?90:0),action==='rotate'?90:0);
+    const b=selectionBounds(current.current,unlockedIds(current.current,selection));editSelection(around(centre(b),action==='flipH'?-1:1,action==='flipV'?-1:1,action==='rotate'?90:0),action==='rotate'?90:0);
   }
   function selectionField(key:'x'|'y'|'width'|'height'|'rotation',value:number){
-    const b=selectionBounds(current.current,selection);if(key==='rotation'){const delta=value-selectionRotation;editSelection(around(centre(b),1,1,delta),delta);}
+    const b=selectionBounds(current.current,unlockedIds(current.current,selection));if(key==='rotation'){const delta=value-selectionRotation;editSelection(around(centre(b),1,1,delta),delta);}
     else if(key==='x'||key==='y')editSelection(translate(key==='x'?value-b.x:0,key==='y'?value-b.y:0));
     else if(value>0&&b[key]>1e-6)editSelection(around([b.x,b.y],key==='width'?value/b.width:1,key==='height'?value/b.height:1));
   }
-  function alignSelected(mode:Align){const next=alignSelection(current.current,selection,mode);if(next)commit(next);else setError(t('Transform stays inside the hoop.'));}
+  function alignSelected(mode:Align){const ids=editableSelection();if(!ids.length)return;const next=alignSelection(current.current,ids,mode);if(next)commit(next);else setError(t('Transform stays inside the hoop.'));}
   function copySelected(cut=false){
     if(!selection.length)return;clipboard.current=copySelection(current.current,selection);pasteCount.current=0;
     try{localStorage.setItem('threadroom-clipboard-v1',JSON.stringify(clipboard.current));}catch{/* The in-memory clipboard still works. */}
@@ -437,15 +441,18 @@ function StudioEditor() {
     moveQueue.current?.cancel();const before=dragUndo.current.cancel();transformDrag.current=null;drag.current=null;setSnapGuides([]);
     if(before){current.current=before;setProject(before);invalidate();setSaved(false);}
   }
-  function deleteSelected(){if(!selected)return;commit({...project,objects:project.objects.filter(o=>!selection.includes(o.id))});setSelected(null);}
+  function deleteSelected(){if(!selected)return;const ids=editableSelection();if(!ids.length)return;commit({...project,objects:project.objects.filter(o=>!ids.includes(o.id))});setSelection(selection.filter(id=>!ids.includes(id)));}
+  function lockSelection(ids=selection){if(!ids.length)return;const next=toggleLock(current.current,ids),locked=next.objects.some(o=>ids.includes(o.id)&&o.locked);commit(next,t(locked?'locked.other':'unlocked.other',{count:ids.length}));if(locked)setEditPoints(false);}
+  function unlockEverything(){commit(unlockAll(current.current),t('All objects unlocked'));}
+  function selectAll(){const ids=selectableIds(current.current);setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);setTool('select');}
   function groupSelection(){if(items.length<2)return;commit(groupObjects(project,selection,undefined,t).project);}
   function ungroupSelection(){commit(ungroupObjects(project,selection));}
   function hideObjects(ids:string[]){const hidden=!project.objects.filter(o=>ids.includes(o.id)).every(o=>o.hidden);commit({...project,objects:project.objects.map(o=>ids.includes(o.id)?{...o,hidden}:o)});}
   function renameObject(id:string,name:string,group:boolean){commit(group?{...project,groups:project.groups?.map(g=>g.id===id?{...g,name:name.slice(0,40)}:g)}:{...project,objects:project.objects.map(o=>o.id===id?{...o,name:name.slice(0,40)}:o)});}
   function toggleColourPick(){
     if(colourPickRef.current){cancelColourPick();return;}
-    const art=current.current.artwork;if(!art||!selection.length||hasDraft)return;
-    endDrag();const session={ids:[...selection],src:art.src};colourPickRef.current=session;setColourPick(session);setPickHint('');setShowImage(true);setHover(null);
+    const art=current.current.artwork;if(!art||!unlockedIds(current.current,selection).length||hasDraft)return;
+    endDrag();const session={ids:unlockedIds(current.current,selection),src:art.src};colourPickRef.current=session;setColourPick(session);setPickHint('');setShowImage(true);setHover(null);
     svg.current?.focus({preventScroll:true});
     void artworkPixels(art.src,t).catch(e=>{if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));});
   }
@@ -497,6 +504,8 @@ function StudioEditor() {
       if(e.key==='Escape'){e.preventDefault();if(hasDraft)cancelDrawing();else if(editing)finishEditing();else{setTool('select');setEditPoints(false);setSelected(null);}return;}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();if(e.shiftKey&&!hasDraft)redo();else undo();return;}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='g'){e.preventDefault();if(!hasDraft){if(e.shiftKey)ungroupSelection();else groupSelection();}return;}
+      if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='l'){e.preventDefault();if(!hasDraft)lockSelection();return;}
+      if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='a'){e.preventDefault();if(!hasDraft&&!editing)selectAll();return;}
       if((e.ctrlKey||e.metaKey)&&['c','x','v','d'].includes(e.key.toLowerCase())){if(!hasDraft){e.preventDefault();const key=e.key.toLowerCase();if(key==='c'||key==='x')copySelected(key==='x');else pasteSelected(key==='d');}return;}
       if(e.ctrlKey||e.metaKey||e.altKey)return;
       if(!hasDraft&&selection.length&&e.key.startsWith('Arrow')){e.preventDefault();nudge(e.key,e.shiftKey,e.repeat);return;}
@@ -537,7 +546,7 @@ function StudioEditor() {
     }
     endDrag();pressedAnchor.current=null;if(e.button>2)return;
     const handle=(e.target as SVGElement).closest('[data-transform]')?.getAttribute('data-transform') as ScaleHandle|'rotate'|undefined;
-    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...selection],box:selectionBounds(current.current,selection),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
+    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
     const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
     if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan};capture(e);return;}
@@ -564,7 +573,7 @@ function StudioEditor() {
     else {
       const target=e.target as SVGElement;
       const id=target.closest('[data-object]')?.getAttribute('data-object');
-      const source=current.current.objects.find(o=>o.id===id&&!o.hidden);
+      const source=current.current.objects.find(o=>o.id===id&&!o.hidden&&!o.locked);
       if(source&&!editing&&(e.ctrlKey||e.metaKey)){selectObject(source.id,e);return;}
       const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]'),end=target.closest('[data-end]')?.getAttribute('data-end');
       if(ends&&item&&(end==='entry'||end==='exit')){startDrag({id:item.id,start:p,source:current.current.objects.find(o=>o.id===item.id)??item,end},e);return;}
@@ -575,7 +584,7 @@ function StudioEditor() {
         if(source?.id===item.id){setActivePoint(null);return;}
       }
       if(e.button!==0)return;
-      if(source){const ids=selection.includes(source.id)?selection:[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
+      if(source){const ids=selection.includes(source.id)?unlockedIds(current.current,selection):[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
       else if(!editing)setSelected(null);
     }
   }
@@ -792,9 +801,9 @@ function StudioEditor() {
               <>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" pointerEvents="none" opacity={showTravel?.35:1}/>)}
                 {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="var(--travel-jump)" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="var(--travel-line)" strokeWidth={2/canvasScale} strokeLinecap="round"/>
                   <path d={stitchPaths.trims.map(([x,y])=>{const a=3.5/canvasScale;return `M${x-a} ${y-a}L${x+a} ${y+a}M${x-a} ${y+a}L${x+a} ${y-a}`;}).join('')} stroke="var(--danger)" strokeWidth={1.8/canvasScale} strokeLinecap="round"/></g>}</>
-              {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
+              {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
               {focus&&<IssueMarker focus={focus} canvasScale={canvasScale}/>}
-              {tool==='select'&&!editing&&!hasDraft&&items.length>0&&items.some(o=>!o.hidden)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
+              {tool==='select'&&!editing&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
               {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
               {ends&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
@@ -824,8 +833,8 @@ function StudioEditor() {
             {item?.curve&&<button aria-label={activePoint&&item.curve.corners?.[activePoint[1]]?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1])}><Icon name={activePoint&&item.curve.corners?.[activePoint[1]]?'curve':'closed'} size={15}/><span>{activePoint&&item.curve.corners?.[activePoint[1]]?t("Curve"):t("Corner")}</span></button>}
             {item?.curve&&!item.curve.closed&&<button aria-label={t("Continue curve")} title={activePoint?.[1]===0?t("Continue from the first point"):t("Continue from the last point")} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>{t("Continue")}</span></button>}
           </div>}
-          {tool==='select'&&item&&!multi&&!item.hidden&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
-          {tool==='select'&&item?.text&&<button className="edit-points-button" onClick={focusText}>{t("Edit text")}</button>}
+          {tool==='select'&&item&&!multi&&!item.hidden&&!item.locked&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
+          {tool==='select'&&item?.text&&!item.locked&&<button className="edit-points-button" onClick={focusText}>{t("Edit text")}</button>}
         </div>}
       </div>}
       {showTravel&&compiled&&<div className="travel-legend" role="note" aria-label={t("Travel view legend")}><span title={t("The needle lifts and the hoop moves without sewing")}><i className="legend-jump"/>{t("Jump ·")} {formatNumber(stitchPaths.jumpCount)}</span><span title={t("A sewn stitch joining two pieces without cutting the thread")}><i className="legend-travel"/>{t("Travel stitch ·")} {formatNumber(stitchPaths.travelCount)}</span><span title={t("The machine cuts the thread here before a jump")}><i className="legend-trim">✕</i>{t("Trim (thread cut) ·")} {formatNumber(stitchPaths.trims.length)}</span></div>}
@@ -835,15 +844,16 @@ function StudioEditor() {
         <div className="issue-actions">{focusFix&&<button className="issue-fix-button" title={focusFix.title} onClick={()=>applyFix(focus)}>{focusFix.label}</button>}{issues.length>1&&<span className="issue-nav"><button aria-label={t("Previous issue")} title={t("Previous issue")} onClick={()=>focusIssue(issues[(focusIndex-1+issues.length)%issues.length])}>‹</button><span>{formatNumber(focusIndex+1)} / {formatNumber(issues.length)}</span><button aria-label={t("Next issue")} title={t("Next issue")} onClick={()=>focusIssue(issues[(focusIndex+1)%issues.length])}>›</button></span>}</div>
       </div>}
       {item&&<aside className={`settings-overlay ${settingsCollapsed?'collapsed':''}`} aria-label={multi?t("Selection settings"):item.text?t("Text settings"):t("Object settings")}>
-        <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?t('objects.other',{count:items.length}):item.name}>{multi?t('objects.other',{count:items.length}):item.name}</h2><button className="icon-button" aria-label={t("Delete selected object")} title={t("Delete (Delete key)")} disabled={hasDraft} onClick={deleteSelected}><Icon name="trash" size={16}/></button><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} title={settingsCollapsed?t("Expand settings"):t("Collapse settings")} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
+        <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?t('objects.other',{count:items.length}):item.name}>{multi?t('objects.other',{count:items.length}):item.name}</h2><button className="icon-button" aria-label={t("Delete selected object")} title={t("Delete (Delete key)")} disabled={hasDraft||allLocked} onClick={deleteSelected}><Icon name="trash" size={16}/></button><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} title={settingsCollapsed?t("Expand settings"):t("Collapse settings")} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
         {!settingsCollapsed&&<div className="overlay-body">
-        <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
+        {items.some(o=>o.locked)&&<div className="lock-notice" role="status"><Icon name="lock" size={15}/><span>{allLocked?t(multi?'Locked objects: settings are read-only.':'Locked object: settings are read-only.'):t('Locked objects in the selection are not changed.')}</span><button type="button" disabled={hasDraft} onClick={()=>lockSelection(items.filter(o=>o.locked).map(o=>o.id))}>{t('Unlock')}</button></div>}
+        <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
-        {multi?<fieldset disabled={hasDraft} className="panel-section settings"><ThreadPicker project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
-        {item?.text&&<fieldset disabled={hasDraft} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
+        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
+        {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
-        <fieldset disabled={hasDraft} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}
+        <fieldset disabled={hasDraft||allLocked} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}
           <label><span className="field-heading">{t("Object name")}</span><input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
           <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
           <ThreadPicker project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/>
@@ -894,11 +904,12 @@ function StudioEditor() {
     <aside id="side-panel" className="side-panel" role="tabpanel" aria-labelledby={`tab-${panelTab}`} hidden={!panelOpen}>
       <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<span className="count-badge">{formatNumber(project.objects.length)}</span>}<button className="icon-button" aria-label={t("Hide panel")} onClick={()=>setPanelOpen(false)}><Icon name="close" size={16}/></button></div>
       {panelTab==='layers'&&<>
-        <LayersPanel project={project} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))}>
+        <LayersPanel project={project} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onLock={lockSelection} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))}>
           <div className="layers-footer" role="group" aria-label={t("Layer actions")}>
             <button disabled={hasDraft||items.length<2} title={t("Group (⌘G)")} aria-label={t("Group selected objects")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={hasDraft||!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} aria-label={t("Ungroup selected objects")} onClick={ungroupSelection}>{t("Ungroup")}</button>
             {(['top','up','down','bottom'] as const).map((where,i)=><button key={where} disabled={hasDraft||!items.length||((where==='top'||where==='up')?selection.includes(project.objects[0]?.id):selection.includes(project.objects.at(-1)?.id??''))} aria-label={t(`move.${where}`)} title={t(`move.${where}`)} onClick={()=>reorderSelection(where)}>{['⇈','↑','↓','⇊'][i]}</button>)}
-            <button disabled={hasDraft||!items.length} aria-label={t("Delete selected objects")} title={t("Delete (Delete key)")} onClick={deleteSelected}><Icon name="trash" size={16}/></button>
+            <button disabled={hasDraft||!items.length||allLocked} aria-label={t("Delete selected objects")} title={t("Delete (Delete key)")} onClick={deleteSelected}><Icon name="trash" size={16}/></button>
+            {project.objects.some(o=>o.locked)&&<button disabled={hasDraft} title={t('Unlock all objects')} aria-label={t('Unlock all objects')} onClick={unlockEverything}><Icon name="lock" size={14}/>{t('Unlock all')}</button>}
           </div>
         </LayersPanel>
       </>}

@@ -80,7 +80,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Selected colors ▸ | Submenu of swatches for the colours used in the design; a click recolours the selection | **no** |
 | Show / Hide needle points | Toggles needle-penetration dots for the selection | **no** |
 | Hide / Show (all) | "Hidden" means transparency 0, and it is still exported | yes (layer eye) |
-| Lock / Unlock (n) | Locked objects can't be selected by marquee or Ctrl+A, moved, resized or edited; most actions are disabled | **no** |
+| Lock / Unlock (n) | Locked objects can't be selected by marquee or Ctrl+A, moved, resized or edited; most actions are disabled | yes (layer padlock, Ctrl/⌘ L) |
 | Reshape | Enter point editing | yes (Edit points) |
 | Cut holes | Only for one fill object (see 1.4) | **no** |
 | Move up / down / first / last (n) | Change the sew order | yes (layers footer) |

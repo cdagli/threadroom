@@ -194,3 +194,7 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   fabric advice and design-check summary. Saved Setup speed defaults to 650 stitches/min
   (max 1000); Info and sheet include 30 s/change and 3 s/trim planning allowances.
   Desktop popover/undo/print-preview browser checks remain pending.
+- **Lock objects (done)**. `object.locked` (validated, saved, undo, SVG metadata); padlock
+  toggles on layer and group rows, Ctrl/⌘ L, Unlock all in the Layers footer, Ctrl/⌘ A
+  selects unlocked visible objects. Locked objects pass canvas clicks through and are
+  read-only (overlay notice with Unlock); mixed selections transform only unlocked members.

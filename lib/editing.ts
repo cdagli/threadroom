@@ -78,7 +78,7 @@ export function copySelection(p:Project,ids:readonly string[]):Project{
 export function readClipboard(raw:string|null):Project|null{try{const p:unknown=JSON.parse(raw??'null');return validProject(p)?normalizeGroups(p):null;}catch{return null;}}
 export function pasteSelection(p:Project,clip:Project,offset:number,id:()=>string):{project:Project;ids:string[]}|null{
   if(!clip.objects.length||p.objects.length+clip.objects.length>80)return null;
-  const groups=new Map(clip.groups?.map(g=>[g.id,id()])),objects=clip.objects.map(o=>({...o,id:id(),group:o.group?groups.get(o.group):undefined}));
+  const groups=new Map(clip.groups?.map(g=>[g.id,id()])),objects=clip.objects.map(({locked,...o})=>(void locked,{...o,id:id(),group:o.group?groups.get(o.group):undefined}));
   const ids=objects.map(o=>o.id),combined={...p,groups:[...(p.groups??[]),...(clip.groups??[]).map(g=>({...g,id:groups.get(g.id)!}))],objects:[...p.objects,...objects]};
   const project=transformSelection(combined,ids,translate(offset,offset));
   return project&&validProject(project)?{project:normalizeGroups(project),ids}:null;

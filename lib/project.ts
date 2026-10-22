@@ -13,7 +13,7 @@ export type Locks = {tieIn: Lock; tieOff: Lock; lockSize: number};
 // Fabric-driven values are optional: unset values follow the project's fabric profile.
 export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
-  hidden?: boolean; group?: string; thread?: Thread;
+  hidden?: boolean; locked?: boolean; group?: string; thread?: Thread; // locked: not hit-tested or edited on the canvas, still sewn
   length: number; angle: number; satinWidth: number;
   fillLength?: number; handStitch?: 0|1|2|3|4|5; gradient?: FillGradient;
   fillUnderlays?: FillUnderlay[];
@@ -219,7 +219,7 @@ export function validProject(value: unknown): value is Project {
     if(o?.rotation!==undefined&&(typeof o.rotation!=='number'||!Number.isFinite(o.rotation)||Math.abs(o.rotation)>360))return false;
     if (!o || typeof o.id !== 'string' || typeof o.name !== 'string' || !Object.hasOwn(kindNames,o.kind) || !/^#[0-9a-f]{6}$/i.test(o.color) || !Array.isArray(o.rings) || (!o.rings.length && !o.text)) return false;
     if(o.thread!==undefined&&!validThread(o.thread,o.color))return false;
-    if(o.hidden!==undefined&&typeof o.hidden!=='boolean'||o.group!==undefined&&(typeof o.group!=='string'||!groups.has(o.group)))return false;
+    if(o.hidden!==undefined&&typeof o.hidden!=='boolean'||o.locked!==undefined&&typeof o.locked!=='boolean'||o.group!==undefined&&(typeof o.group!=='string'||!groups.has(o.group)))return false;
     if (o.text !== undefined && (!validText(o.text) || o.curve)) return false;
     for (const r of o.rings) {
       if (!Array.isArray(r) || r.length < (isFillKind(o.kind) ? 3 : 2)) return false;

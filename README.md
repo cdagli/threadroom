@@ -387,6 +387,8 @@ work when focus is outside text inputs and native controls:
 |---|---|
 | Ctrl/⌘ C / X / V | Copy / cut / paste selection |
 | Ctrl/⌘ D | Duplicate selection |
+| Ctrl/⌘ A | Select all unlocked, visible objects |
+| Ctrl/⌘ L | Lock / unlock the selection |
 | Arrow keys / Shift + arrows | Nudge 0.1 mm / 1 mm; repeated presses coalesce into one undo step per burst |
 | Shift H / Shift V | Flip horizontally / vertically |
 | Ctrl/⌘ Z / Ctrl/⌘ Shift Z | Undo / redo |
@@ -417,6 +419,18 @@ testing in both Lines and Thread. **Hidden is view-only:** hidden objects still
 compile, contribute to stitch counts and design checks, and export. Preview
 commands carry object indices and IDs so shapes, stitches and connecting travel
 can be filtered together, including text borders.
+
+The padlock beside the eye (or **Ctrl/⌘ L** for the selection) **locks** an object
+or a whole group. Locked objects have no canvas hit area: clicks pass through to
+objects below, and **Ctrl/⌘ A** selects only unlocked, visible objects. They can
+still be selected from Layers, where the left overlay is read-only with an
+**Unlock** button. Moving, transform handles, numeric fields, flips, alignment,
+nudging, point and text editing, entry/exit handles and deletion skip locked
+objects; a mixed selection changes only its unlocked members. Locked objects can
+still be hidden, reordered, grouped and copied (pasted copies are unlocked), and
+they still compile and export. **Unlock all** appears in the Layers footer while
+anything is locked. Locks are saved in project JSON, autosave, undo/redo and as
+`data-threadroom-locked` in the editable SVG.
 
 Open **Artwork** in the side panel to import an image, then choose **Auto trace** for colour regions, **Trace outline**
 (closed shape) or **Trace line** (open shape) to trace by hand. Import fits

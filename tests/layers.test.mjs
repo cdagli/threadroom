@@ -52,3 +52,18 @@ test('Drop targets distinguish group boundaries, membership and collapsed blocks
   const whole=moveGroup(p,'h',layerTarget(g,true,true).index);assert.deepEqual(whole.objects.map(o=>o.id),['a','b','c','d','e']);
   assert.equal(normalizeGroups(inside),inside);assert.equal(normalizeGroups(out),out);
 });
+
+test('Locks toggle as one change, skip canvas selection and are kept by validation and SVG export',()=>{
+  const {toggleLock,unlockAll,unlockedIds,selectableIds}=load('layers'),{validProject}=load('project'),{exportSVG}=load('svg-export');
+  const p=project(),locked=toggleLock(p,['a','b']);
+  assert.deepEqual(locked.objects.map(o=>!!o.locked),[true,true,false,false,false]);assert.equal(locked.objects[2],p.objects[2]);
+  assert.deepEqual(toggleLock(toggleLock(locked,['b','c']),['a']).objects.map(o=>!!o.locked),[false,true,true,false,false]);
+  assert.equal(Object.hasOwn(toggleLock(locked,['a','b']).objects[0],'locked'),false);
+  assert.deepEqual(unlockedIds(locked,['a','c','gone']),['c']);
+  assert.deepEqual(selectableIds({...locked,objects:locked.objects.map(o=>o.id==='e'?{...o,hidden:true}:o)}),['c','d']);
+  assert.ok(validProject(locked));assert.equal(validProject({...p,objects:[{...p.objects[0],locked:'yes'}]}),false);
+  assert.equal(unlockAll(p),p);assert.ok(unlockAll(locked).objects.every(o=>o.locked===undefined));
+  assert.match(exportSVG(locked),/id="a"[^>]*data-threadroom-locked="true"/);assert.doesNotMatch(exportSVG(locked),/id="c"[^>]*data-threadroom-locked/);
+  const {copySelection,pasteSelection}=load('editing');let n=0;
+  const pasted=pasteSelection(locked,copySelection(locked,['a']),1,()=>`copy-${n++}`);assert.equal(pasted.project.objects.at(-1).locked,undefined);
+});
