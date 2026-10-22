@@ -35,7 +35,7 @@ import {CanvasObject} from './canvas-object';
 import {PointHandles} from './point-handles';
 import {useStableCallback} from './use-stable-callback';
 import {ShapeTools,KnifeOverlay} from './shape-tools';
-import {cutHole,knifeShapes,shapeRegion,type ShapeResult} from '@/lib/shape-ops';
+import {combineShapes,cutHole,cutHoles,flattenOverlaps,knifeShapes,shapeRegion,type ShapeResult} from '@/lib/shape-ops';
 import {changedObjectIds, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
 import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
@@ -161,6 +161,7 @@ function StudioEditor() {
   // Point capture retargets double-clicks to the canvas, so remember which anchor was pressed.
   const pressedAnchor=useRef<number|null>(null);
   const [settingsCollapsed,setSettingsCollapsed]=useState(false);
+  const [cutKeep,setCutKeep]=useState(false);
   const [imageOpacity,setImageOpacity]=useState(.5);
   const [colourPick,setColourPick]=useState<{ids:string[];src:string}|null>(null),[pickHint,setPickHint]=useState('');
   const colourPickRef=useRef(colourPick);
@@ -708,6 +709,14 @@ function StudioEditor() {
     else if(action==='lock'||action==='unlock')lockSelection();else if(action==='hide'||action==='show')hideObjects(selection);else if(action==='editPoints')editObject();
     else if(action==='front'||action==='forward'||action==='backward'||action==='back')reorderSelection(order[action]);
     else if(action==='flipH'||action==='flipV'||action==='rotate')selectionAction(action);else if(action==='selectAll')selectAll();else if(action==='unlockAll')unlockEverything();
+    else if(action==='cutHoles')applyShape(()=>cutHoles(current.current,selection,cutKeep,t));
+    else if(action==='flatten')applyShape(()=>flattenOverlaps(current.current,selection,undefined,t));
+    else if(action==='union'||action==='subtract'||action==='intersect')applyShape(()=>combineShapes(current.current,selection,action,t));
+    else if(action==='knife')chooseTool('knife');
+    else if(action==='offset'){
+      // Offset… opens the Shape tools distance field; Grow / Shrink there apply it.
+      setSettingsCollapsed(false);requestAnimationFrame(()=>{const field=document.querySelector<HTMLInputElement>('.shape-offset input');field?.focus();field?.select();});return;
+    }
     else if(action==='fit')fit();else setViewSettings(v=>({...v,showGrid:!v.showGrid}));
     svg.current?.focus({preventScroll:true});
   }
@@ -906,7 +915,7 @@ function StudioEditor() {
         {items.some(o=>o.locked)&&<div className="lock-notice" role="status"><Icon name="lock" size={15}/><span>{allLocked?t(multi?'Locked objects: settings are read-only.':'Locked object: settings are read-only.'):t('Locked objects in the selection are not changed.')}</span><button type="button" disabled={hasDraft} onClick={()=>lockSelection(items.filter(o=>o.locked).map(o=>o.id))}>{t('Unlock')}</button></div>}
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
-        <ShapeTools project={project} selection={selection} disabled={hasDraft||allLocked} onResult={run=>applyShape(run)} onMode={shapeMode}/>
+        <ShapeTools project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
         {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}

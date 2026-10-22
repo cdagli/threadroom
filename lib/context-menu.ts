@@ -1,8 +1,9 @@
 import type {Project} from './project';
 import {unlockedIds} from './layers';
+import {shapeOptions} from './shape-ops';
 
 // Canvas right-click menu: pure item lists, keyboard movement and viewport placement.
-export type MenuAction='cut'|'copy'|'paste'|'duplicate'|'delete'|'group'|'ungroup'|'lock'|'unlock'|'hide'|'show'|'editPoints'|'front'|'forward'|'backward'|'back'|'flipH'|'flipV'|'rotate'|'selectAll'|'unlockAll'|'fit'|'grid';
+export type MenuAction='cut'|'copy'|'paste'|'duplicate'|'delete'|'group'|'ungroup'|'lock'|'unlock'|'hide'|'show'|'editPoints'|'front'|'forward'|'backward'|'back'|'flipH'|'flipV'|'rotate'|'cutHoles'|'flatten'|'union'|'subtract'|'intersect'|'offset'|'knife'|'selectAll'|'unlockAll'|'fit'|'grid';
 export type MenuEntry={action:MenuAction;disabled?:boolean}|'separator';
 export function objectMenu(p:Project,ids:readonly string[],canPaste:boolean):MenuEntry[]{
   const chosen=p.objects.filter(o=>ids.includes(o.id)),editable=unlockedIds(p,ids).length>0,first=p.objects[0]?.id,last=p.objects.at(-1)?.id;
@@ -13,6 +14,11 @@ export function objectMenu(p:Project,ids:readonly string[],canPaste:boolean):Men
   if(single&&!single.text&&!single.locked&&!single.hidden)entries.push({action:'editPoints'});
   entries.push('separator',{action:'front',disabled:ids.includes(last??'')},{action:'forward',disabled:ids.includes(last??'')},{action:'backward',disabled:ids.includes(first??'')},{action:'back',disabled:ids.includes(first??'')},
     'separator',{action:'flipH',disabled:!editable},{action:'flipV',disabled:!editable},{action:'rotate',disabled:!editable});
+  // Shape operations, enabled as in the Shape tools section (locked objects and satin Blocks don't count).
+  const can=shapeOptions(p,ids);
+  entries.push('separator',{action:'cutHoles',disabled:!can.cut},{action:'flatten',disabled:!can.flatten},
+    {action:'union',disabled:!can.combine},{action:'subtract',disabled:!can.combine},{action:'intersect',disabled:!can.combine},
+    {action:'offset',disabled:!can.offset},{action:'knife',disabled:!can.knife});
   return chosen.length?entries:canvasMenu(p,canPaste);
 }
 export function canvasMenu(p:Project,canPaste:boolean):MenuEntry[]{

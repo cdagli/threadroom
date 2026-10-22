@@ -229,5 +229,6 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   copy) and Knife (K, straight line, left/right parts named "Name 1/2"). One undo step each;
   results become plain-ring objects (curve anchors dropped). Shape tools section in the object
   settings; Cut holes and Knife modes are shortcuts and buttons, not dock tools. Locked objects
-  are skipped (or the operation is refused); two-rail satin Blocks are excluded. Node and Python
+  are skipped (or the operation is refused); two-rail satin Blocks are excluded. The object context menu has Cut holes, Flatten overlaps,
+  Union/Subtract/Intersect, Offset… (opens the Shape tools distance) and Knife, enabled as the section's buttons. Node and Python
   tests (compiled fills with Cut holes holes and flattened overlaps). Desktop browser checks pending.

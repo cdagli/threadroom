@@ -18,7 +18,7 @@ Each item must work end to end: editor UI, project validation, compiler, PES exp
 - [x] **Realistic 3D thread preview** in the Stitches view, with playback, so beginners can see how the stitches will look on fabric.
 - [ ] **More stitch types**, in this order: redwork (a running outline that sews every line twice with no trims), meander, braid, satin fill for wide areas, and fur/sketch. Contour and motif fills are in the fill styles item below.
 - [ ] **Two-rail satin columns** with direction lines, for borders and lettering.
-- [x] **Shape tools:** union, subtract, intersect, cut holes (selection and drawing mode), flatten overlaps (also a design-check fix), offset (for outlines and appliqué allowances) and knife. Ready-made shapes are done (circle, rectangle, star, triangle, diamond, hexagon, heart). Remaining: hole-only point editing / Delete hole, curve-path knife, canvas context-menu entries.
+- [x] **Shape tools:** union, subtract, intersect, cut holes (selection and drawing mode), flatten overlaps (also a design-check fix), offset (for outlines and appliqué allowances) and knife. Ready-made shapes are done (circle, rectangle, star, triangle, diamond, hexagon, heart). Remaining: hole-only point editing / Delete hole and curve-path knife. The canvas context menu offers Cut holes, Flatten overlaps, Union / Subtract / Intersect, Offset… and Knife.
 - [ ] **Fill styles:** turning or guided fills, contour/spiral fills, radial fills, gradient (varying density) fills, and motif/pattern fills.
 - [ ] **Editing individual stitches** after generating: insert, move or delete a stitch point.
 - [ ] **Appliqué workflow:** placement line, stop, tack-down, stop, then cover satin.

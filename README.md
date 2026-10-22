@@ -40,6 +40,9 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   Locked objects are skipped (never changed, removed or used as cutters; with
   nothing unlocked left the operation is refused), and two-rail satin Blocks are
   excluded, since their shape lives in the rails rather than the rings.
+  The canvas right-click menu offers the same operations (Cut holes, Flatten
+  overlaps, Union / Subtract / Intersect, Offset…, Knife), enabled by the same
+  rules; Offset… opens the Shape tools distance field.
 - PR1X hoop profiles: 100 × 100, 180 × 130, 300 × 200, and 60 × 40 mm. Select
   the hoop actually fitted to your machine. Profiles are limits, not a machine
   connection.
