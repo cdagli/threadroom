@@ -118,7 +118,7 @@ export function profileDefault(kind:Kind, fabric:Fabric, key:Exclude<Setting,key
 export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&!isLockSetting(key)&&(kind==='fill'||isSatinKind(kind));
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
 // railPaths: the compile payload's sampled block rails, equal length and paired by index.
-export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]};
+export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]; satinColumns?: {railPaths:[Point[],Point[]];character:number}[]};
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
   const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin';
   const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults};
@@ -221,6 +221,7 @@ const validSize=(v:unknown)=>typeof v==='number'&&v>=lockLimits.size[0]&&v<=lock
 const inRange=(v:unknown,lo:number,hi:number)=>typeof v==='number'&&Number.isFinite(v)&&v>=lo&&v<=hi;
 const validPoint=(pt:unknown)=>Array.isArray(pt)&&pt.length===2&&pt.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000);
 // Both rails carry one anchor per rung: 2–100 rungs, no curve or text on the same object.
+// Live satin text keeps outlines and settings instead, expanding to paired columns in geometryPayload.
 function validRails(r:unknown,o:StitchObject):boolean {
   if(!r||typeof r!=='object'||o.curve||o.text)return false;
   const {points,corners}=r as Rails;
@@ -275,7 +276,7 @@ export function validProject(value: unknown): value is Project {
       if(!o.curve.points.every(validPoint))return false;
       if(o.curve.corners!==undefined&&(!Array.isArray(o.curve.corners)||o.curve.corners.length!==o.curve.points.length||Array.from(o.curve.corners).some(c=>typeof c!=='boolean')))return false;
     }
-    if((o.kind==='satin-block')!==(o.rails!==undefined))return false;
+    if((o.kind==='satin-block')!==(o.rails!==undefined||!!o.text?.satin)||o.text?.satin&&o.kind!=='satin-block')return false;
     if(o.rails!==undefined&&!validRails(o.rails,o))return false;
     if(o.ropeWidth!==undefined&&!inRange(o.ropeWidth,...ropeLimits.width))return false;
     if(o.eFlipped!==undefined&&typeof o.eFlipped!=='boolean')return false;

@@ -122,7 +122,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 
 | Feature | Ember | Free/Pro | Threadroom |
 |---|---|---|---|
-| Built-in embroidery fonts | 23 fonts (Algerian, Arial Black, Blenda, Calibri, Classic Block, College, Comic Sans, Creative, Elephant, Favorite, Garamond, Georgia Italic, Hobo, Magneto, Old English, Pacifico, PES, Schola, Seamaiden, Singular, Streetwear, Times Roman, Verdana Italic). Each is a JSON file of metrics (ascent, descent, emHeight, capHeight, spaceAdvance) and glyphs of `{advance, strokes}`. Each stroke is a list of points that alternate between the two rails of a **two-rail satin block** (a quad strip). "Letters insert as editable satin blocks (one group per character)." Algerian and College are uppercase-only, so lowercase input maps to capitals. | free | **no**. TTF/OTF outlines are filled or bordered; TODO §3 asks for satin fonts for 4–6 mm text |
+| Built-in embroidery fonts | 23 fonts (Algerian, Arial Black, Blenda, Calibri, Classic Block, College, Comic Sans, Creative, Elephant, Favorite, Garamond, Georgia Italic, Hobo, Magneto, Old English, Pacifico, PES, Schola, Seamaiden, Singular, Streetwear, Times Roman, Verdana Italic). Each is a JSON file of metrics (ascent, descent, emHeight, capHeight, spaceAdvance) and glyphs of `{advance, strokes}`. Each stroke is a list of points that alternate between the two rails of a **two-rail satin block** (a quad strip). "Letters insert as editable satin blocks (one group per character)." Algerian and College are uppercase-only, so lowercase input maps to capitals. | free | **yes**. Satin lettering uses our Hershey Simplex/Script stroke conversion, including Turkish; TTF/OTF fill/outline fonts remain available |
 | Sizes | 0.25 in, 0.5 in, 0.75 in (em height). The result can be resized freely afterwards. | free | yes (letter height in mm, continuous) |
 | TTF/OTF/TTC fonts | Uploaded fonts insert as outline-based shapes ("Results will vary…"). The supported special characters are listed. | Pro (upload) | yes (1,972 Google Fonts plus upload; better than Ember) |
 | Group letters | *Grouped* (one shape) or *Individual* (a shape per letter) | free | partial: Convert to shapes |
@@ -327,11 +327,19 @@ tests and README.
     previous exit, joining components with the shortest connectors (trim only above the trim threshold). Break
     apart restores the sources. The design check flags pieces that can't be connected.
 
-23. **Satin block fonts for small lettering** · L · depends on two-rail Blocks (drawing spec step 8)
-    *Value:* TODO §3; names at 5–8 mm on baby clothes. *Scope:* the font format is metrics + glyph strokes as
-    quad-strip rail pairs (the same idea as Ember, but Threadroom's own digitised data, because Ember's font JSON
-    must not be copied). Start with one block alphabet (A–Z, a–z, 0–9, basic punctuation) digitised in Threadroom
-    itself; letters insert as one group per character of editable two-rail satin.
+23. **Satin block fonts for small lettering** · **done** · depends on two-rail Blocks
+    Live **Satin lettering** style in the text panel with bundled Hershey Simplex (sans) and
+    Script, A–Z/a–z/digits/ASCII punctuation and composed Turkish characters. Source is the
+    public-domain Hershey data with original acknowledgements in THIRD-PARTY-NOTICES.md;
+    Ember's font JSON must not be copied and was not used. The offline generator retains
+    advances and strokes in em units. Column width defaults to 14% of height, clamped to
+    1–10 mm; joins offset paired rails and sharp turns split. Existing spacing, multiline,
+    alignment, arc/wave/path and transforms stay live. The compiler keeps one owner and
+    character order, connecting strokes and travelling under sewn columns where possible.
+    Convert to shapes gives ordinary editable Blocks grouped per character (existing groups
+    retained), guarded by the 80-object budget. Every glyph has valid rails; JSON and PES
+    generation are deterministic; 6 mm Turkish names have quiet geometry and stitch checks.
+    Browser interaction checks remain pending.
 
 24. **Map to path** · L · depends on 1 and 2
     *Value:* borders of repeated hearts or stars around a name. *Scope:* select a prototype plus an open path;

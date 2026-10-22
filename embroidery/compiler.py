@@ -164,18 +164,36 @@ def validate(project):
         if "eFlipped" in obj and not isinstance(obj["eFlipped"], bool):
             raise ValueError("E-stitch flip must be on or off.")
         if obj["kind"] == "satin-block":
-            rails = obj.get("railPaths")
-            if not isinstance(rails, list) or len(rails) != 2 or not all(isinstance(r, list) for r in rails) or len(rails[0]) != len(rails[1]) or len(rails[0]) < 2:
-                raise ValueError("A satin block needs two rails with the same number of points.")
-            for rail in rails:
-                count += len(rail)
-                if count > 12_000:
-                    raise ValueError("Simplify this design to fewer than 12,000 control points.")
-                for point in rail:
-                    if not isinstance(point, list) or len(point) != 2:
-                        raise ValueError("Invalid path coordinate.")
-                    number(point[0], 0, width, "X position")
-                    number(point[1], 0, height, "Y position")
+            columns = obj.get("satinColumns")
+            if "satinColumns" in obj:
+                if not isinstance(columns, list) or not 1 <= len(columns) <= 500 or len(columns) != len(rings):
+                    raise ValueError("A satin block needs two rails with the same number of points.")
+                previous_character = -1
+                for column in columns:
+                    if not isinstance(column, dict) or type(column.get("character")) is not int or not previous_character <= column["character"] <= 300:
+                        raise ValueError("A satin block needs two rails with the same number of points.")
+                    previous_character = column["character"]
+                pairs = [c.get("railPaths") for c in columns]
+            else:
+                pairs = [obj.get("railPaths")]
+            for column_index, rails in enumerate(pairs):
+                if not isinstance(rails, list) or len(rails) != 2 or not all(isinstance(r, list) for r in rails) or len(rails[0]) != len(rails[1]) or len(rails[0]) < 2:
+                    raise ValueError("A satin block needs two rails with the same number of points.")
+                if columns is not None:
+                    centre = rings[column_index]
+                    if len(centre) != len(rails[0]):
+                        raise ValueError("A satin block needs two rails with the same number of points.")
+                for rail in rails:
+                    count += len(rail)
+                    if count > 12_000:
+                        raise ValueError("Simplify this design to fewer than 12,000 control points.")
+                    for point in rail:
+                        if not isinstance(point, list) or len(point) != 2:
+                            raise ValueError("Invalid path coordinate.")
+                        number(point[0], 0, width, "X position")
+                        number(point[1], 0, height, "Y position")
+                if columns is not None and any(math.dist(p, [(a[0]+b[0])/2, (a[1]+b[1])/2]) > .002 for p, a, b in zip(centre, *rails)):
+                    raise ValueError("A satin block needs two rails with the same number of points.")
         if obj["kind"] in WIDE_KINDS or obj["kind"] == "satin-block" or sweep:
             number(obj.get("splitLength"), 3, 12, "Split length")
             if not isinstance(obj.get("shortStitches"), bool):
@@ -1351,9 +1369,77 @@ def next_target(obj, nxt):
     return min(candidates, key=lambda p: math.dist(p, centre))
 
 
+def covered_column_travel(start, end, covered, width):
+    """Shortest walk on already sewn column centres, including overlapping columns.
+    Nearby sampled centres share an edge only inside their overlapping satin bands.
+    Returns None when reaching the next stroke would leave the covered area.
+    """
+    import heapq
+    points, edges = [], []
+    for line in covered:
+        offset = len(points)
+        points.extend(line)
+        edges.extend([] for _ in line)
+        for i in range(offset+1, len(points)):
+            d = math.dist(points[i-1], points[i])
+            edges[i-1].append((i, d))
+            edges[i].append((i-1, d))
+    if not points:
+        return None
+    first = min(range(len(points)), key=lambda i: math.dist(start, points[i]))
+    last = min(range(len(points)), key=lambda i: math.dist(end, points[i]))
+    if math.dist(start, points[first]) > width*.65+.15 or math.dist(end, points[last]) > width*.45:
+        return None
+    for i, a in enumerate(points):
+        for j in range(i+1, len(points)):
+            d = math.dist(a, points[j])
+            if d <= width*.65:
+                edges[i].append((j, d))
+                edges[j].append((i, d))
+    heap, costs, previous = [(0, first)], {first: 0}, {}
+    while heap:
+        cost, i = heapq.heappop(heap)
+        if cost > costs[i]:
+            continue
+        if i == last:
+            route = [i]
+            while route[-1] != first:
+                route.append(previous[route[-1]])
+            path = [start]+[points[j] for j in route[::-1]]+[end]
+            return sample_path(path, 1.2)
+        for j, d in edges[i]:
+            if cost+d < costs.get(j, float("inf")):
+                costs[j], previous[j] = cost+d, i
+                heapq.heappush(heap, (cost+d, j))
+    return None
+
+
+def lettering_plan(obj):
+    """Reading order, nearby strokes connected under already sewn columns when possible.
+    Disconnected strokes use the ordinary short connector / trim policy. Ownership
+    stays with the live text, including all hidden travel and its diagnostics.
+    """
+    plan, covered, character, at = [], [], None, None
+    for column, centre in zip(obj["satinColumns"], obj["rings"]):
+        if column["character"] != character:
+            covered, character = [], column["character"]
+        block = {**obj, "railPaths": column["railPaths"], "rings": [centre]}
+        passes = block_passes(block, centre)
+        if at is not None and covered:
+            hidden = covered_column_travel(at, passes[0][0][0], covered, block_width(block))
+            if hidden:
+                passes.insert(0, (hidden, 3))
+        plan.append(passes)
+        at = passes[-1][0][-1]
+        covered.append(centre)
+    return plan
+
+
 def plan_object(obj, at, target):
     """Polylines for one object; each is [(points, longest stitch)] and starts after a jump."""
     kind, entry, exit = obj["kind"], obj.get("entry"), obj.get("exit")
+    if kind == "satin-block" and "satinColumns" in obj:
+        return lettering_plan(obj)
     if kind in FILL_KINDS:
         snap = lambda p: p and nearest_on(obj["rings"], p, True)[2]
         entry, exit = snap(entry), snap(exit)
@@ -1576,7 +1662,7 @@ def compile_project(project):
     for run_index, (index, obj, chunks, points) in enumerate(runs):
         changes = obj["color"].lower() != color
         separate_engine = obj["kind"] == "fill" and FILL_PATTERNS.get(obj.get("fillPattern"), {}).get("mode") == "engine"
-        avoid_short = separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))
+        avoid_short = "satinColumns" in obj or separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))
         trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump or (separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))) and index == owner)
         if trim:
             lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])

@@ -246,3 +246,17 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   are skipped (or the operation is refused); two-rail satin Blocks are excluded. The object context menu has Cut holes, Flatten overlaps,
   Union/Subtract/Intersect, Offset… (opens the Shape tools distance) and Knife, enabled as the section's buttons. Node and Python
   tests (compiled fills with Cut holes holes and flattened overlaps). Desktop browser checks pending.
+
+- **Satin block fonts for small lettering (done; backlog 23)**. Bundled public-domain
+  Hershey Roman Simplex and Script Simplex, regenerated offline from checksum-verified
+  packed Hershey data with advances and em-unit stroke polylines. Turkish characters
+  compose Hershey marks; no Ember data. `lib/satin-lettering.ts` offsets strokes into
+  paired rails, splits sharp corners and shares the existing text layout for all
+  baseline shapes and affine transforms. Live panel style/font/column-width controls;
+  ordinary Blocks on conversion, grouped per character within the 80-object budget.
+  Live compiler columns retain one owner, sew in character order, connect nearby
+  strokes and travel under previously sewn columns when connected. SVG rail export,
+  typed formal Turkish copy, every-glyph validity and deterministic generation/PES
+  tests; 6 mm Turkish names are quiet in both design checks. Desktop checks pending:
+  live typing/style switching, all layouts, undo/save/reload, conversion/rail editing,
+  Lines/Thread preview and PES export. No browser used for this implementation.

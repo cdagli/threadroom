@@ -1,3 +1,4 @@
+import {layoutSatinText} from './satin-lettering';
 import {createT,errorText,type Translator,type Key} from './i18n';
 import {defaultTrimJump, hoops, hasCrossStyle, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
 import {blockOutline, moveGeometry, railSamples, reclose} from './curves';
@@ -111,7 +112,7 @@ export function checkProject(p: Project): Warning[] {
     else if (margin < limits.edge) add('near-edge', o, g, 'check', {margin: round(margin), limit: limits.edge});
     if(o.kind==='fill'&&o.fillPattern!=='sweepSatin'&&o.fillPattern!=='crossStitchFill'&&(o.fillLength??o.length)>5&&['jersey','rib','fleece'].includes(p.fabric))add('fill-long',o,b,'check',{length:o.fillLength??o.length,limit:5});
     if (o.text) {
-      const min = limits.text[textGroup(o.kind)];
+      const min = o.text.satin?4:limits.text[textGroup(o.kind)];
       if (o.text.size < min) add('text-small', o, b, o.text.size < min*2/3 ? 'fail' : 'check', {size: round(o.text.size), limit: min});
     } else if (isFillKind(o.kind)) {
       const r = raster(o.rings), cross = o.kind === 'cross'&&!hasCrossStyle(o) ? resolve(o, p.fabric, p.locks).spacing : 0;
@@ -119,6 +120,13 @@ export function checkProject(p: Project): Warning[] {
       if (r.area < limits.fillArea[1]) add('fill-small', o, b, r.area < limits.fillArea[0] ? 'fail' : 'check', {area: round(r.area), limit: limits.fillArea[1]});
       else if (r.thickness < check) add('fill-narrow', o, b, r.thickness < fail ? 'fail' : 'check', {width: round(r.thickness), limit: check});
       else if (r.thin && r.thin.area >= limits.thinArea) add('fill-thin-part', o, r.thin.bounds, 'check', {area: round(r.thin.area), limit: limits.fillWidth[0]});
+    }
+    if(o.text?.satin){
+      const widths=layoutSatinText(o.text).columns.flatMap(c=>c.rails.points[0].map((q,i)=>Math.hypot(c.rails.points[1][i][0]-q[0],c.rails.points[1][i][1]-q[1])));
+      const width=Math.min(...widths),wide=Math.max(...widths),r=resolve(o,p.fabric,p.locks);
+      if(width<.998)add('satin-narrow',o,g,'check',{width:round(width,2),limit:1});
+      else if(wide+r.pullCompensation>limits.satinWide&&r.splitLength>limits.satinWide)add('satin-long',o,g,'fail',{bite:round(wide+r.pullCompensation),split:r.splitLength,limit:limits.satinWide});
+      else if(wide>limits.satinWide)add('satin-wide',o,g,'check',{width:round(wide),limit:limits.satinWide});
     }
     if (isWideKind(o.kind)) {
       const r = resolve(o, p.fabric, p.locks), bite = o.satinWidth+r.pullCompensation;
@@ -131,8 +139,9 @@ export function checkProject(p: Project): Warning[] {
       const r = resolve(o, p.fabric, p.locks), [left, right] = railSamples(o.rails), widths = left.map((q, i) => Math.hypot(right[i][0]-q[0], right[i][1]-q[1]));
       const where = (test: (w: number, k: number) => boolean) => {const i = widths.flatMap((w, k) => test(w, k) ? [k] : []); return i.length ? {bounds: box(i.flatMap(k => [left[k], right[k]]), r.pullCompensation/2+.5), widths: i.map(k => widths[k])} : null;};
       // Tapered tips (narrow runs reaching an end) are normal; flag pinches, and fail a block narrow throughout.
-      const thin = widths.map(w => w < limits.satinWidth), tipStart = thin.indexOf(false), tipEnd = thin.lastIndexOf(false);
-      const narrow = where((w, k) => w < limits.satinWidth && (tipStart < 0 || k > tipStart && k < tipEnd)), long = where(w => w+r.pullCompensation > limits.satinWide), wide = where(w => w > limits.satinWide);
+      // Allow 0.002 mm for paired rails rounded to the editor’s 0.001 mm coordinate grid.
+      const thin = widths.map(w => w < limits.satinWidth-.002), tipStart = thin.indexOf(false), tipEnd = thin.lastIndexOf(false);
+      const narrow = where((w, k) => w < limits.satinWidth-.002 && (tipStart < 0 || k > tipStart && k < tipEnd)), long = where(w => w+r.pullCompensation > limits.satinWide), wide = where(w => w > limits.satinWide);
       if (narrow) add('satin-narrow', o, narrow.bounds, tipStart < 0 ? 'fail' : 'check', {width: round(Math.min(...narrow.widths), 2), limit: limits.satinWidth});
       else if (long && r.splitLength > limits.satinWide) add('satin-long', o, long.bounds, 'fail', {bite: round(Math.min(Math.max(...long.widths)+r.pullCompensation, r.splitLength)), split: r.splitLength, limit: limits.satinWide});
       else if (wide) add('satin-wide', o, wide.bounds, 'check', {width: round(Math.max(...wide.widths)), limit: limits.satinWide});

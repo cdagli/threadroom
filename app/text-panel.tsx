@@ -3,6 +3,7 @@ import {useT} from './i18n';
 import {errorText,type Translator} from '@/lib/i18n';
 import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject} from 'react';
 import {categoryNames, listUploads, loadCatalog, previewFamily, previewRef, recommended, refFor, uploadFont, weightNames, type CatalogFont, type Category, type UploadedFont} from '@/lib/fonts';
+import {satinFonts,satinLetteringDefaults,columnLimits,columnWidth,type SatinFontId} from '@/lib/satin-lettering';
 import {textLimits, type FontRef, type TextLayout, type TextSpec} from '@/lib/text';
 
 type Filter='recommended'|'all'|Category|'mine';
@@ -111,21 +112,26 @@ export type TextPanelProps={
 export default function TextPanel({spec,fill,loading,missing,textArea,guides,guide,onChange,onUseGuide,onRemoveGuide,onDrawPath,onConvert}:TextPanelProps) {
   const {t,formatNumber}=useT();
   const shapes=shapesFor(t),aligns=alignsFor(t);
-  const family=usePreview(()=>previewRef(spec.font),`${spec.font.source}-${spec.font.id}-${spec.font.weight}-${spec.font.italic}`);
+  const family=usePreview(()=>spec.satin?Promise.resolve(''):previewRef(spec.font),`${spec.satin?.font??''}-${spec.font.source}-${spec.font.id}-${spec.font.weight}-${spec.font.italic}`);
   const [weights,setWeights]=useState<{weights:number[];italic:boolean}|null>(null);
   useEffect(()=>{
     let live=true;setWeights(null);
-    if(spec.font.source==='catalog')loadCatalog().then(all=>{const f=all.find(x=>x.id===spec.font.id);if(live&&f)setWeights({weights:f.weights,italic:f.italic});}).catch(()=>{});
+    if(!spec.satin&&spec.font.source==='catalog')loadCatalog().then(all=>{const f=all.find(x=>x.id===spec.font.id);if(live&&f)setWeights({weights:f.weights,italic:f.italic});}).catch(()=>{});
     return()=>{live=false;};
-  },[spec.font.id,spec.font.source]);
+  },[spec.font.id,spec.font.source,spec.satin]);
   const multiline=spec.content.includes('\n'),number=(n:string,[min,max]:readonly [number,number])=>{const v=Number(n);return Number.isFinite(v)&&v>=min&&v<=max?v:null;};
   return <section className="panel-section text-panel" aria-label={t("Text")}>
     <div className="settings-heading"><h2>{t("Text")}</h2>{loading&&<span className="text-status" role="status">{t("Loading font…")}</span>}</div>
     <textarea ref={textArea} className="text-input" aria-label={t("Text")} rows={2} maxLength={textLimits.content} value={spec.content} spellCheck={false}
       style={family?{fontFamily:`'${family}'`,fontWeight:spec.font.weight,fontStyle:spec.font.italic?'italic':'normal'}:undefined}
       onChange={e=>onChange({content:e.target.value},'content')}/>
-    <FontPicker value={spec.font} onChange={font=>onChange({font})}/>
-    {spec.font.source==='catalog'&&weights&&(weights.weights.length>1||weights.italic)&&<div className="style-row">
+    <label>{t("Text style")}<select value={spec.satin?'satin':'outlines'} onChange={e=>onChange({satin:e.target.value==='satin'?{...satinLetteringDefaults}:undefined,border:undefined})}><option value="outlines">{t("Fill / outline")}</option><option value="satin">{t("Satin lettering")}</option></select></label>
+    {spec.satin?<>
+      <label>{t("Satin font")}<select value={spec.satin.font} onChange={e=>onChange({satin:{...spec.satin!,font:e.target.value as SatinFontId}})}>{Object.entries(satinFonts).map(([id,font])=><option key={id} value={id}>{font.name}</option>)}</select></label>
+      <label>{t("Column width")} · %<input type="number" min={columnLimits[0]} max={columnLimits[1]} step="1" value={spec.satin.columnWidth} onChange={e=>{const n=number(e.target.value,columnLimits);if(n!==null)onChange({satin:{...spec.satin!,columnWidth:n}},'columnWidth');}}/><span className="field-value">{formatNumber(columnWidth(spec))} mm</span></label>
+      <p className="text-hint">{t("For 4–10 mm text. Columns are limited to 1–10 mm.")}</p>
+    </>:<FontPicker value={spec.font} onChange={font=>onChange({font})}/> }
+    {!spec.satin&&spec.font.source==='catalog'&&weights&&(weights.weights.length>1||weights.italic)&&<div className="style-row">
       <label>{t("Weight")}<select value={spec.font.weight} onChange={e=>onChange({font:{...spec.font,weight:Number(e.target.value)}})}>{weights.weights.map(w=><option key={w} value={w}>{weightNames[w]?t(weightNames[w]):formatNumber(w)}</option>)}</select></label>
       {weights.italic&&<button type="button" className="italic-toggle" aria-pressed={spec.font.italic} aria-label={t("Italic")} title={t("Italic")} onClick={()=>onChange({font:{...spec.font,italic:!spec.font.italic}})}>{t('I')}</button>}
     </div>}
@@ -157,7 +163,7 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       </>}
     </div>}
     {spec.layout!=='path'&&<Range label={t("Rotation")} value={Math.round(spec.rotation)} min={-180} max={180} format={n=>`${formatNumber(n)}°`} onChange={rotation=>onChange({rotation},'rotation')}/>}
-    {fill&&<div className="border-options">
+    {fill&&!spec.satin&&<div className="border-options">
       <label>{t("Border")}<select value={spec.border?.kind||'none'} onChange={e=>onChange({border:e.target.value==='none'?undefined:{thread:spec.border?.thread,color:spec.border?.color||'#664538',width:spec.border?.width||1,kind:e.target.value as NonNullable<TextSpec['border']>['kind']}})}><option value="none">{t("None")}</option><option value="running">{t("Running outline")}</option><option value="bean">{t("Bean outline")}</option><option value="satin">{t("Satin border")}</option></select></label>
       {spec.border&&<div className="setting-grid">
         <label>{t("Colour")}<div className="colour-picker"><input type="color" aria-label={t("Border colour")} value={spec.border.color} onChange={e=>onChange({border:{...spec.border!,color:e.target.value,thread:undefined}},'borderColor')}/><span>{spec.border.color.toUpperCase()}</span></div></label>
@@ -165,7 +171,7 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       </div>}
     </div>}
     {missing.length>0&&<p className="text-warning" role="status">{t("Not in this font:")} {missing.slice(0,12).join(' ')}</p>}
-    {fill&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
+    {fill&&!spec.satin&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
     <button type="button" className="text-button convert-text" onClick={onConvert}>{t("Convert to shapes")}</button>
   </section>;
 }

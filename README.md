@@ -367,11 +367,26 @@ updates as you type, and each field coalesces into one undo step.
   down), Wave (height and length), and Path. Path either draws a new curve for
   the text or follows an existing line or shape, with position, reverse and
   below-path options. Letters bend continuously, so joined scripts stay joined.
-- **Stitches:** any stitch style. Fills use the nonzero rule so overlapping script
+- **Satin lettering:** choose **Text style → Satin lettering** for small 4–10 mm text.
+  Bundled **Hershey Simplex** (sans) and **Hershey Script** work offline and include
+  A–Z, a–z, digits, ASCII punctuation, Turkish ç/ğ/ı/İ/ö/ş/ü and capitals.
+  **Column width** defaults to 14% of letter height, limited to 1–10 mm to keep
+  narrow columns within the design check's reliable range. Text stays live with
+  the same spacing, multiline, alignment, arc, wave and path controls. Both rails
+  bend with the baseline; sharp turns split into separate satin blocks.
+  Characters sew in reading order, with nearby strokes joined and travel under
+  already sewn columns where possible. The standard spacing, pull, underlay and
+  split controls apply. **Convert to shapes** makes ordinary editable two-rail
+  satin blocks, grouped per character (or retaining an existing group); it refuses
+  a conversion that would exceed the design's 80-object limit. Live text keeps one
+  object and compiler ownership. SVG exports the resulting satin rails.
+  Source, public-domain acknowledgements and offline generation instructions are in
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). No Ember font data is used.
+- **Stitches:** outline fonts support any stitch style. Fills use the nonzero rule so overlapping script
   letters merge; borders (running, bean or satin) follow the merged outline.
   **Convert to shapes** turns text into ordinary editable objects.
 - Moving or resizing text keeps it editable. Use letters of 6 mm or more for fill;
-  smaller or thin script text sews better as bean outline. Arabic, Hebrew and
+  smaller text can use Satin lettering or a bean outline. Arabic, Hebrew and
   Indic scripts are not shaped and are not supported.
 
 ## Drawing and tracing

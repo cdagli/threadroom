@@ -25,6 +25,7 @@ import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
 import {defaultText, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
+import {layoutSatinText,convertSatinText} from '@/lib/satin-lettering';
 import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
 import StitchSelector from './stitch-selector';
 import TextPanel from './text-panel';
@@ -252,6 +253,7 @@ function StudioEditor() {
   useEffect(()=>{if(tool!=='open')setPathTarget(null);},[tool]);
   const missingGlyphs=useMemo(()=>{
     if(!item?.text||fontLoading)return [];void fontsReady;
+    if(item.text.satin)return layoutSatinText(item.text).missing;
     const fonts=loadedFonts(item.text.font);if(!fonts.length)return [];
     return [...new Set(item.text.content.replace(/\s/g,''))].filter(c=>!fonts.some(f=>f.charToGlyphIndex(c)>0));
   },[item?.text,fontLoading,fontsReady]);
@@ -337,7 +339,8 @@ function StudioEditor() {
   function stopPlayback(){playRequest.current++;setPlaying(false);setProgress(1);}
   function invalidate(){revision.current++;compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
   function layoutObject(o:StitchObject):StitchObject{
-    if(!o.text)return o;const fonts=loadedFonts(o.text.font);if(!fonts.length)return o;
+    if(!o.text)return o;if(o.text.satin)return {...o,kind:'satin-block',rings:layoutSatinText(o.text).rings};
+    const fonts=loadedFonts(o.text.font);if(!fonts.length)return o;
     return {...o,rings:layoutText(o.text,fonts,!isFillKind(o.kind)).rings};
   }
   function relayout(id:string){
@@ -346,6 +349,7 @@ function StudioEditor() {
     current.current={...p,objects:p.objects.map(x=>x.id===id?next:x)};setProject(current.current);invalidate();setSaved(false);
   }
   function loadTextFonts(id:string,spec:TextSpec){
+    if(spec.satin)return;
     setFontLoading(n=>n+1);
     ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
   }
@@ -353,9 +357,9 @@ function StudioEditor() {
     if(!item?.text||item.locked)return;
     const text={...item.text,...patch},name=patch.content!==undefined&&item.name===textName(item.text.content)?textName(text.content):item.name;
     if(patch.font)lastFont.current=text.font;
-    const next=layoutObject({...item,name,text});
+    const next=layoutObject({...item,name,text,...(patch.satin&&!item.text.satin?{kind:'satin-block' as const,underlay:undefined,spacing:undefined}:item.text.satin&&!text.satin?{kind:'fill' as const,underlay:undefined,spacing:undefined}:{})});
     commit({...project,objects:project.objects.map(o=>o.id===item.id?next:o)},'',merge&&`${item.id}:${merge}`);
-    if(patch.font||patch.content!==undefined)loadTextFonts(item.id,text);
+    if(patch.font||patch.content!==undefined||item.text.satin&&!text.satin)loadTextFonts(item.id,text);
   }
   function placeText(p:Point){
     const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
@@ -367,6 +371,7 @@ function StudioEditor() {
   function convertText(){
     if(!item?.text)return;
     if(!item.rings.length){setError(t("Type some text before converting it to shapes."));return;}
+    if(item.text.satin){const next=convertSatinText(project,item.id);if(!next){setError(t("Converting this text would exceed 80 objects. Shorten the text first."));return;}commit(next,t("Text converted to editable shapes"));setSelected(next.objects.find(o=>o.id.startsWith(`${item.id}-satin-`))!.id);return;}
     const {text,...shape}=item;void text;
     commit({...project,objects:project.objects.map(o=>o.id===item.id?{...shape,rings:reclose(shape.rings,!isFillKind(shape.kind))}:o)},t("Text converted to editable shapes"));
   }

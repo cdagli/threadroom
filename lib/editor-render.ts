@@ -7,7 +7,7 @@ const geometry=new WeakMap<StitchObject,ReturnType<typeof buildGeometry>>();
 function buildGeometry(o:StitchObject){
   // A satin block shows (and hit-tests) as the area between its rails.
   if(o.rails){const outline=[blockOutline(o.rails)];return {path:pathData(outline,true),bounds:bounds([{...o,rings:outline}]),border:'',guide:''};}
-  return {path:pathData(o.rings,isFillKind(o.kind)||!!o.curve?.closed),bounds:bounds([o]),
+  return {path:pathData(o.rings,isFillKind(o.kind)||!!o.curve?.closed||!!o.text?.satin),bounds:bounds([o]),
     border:o.text?.border&&isFillKind(o.kind)?pathData(mergedOutline(o.rings),false):'',
     guide:o.text?.layout==='path'&&o.text.path?pathData([o.text.path.map(([x,y])=>{const m=o.text!.affine;return m?[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]] as Point:[x,y];})],false):''};
 }
