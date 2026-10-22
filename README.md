@@ -18,7 +18,7 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
 
 - Import PNG/JPG/WebP/SVG reference artwork, size it in millimetres, and trace
   flat colours into editable regions. Tracing runs locally in the browser.
-- Draw open and closed shapes with corner and curve points, satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
+- Draw open and closed shapes with corner and curve points, two-rail satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
   fill direction, constant-width satin, underlay, and pull compensation.
 - PR1X hoop profiles: 100 × 100, 180 × 130, 300 × 200, and 60 × 40 mm. Select
@@ -43,9 +43,9 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   overwrites set values. `fabrics` in `lib/project.ts` is the only table: the
   compile payload carries resolved values and the Python compiler has no fabric
   defaults. These are starting points; test-stitch on matching fabric.
-- Choose illustrated stitch styles: running/straight, bean, backstitch, satin,
-  zigzag, appliqué E-stitch, tatami fill, cross-stitch fill, standalone underlay,
-  and manual stitches. Each generates real paths in **PES v6 with custom RGB thread colours**.
+- Choose illustrated stitch styles: running/straight, bean, backstitch, double
+  and triple rope runs, satin, zigzag, appliqué E-stitch, satin blocks, tatami
+  fill, cross-stitch fill, standalone underlay, and manual stitches. Each generates real paths in **PES v6 with custom RGB thread colours**.
 - Pull compensation (0–1 mm) widens satin, zigzag and E-stitch bites and
   lengthens tatami rows and cross diagonals by the amount, half per side.
   Underlay stays inset.
@@ -62,6 +62,30 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   outer edge and every other inner hit are unchanged, so the edge stays
   continuous. Both are per-object settings with fixed defaults (*Default* /
   *Reset*); text satin borders use the defaults.
+- **Rope runs** (Ember's Double and Triple Rope Run): a hidden double running
+  stitch (3 mm stitches out and back), then a rope pass whose points alternate
+  *Rope width* (default 0.4 mm, 0.2–2 mm) either side of the path, so the rope is
+  twice that wide. Triple adds the mirrored pass back, crossing the first one
+  between every pair of points, and the base run out again. Rope stitch length
+  defaults to 1.5 mm when you switch to a rope; the rope pass follows the path
+  within 1 mm. Both end at the far end of a line.
+- **E-stitch flip** puts the stem on the other edge (teeth point the other way);
+  unset keeps the original side.
+- **Satin blocks** (Blocks tool, key 3): click rail points alternately left,
+  right, left, right (each pair is a rung; Enter finishes; at least two rungs, an
+  unpaired last click is dropped). While drawing, both rails, the rungs and a
+  band from each rail's last point show. Left click: corner, right/double-click:
+  smooth, as for curves. The satin is sewn between the two rails, so its width
+  follows them: each rail is a smooth curve resampled per rung segment to the
+  same count on both rails, rungs pair by that index, and spacing is measured a
+  third of the way from the outer to the inner rail. Blocks use the satin
+  settings (spacing, pull compensation, split above, short stitches, satin
+  underlay; no width). Editing moves single rail points; adding inserts a rung on
+  the centre line; removing a point removes its rung (two rungs minimum). The
+  design check applies the satin width rules to the local width and marks where
+  (tapered tips are not flagged). SVG export writes both sampled rails as
+  subpaths plus `data-threadroom-rails`. Blocks drawn before this (centre-line
+  satin with a width) still load and sew as satin lines.
 - Underlay: edge walk, light tatami or edge + tatami for fills; center walk,
   edge walk, light zigzag or edge + zigzag for satin lines. Default fill underlay stays
   0.4 mm inside the edge (around holes too, and on nonzero text fills), so it

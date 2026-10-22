@@ -8,8 +8,8 @@ Decisions:
 - **Hidden objects are view-only.** Hiding is for working over a background image: a hidden object is not
   drawn or hit-tested in either editing look (Lines/Thread), but it is still compiled, counted,
   checked and exported, like Ember (its "hidden" is transparency 0).
-- **Blocks = satin along a line** (an open shape whose stitch starts as satin, constant width). Variable
-  width satin blocks are the separate "Two-rail satin columns" TODO item.
+- **Blocks = two-rail satin** (done; see "All Ember stitch and fill types"). The tool once drew a
+  constant-width satin line; such saved objects still load and sew unchanged.
 
 Desktop only (~99% of use): no mobile optimisation. Each phase ships on its own: typecheck, `npm test`,
 README/TODO updated, and checked in the real app at desktop widths.
@@ -55,7 +55,7 @@ Status: done. Tools, keys, Play and Realistic view as below; the Design/Stitches
 | M | Measure | drag to show the distance in mm; not saved |
 | 1 | Open shape | left-click corner point, right-click or double-click curve point, Enter finishes |
 | 2 | Closed shape | same, closed, creates a fill |
-| 3 | Blocks | open shape whose stitch starts as satin |
+| 3 | Blocks | clicks alternate left/right rail points (rungs); satin between the rails |
 | 4 | Freehand | as now |
 | P | Points | kept (not in Ember) |
 | T | Text | as now |
@@ -157,8 +157,18 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Streamlines with a deterministic smooth angle field and separation placement.
   Legacy cross output stays unchanged until a new option is set. New engines have
   translated picker thumbnails, validation, deterministic PES tests and quiet demo checks.
+  Run types and blocks **done**: Double and Triple rope runs (`double-rope`, `triple-rope`; hidden
+  double base run, alternating ±width passes in Ember's order, rope width 0.4 mm default 0.2–2,
+  1.5 mm length on switching), E-stitch flip (unset keeps today's output), and two-rail
+  `satin-block` objects (`rails` stored on the object and validated; drawn with the Blocks tool,
+  preview of rails, rungs and both bands; rail points movable, rungs insertable/removable; satin
+  with our spacing, pull, split, short stitches and satin underlay; local-width design check; SVG
+  export). Old centre-line satin blocks load and sew unchanged; fixtures stay byte-identical.
+  Deviations: our satin spacing semantics (one penetration per spacing, as satin lines) rather than
+  Ember's rung pairs; pull is half per side as for satin; fractional spacing fixed at 1/3.
+  Browser check pending for block drawing and editing.
   Remaining: draggable Circular centre handle, flow-guide editing, multi-guide satin,
-  full Euler routing, Double and Triple rope runs, and two-rail satin Blocks.
+  full Euler routing.
   Exact definitions in `docs/ember-patterns-spec.md`.
 - **Entry/exit handle size** (done: it was Chrome's default focus outline on the handle after a click). The selected object's entry/exit handle sometimes shows as a large dark
   ring with a light fill (reported 2026-10-22). Find the cause (handle radius from a stale canvas scale,
@@ -170,7 +180,7 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   including during edits and continuation. Freehand fits editable nodes and closes within 2 mm.
   Editing inserts corner/smooth nodes on left/right path clicks; Ctrl/⌘ axis-locks node drags.
   Kept the reviewed deviations: Escape discards and draft nodes are draggable; minimums remain
-  2 open / 3 closed. Blocks remain centre-line satin; step 8 (two rails) is deferred.
+  2 open / 3 closed. Step 8 (two-rail blocks) is now done, as a separate `satin-block` kind.
   Solver follows §3.4's end formula: the symmetric sample's tangent is −49.48°, rather than the
   inconsistent approximate −48.2° in §6's example. Fixed-tangent curvature blending is out of
   scope for drawn nodes. Pure drawing/spline and model/export regression tests added.

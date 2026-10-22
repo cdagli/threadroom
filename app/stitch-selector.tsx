@@ -15,6 +15,9 @@ const samples: Record<Kind,string> = {
   cross:'m4 5 8 8m0-8-8 8m12-8 8 8m0-8-8 8m12-8 8 8m0-8-8 8m-32 3 8 8m0-8-8 8m12-8 8 8m0-8-8 8m12-8 8 8m0-8-8 8',
   underlay:'M3 14h8m4 0h8m4 0h12',
   manual:'M4 21 13 5 23 18 38 8M4 21h0M13 5h0M23 18h0M38 8h0',
+  'double-rope':'M3 14h36M3 11 6 17 9 11 12 17 15 11 18 17 21 11 24 17 27 11 30 17 33 11 36 17 39 11',
+  'triple-rope':'M3 11 6 17 9 11 12 17 15 11 18 17 21 11 24 17 27 11 30 17 33 11 36 17 39 11M3 17 6 11 9 17 12 11 15 17 18 11 21 17 24 11 27 17 30 11 33 17 36 11 39 17',
+  'satin-block':'M3 12 6 16 9 10 12 18 15 9 18 19 21 8 24 20 27 7 30 21 33 6 36 22 39 5',
 };
 export function StitchIcon({kind}: {kind:Kind}) {
   return <svg className={`stitch-icon stitch-icon-${kind}`} width="42" height="28" viewBox="0 0 42 28" fill="none" stroke="currentColor" strokeWidth={kind==='bean'?1.8:1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={samples[kind]}/>{kind==='manual'&&[[4,21],[13,5],[23,18],[38,8]].map(([x,y])=><circle key={x} cx={x} cy={y} r="2" fill="currentColor" stroke="none"/>)}</svg>;

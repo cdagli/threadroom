@@ -21,6 +21,7 @@ export function draftClick(state:DraftState,event:{p:Point;button:number;time:nu
   return {...state,points,corners,...(button===0?{lastLeft:{p:[...p] as Point,time}}:{lastRight:{p:[...p] as Point,time}}),action:'none'};
 }
 export function completeDraft(tool:DrawingTool,points:Point[],corners:boolean[],how:'enter'|'first'|'switch'):{closed:boolean;kind:Kind}|null {
+  // Blocks need two rungs (left, right, left, right); an unpaired last click is dropped.
   void corners;const closed=tool==='closed'||how==='first'&&tool==='open';
-  return points.length<(closed?3:2)?null:{closed,kind:closed?'fill':tool==='blocks'?'satin':tool==='points'?'manual':'running'};
+  return points.length<(closed?3:tool==='blocks'?4:2)?null:{closed,kind:closed?'fill':tool==='blocks'?'satin-block':tool==='points'?'manual':'running'};
 }

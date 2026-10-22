@@ -1,5 +1,5 @@
 import {createT,TranslationError,type Translator} from './i18n';
-import {fabrics, isFillKind, profileDefault, resolve, type Kind, type Point, type Project, type Resolved, type StitchObject} from './project';
+import {fabrics, isFillKind, isRopeKind, profileDefault, resolve, ropeDefaults, type Kind, type Point, type Project, type Rails, type Resolved, type StitchObject} from './project';
 import {splineBeziers,sampleCubic} from './spline';
 import {mergedOutline, transformText} from './text';
 
@@ -34,6 +34,49 @@ export const curveRing=(curve:NonNullable<StitchObject['curve']>,outline=false)=
   const ring=curvePoints(curve.points,curve.closed,curve.corners,curve.spline);return outline&&curve.closed?reclose([ring],true)[0]:ring;
 };
 
+// Satin block rails: each rail is an open Levien spline through its anchors. Segment k (rung k to
+// k+1) is resampled to the same count on both rails, so samples pair by index and follow the rungs.
+const railCache=new WeakMap<Rails,{left:Point[];right:Point[]}[]>();
+function resampleEqual(path:Point[],n:number):Point[] {
+  const d=[0];for(let i=1;i<path.length;i++)d.push(d[i-1]+Math.hypot(path[i][0]-path[i-1][0],path[i][1]-path[i-1][1]));
+  const total=d[d.length-1];let j=1;
+  return Array.from({length:n+1},(_,i)=>{
+    if(i===n||!total)return [...path[i===n?path.length-1:0]] as Point;
+    const target=total*i/n;while(j<path.length-1&&d[j]<target)j++;
+    const t=d[j]>d[j-1]?(target-d[j-1])/(d[j]-d[j-1]):0;return [path[j-1][0]+t*(path[j][0]-path[j-1][0]),path[j-1][1]+t*(path[j][1]-path[j-1][1])] as Point;
+  });
+}
+const pathLength=(p:Point[])=>p.slice(1).reduce((s,q,i)=>s+Math.hypot(q[0]-p[i][0],q[1]-p[i][1]),0);
+export function railSegments(rails:Rails):{left:Point[];right:Point[]}[] {
+  const cached=railCache.get(rails);if(cached)return cached;
+  const [l,r]=rails.points.map((points,i)=>curveSegments(points,false,rails.corners?.[i],'levien'));
+  const value=l.map((left,k)=>{const n=Math.max(8,Math.ceil(Math.max(pathLength(left),pathLength(r[k]))/.3));return {left:resampleEqual(left,n),right:resampleEqual(r[k],n)};});
+  railCache.set(rails,value);return value;
+}
+export function railSamples(rails:Rails):[Point[],Point[]] {
+  const segments=railSegments(rails),pick=(side:'left'|'right')=>segments.flatMap((s,k)=>k?s[side].slice(1):s[side]);
+  return [pick('left'),pick('right')];
+}
+const midpoints=(a:Point[],b:Point[])=>a.map((p,i)=>[(p[0]+b[i][0])/2,(p[1]+b[i][1])/2] as Point);
+// The centre line is the block's ring: ends, routing and stitch selection treat it as an open path.
+export const blockCentre=(rails:Rails)=>midpoints(...railSamples(rails));
+export const blockOutline=(rails:Rails)=>{const [l,r]=railSamples(rails);return [...l,...[...r].reverse()];};
+export const blockWidths=(rails:Rails)=>{const [l,r]=railSamples(rails);return l.map((p,i)=>Math.hypot(r[i][0]-p[0],r[i][1]-p[1]));};
+export const withRails=(o:StitchObject,rails:Rails):StitchObject=>({...o,rails,rings:[blockCentre(rails)]});
+// Drawn block clicks alternate left, right; an unpaired last click is dropped.
+export function draftRails(points:Point[],corners:boolean[]):Rails|null {
+  const rungs=Math.floor(points.length/2);if(rungs<2)return null;
+  const side=(k:0|1)=>Array.from({length:rungs},(_,i)=>2*i+k);
+  return {points:[side(0).map(i=>[...points[i]] as Point),side(1).map(i=>[...points[i]] as Point)],corners:[side(0).map(i=>corners[i]??true),side(1).map(i=>corners[i]??true)]};
+}
+// Draft preview: both rails as splines, the rungs, and the points of a partial rung.
+export function draftBlockPaths(points:Point[],corners:boolean[]):Point[][] {
+  const side=(k:number)=>points.flatMap((p,i)=>i%2===k?[p]:[]),flags=(k:number)=>corners.filter((_,i)=>i%2===k);
+  const rails=[0,1].map(k=>curvePoints(side(k),false,flags(k),'levien')).filter(r=>r.length>1);
+  return [...rails,...Array.from({length:Math.floor(points.length/2)},(_,k)=>[points[2*k],points[2*k+1]])];
+}
+export const isCorner=(o:StitchObject,ring:number,index:number)=>!!(o.rails?o.rails.corners?.[ring]?.[index]:o.curve?.corners?.[index]);
+
 export function isClosedShape(o:StitchObject):boolean {
   if(o.text)return true;
   if(o.curve)return o.curve.closed;
@@ -42,12 +85,18 @@ export function isClosedShape(o:StitchObject):boolean {
 }
 export type StitchGroup={label:string;kinds:Kind[]};
 export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGroup[] {
-  const line:Kind[]=['running','bean','backstitch','satin','zigzag','e-stitch','underlay'];
+  const line:Kind[]=['running','bean','backstitch','double-rope','triple-rope','satin','zigzag','e-stitch','underlay'];
+  if(o.rails)return [{label:t("Blocks"),kinds:['satin-block']}];
   return isClosedShape(o)?[{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}]:[{label:t("Line"),kinds:[...line,'manual']}];
 }
 // Text is relaid out by the editor; manual curves become their anchor stitches.
+// Blocks keep their rails and kind; a rope run starts at Ember's 1.5 mm stitch length.
 export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
-  if(kind===o.kind)return o;
+  if(kind===o.kind||o.rails||kind==='satin-block')return o;
+  const next=switchKind(o,kind);
+  return next!==o&&isRopeKind(kind)&&!isRopeKind(o.kind)?{...next,length:ropeDefaults.length}:next;
+}
+function switchKind(o:StitchObject,kind:Kind):StitchObject {
   if(isFillKind(kind)&&!isClosedShape(o))return o;
   if(o.text)return {...o,kind:kind==='manual'?'running':kind};
   if(o.curve&&kind==='manual'){const {curve,...plain}=o;return {...plain,kind,rings:[curve.points]};}
@@ -55,7 +104,11 @@ export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
   return {...o,kind,rings:isClosedShape(o)?reclose(o.rings,!isFillKind(kind)):o.rings};
 }
 
-export function setCorner(o:StitchObject,index:number,corner:boolean):StitchObject {
+export function setCorner(o:StitchObject,index:number,corner:boolean,ring=0):StitchObject {
+  if(o.rails){
+    const {points,corners}=o.rails;if(!Number.isInteger(index)||index<0||index>=points[0].length||(ring!==0&&ring!==1))return o;
+    return withRails(o,{points,corners:[0,1].map(r=>points[r].map((_,i)=>r===ring&&i===index?corner:corners?.[r]?.[i]??false)) as [boolean[],boolean[]]});
+  }
   if(!o.curve||!Number.isInteger(index)||index<0||index>=o.curve.points.length)return o;
   const curve={...o.curve,corners:o.curve.points.map((_,i)=>i===index?corner:o.curve!.corners?.[i]??false)};
   return {...o,curve,rings:[curveRing(curve,!isFillKind(o.kind))]};
@@ -63,6 +116,7 @@ export function setCorner(o:StitchObject,index:number,corner:boolean):StitchObje
 
 export type PointInsertion={ring:number;index:number;point:Point;distance:number};
 function editableSegments(o:StitchObject) {
+  if(o.rails)return railSegments(o.rails).map((s,i)=>({ring:0,index:i+1,path:midpoints(s.left,s.right)}));
   if(o.curve)return curveSegments(o.curve.points,o.curve.closed,o.curve.corners,o.curve.spline).map((path,i)=>({ring:0,index:i+1,path}));
   const closed=o.kind==='fill'||o.kind==='cross';
   return o.rings.flatMap((r,ri)=>Array.from({length:closed?r.length:r.length-1},(_,i)=>({ring:ri,index:i+1,path:[r[i],r[(i+1)%r.length]]})));
@@ -88,7 +142,16 @@ export function insertionHandles(o:StitchObject):Omit<PointInsertion,'distance'>
     return{ring,index,point:path[0]};
   });
 }
+// On a block, index k inserts a rung between rungs k-1 and k where the centre line passes nearest p.
 export function insertGeometryPoint(o:StitchObject,ring:number,index:number,p:Point,corner=false):StitchObject {
+  if(o.rails){
+    const {points,corners}=o.rails,segment=railSegments(o.rails)[index-1];
+    if(!segment||points[0].length>=100||!p.every(Number.isFinite))return o;
+    const centre=midpoints(segment.left,segment.right),j=centre.reduce((best,q,i)=>Math.hypot(q[0]-p[0],q[1]-p[1])<Math.hypot(centre[best][0]-p[0],centre[best][1]-p[1])?i:best,0);
+    if(j===0||j===centre.length-1)return o;
+    const add=<T,>(list:T[],value:T)=>[...list.slice(0,index),value,...list.slice(index)];
+    return withRails(o,{points:[add(points[0],[...segment.left[j]] as Point),add(points[1],[...segment.right[j]] as Point)],...((corners||corner)&&{corners:[0,1].map(r=>add(points[r].map((_,i)=>corners?.[r]?.[i]??false),corner)) as [boolean[],boolean[]]})});
+  }
   const source=o.curve?o.curve.points:o.rings[ring];
   if(!source||index<0||index>source.length||!p.every(Number.isFinite))return o;
   if(o.curve&&source.length>=200)return o;
@@ -99,7 +162,13 @@ export function insertGeometryPoint(o:StitchObject,ring:number,index:number,p:Po
   }
   return {...o,rings:o.rings.map((r,ri)=>ri===ring?points:r)};
 }
+// Removing a block point removes its whole rung; a block keeps at least two rungs.
 export function removeGeometryPoint(o:StitchObject,ring:number,index:number):StitchObject {
+  if(o.rails){
+    const {points,corners}=o.rails;if(points[0].length<=2||index<0||index>=points[0].length||(ring!==0&&ring!==1))return o;
+    const drop=<T,>(list:T[])=>list.filter((_,i)=>i!==index);
+    return withRails(o,{points:[drop(points[0]),drop(points[1])],...(corners&&{corners:[drop(corners[0]),drop(corners[1])]})});
+  }
   const source=o.curve?o.curve.points:o.rings[ring],closed=o.curve?.closed||o.kind==='fill'||o.kind==='cross';
   if(!source||source.length<=(closed?3:2)||index<0||index>=source.length)return o;
   const points=source.filter((_,i)=>i!==index);
@@ -113,6 +182,7 @@ export function removeGeometryPoint(o:StitchObject,ring:number,index:number):Sti
 // Entry/exit points and text specs move as ring -1, so dragging one anchor leaves them in place.
 export function moveGeometry(o:StitchObject, move:(p:Point,ring:number,index:number)=>Point):StitchObject {
   const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)}),...(o.center&&{center:move(o.center,-1,-1)})};
+  if(o.rails)return {...withRails(o,{...o.rails,points:o.rails.points.map((rail,ri)=>rail.map((p,i)=>move(p,ri,i))) as [Point[],Point[]]}),...ends};
   if(o.text)return {...o,...ends,text:transformText(o.text,p=>move(p,-1,-1)),rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
   if(o.curve){
     const curve={...o.curve,points:o.curve.points.map((p,i)=>move(p,0,i))};
@@ -139,9 +209,11 @@ export function snapEnd(o:StitchObject,p:Point):Point|null {
 }
 // Satin underlay passes alternate direction, so an even pass count ends where it started.
 function passes(o:Resolved){
-  if(o.kind!=='satin'||o.underlay==='none')return 1;
-  return (o.satinWidth<1.5?1:({center:1,edge:2,zigzag:1,'edge-zigzag':3} as Record<string,number>)[o.underlay]??0)+1;
+  if((o.kind!=='satin'&&o.kind!=='satin-block')||o.underlay==='none')return 1;
+  return ((o.rails?meanWidth(o.rails):o.satinWidth)<1.5?1:({center:1,edge:2,zigzag:1,'edge-zigzag':3} as Record<string,number>)[o.underlay]??0)+1;
 }
+// The compiler's narrow-block rule uses the mean sampled width, as here.
+const meanWidth=(rails:Rails)=>{const w=blockWidths(rails);return w.reduce((a,b)=>a+b,0)/w.length;};
 const centre=(o:StitchObject)=>{const pts=o.rings.flat();return pts.reduce((c,p)=>[c[0]+p[0]/pts.length,c[1]+p[1]/pts.length],[0,0]) as Point;};
 // Marker positions: explicit points snapped, otherwise an estimate of the compiler's automatic
 // choice (start nearest the previous object, end nearest the next one).
@@ -205,6 +277,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
   return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
+    if(o.rails)return [{...o,rings:[blockCentre(o.rails)],railPaths:railSamples(o.rails)}];
     if(!o.text){const rings=o.curve?[curveRing(o.curve,!isFillKind(o.kind))]:o.rings;return [o.curve&&line(o.kind)&&!tolerant(o)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
     const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?tolerant(o)?closedRings:closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};

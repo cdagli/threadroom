@@ -8,8 +8,8 @@ import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
-import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
-import {curvePoints, curveRing, setCorner, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
+import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
 import {clientToWorld, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
@@ -97,6 +97,8 @@ function download(blob: Blob, name: string) {
 function pesBlob(encoded: string) {return new Blob([Uint8Array.from(atob(encoded),c=>c.charCodeAt(0))], {type:'application/octet-stream'});}
 
 const outsideHoop=(rings:Point[][],hoop:{width:number;height:number})=>rings.some(r=>r.some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height));
+// Satin blocks reach their rails, not just the centre line stored in rings.
+const extent=(o:StitchObject)=>o.rails?[blockOutline(o.rails)]:o.rings;
 const initial: Project={version:1,name:'Sleepy little bear',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:defaultLocks,trimJump:defaultTrimJump,objects:[]};
 
 // NEXT_PUBLIC_EDITOR_PERF=1 records complete editor subtree timings in development only.
@@ -112,7 +114,7 @@ function StudioEditor() {
     {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure a distance.')},
     {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
-    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Sews as a satin column.",{v0:pathHint})},
+    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Click left and right rail points in turn; satin is sewn between the rails.",{v0:pathHint})},
     {id:'freehand',icon:'pen',label:t("Freehand"),key:'4',title:t("Drawing Freehand"),hint:t("Click and drag to draw, release to complete.")},
     {id:'points',icon:'points',label:t("Points"),key:'P',title:t("Placing Points"),hint:t("Click to place stitch points, then Done.")},
     {id:'text',icon:'text',label:t("Text"),key:'T',title:t("Adding Text"),hint:t("Click the hoop to place text.")},
@@ -161,7 +163,7 @@ function StudioEditor() {
   const [navigating,setNavigating]=useState(false);
   const draftDrag=useRef<{index:number;start:Point;before:Point[];moved:boolean}|null>(null);
   const closedDraft=tool==='closed';
-  const canFinish=draft.length>=(closedDraft?3:2);
+  const canFinish=draft.length>=(closedDraft?3:tool==='blocks'?4:2);
   const hasDraft=draft.length>0;
   const [colours,setColours]=useState(5), [ignoreBg,setIgnoreBg]=useState(true);
   const [showImage,setShowImage]=useState(true),[look,setLook]=useState<'lines'|'thread'>('lines');
@@ -378,8 +380,9 @@ function StudioEditor() {
     const closed=fit?.closed??completion.closed,kind:Kind=fit?'running':completion.kind;
     const reverse=continuation?.fromStart,anchors=reverse?[...points].reverse():points,anchorCorners=reverse?[...flags].reverse():flags;
     const existing=continuation&&project.objects.find(o=>o.id===continuation.id);
-    const curve:StitchObject['curve']=tool==='points'?undefined:{points:anchors.map(p=>[...p]),closed,corners:anchorCorners,...(existing?.curve?.spline||!existing?{spline:'levien' as const}:{})};
-    const rings=curve?[curveRing(curve,!isFillKind(closed?kind:existing?.kind??kind))]:[points];
+    const rails=kind==='satin-block'&&!existing?draftRails(points,flags):null;
+    const curve:StitchObject['curve']=tool==='points'||rails?undefined:{points:anchors.map(p=>[...p]),closed,corners:anchorCorners,...(existing?.curve?.spline||!existing?{spline:'levien' as const}:{})};
+    const rings=rails?extent(withRails(object('',[]),rails)):curve?[curveRing(curve,!isFillKind(closed?kind:existing?.kind??kind))]:[points];
     if(outsideHoop(rings,hoop)){setError(t("Curve exceeds the hoop. Drag its points inward, then finish."));return false;}
     const target=pathTarget&&project.objects.find(o=>o.id===pathTarget);
     if(target&&target.text){
@@ -389,7 +392,8 @@ function StudioEditor() {
     const next=existing?{...existing,rings,...(closed?{kind,name:t("Closed shape"),fillPattern:'tatami' as const}:{})}:object(closed&&!fit?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
     if(!existing&&kind==='fill')next.fillPattern='tatami';
     if(curve)next.curve=curve;
-    commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,next]});setSelected(next.id);setActivePoint(null);cancelDrawing();setEditPoints(false);setTool(tool);return true;
+    const created=rails?withRails(next,rails):next;
+    commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,created]});setSelected(next.id);setActivePoint(null);cancelDrawing();setEditPoints(false);setTool(tool);return true;
   }
   function shapeOf(d:{start:Point;end:Point;square:boolean}){
     if(shapeKind==='rect')return rect(d.start,fitRect(d.start,d.end,hoop,d.square),d.square);
@@ -403,9 +407,9 @@ function StudioEditor() {
     const curve={points:shape.points,closed:true,corners:shape.corners,spline:'levien' as const},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),fillPattern:'tatami' as const,curve};
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setEditPoints(false);setError('');
   }
-  function toggleCorner(index:number){
-    if(!item?.curve)return;const corner=!(item.curve.corners?.[index]??false);
-    if(savePointChange(setCorner(item,index,corner)))setMessage(corner?t("Point is now a corner."):t("Point is now a curve point."));
+  function toggleCorner(index:number,ring=activePoint?.[0]??0){
+    if(!item?.curve&&!item?.rails)return;const corner=!isCorner(item,ring,index);
+    if(savePointChange(setCorner(item,index,corner,ring)))setMessage(corner?t("Point is now a corner."):t("Point is now a curve point."));
   }
   function editableSelection(){const ids=unlockedIds(current.current,selection);if(selection.length&&!ids.length)setMessage(t('Locked objects can’t be changed. Unlock them first.'));return ids;}
   function editSelection(m:Matrix,rotation=0,merge?:string){
@@ -479,11 +483,11 @@ function StudioEditor() {
   }
   function finishEditing(){setEditPoints(false);setActivePoint(null);setPointMode('move');svg.current?.focus({preventScroll:true});}
   function savePointChange(next:StitchObject){
-    if(next.rings.flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError(t("That adjustment extends outside the hoop. Move the point inward."));return false;}
+    if(extent(next).flat().some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height)){setError(t("That adjustment extends outside the hoop. Move the point inward."));return false;}
     commit({...project,objects:project.objects.map(o=>o.id===next.id?next:o)});return true;
   }
   function addPoint(ring:number,index:number,p:Point,corner=false){if(!item)return;const next=insertGeometryPoint(item,ring,index,p,corner);if(next===item)return;if(savePointChange(next)){setActivePoint([ring,index]);setPointMode('move');}}
-  function removePoint(location=activePoint){if(!item||!location)return;const next=removeGeometryPoint(item,...location);if(next===item){setError(t("Keep at least {v0} points in this path.",{v0:item.curve?.closed||isFillKind(item.kind)?3:2}));return;}if(savePointChange(next)){setActivePoint(null);svg.current?.focus({preventScroll:true});}}
+  function removePoint(location=activePoint){if(!item||!location)return;const next=removeGeometryPoint(item,...location);if(next===item){setError(item.rails?t("Keep at least two rungs in a satin block."):t("Keep at least {v0} points in this path.",{v0:item.curve?.closed||isFillKind(item.kind)?3:2}));return;}if(savePointChange(next)){setActivePoint(null);svg.current?.focus({preventScroll:true});}}
   function continueCurve(){
     if(!item?.curve||item.curve.closed)return;
     const fromStart=activePoint?.[1]===0,points=item.curve.points.map(p=>[...p] as Point),flags=item.curve.points.map((_,i)=>item.curve!.corners?.[i]??false);
@@ -633,7 +637,7 @@ function StudioEditor() {
       if(!d.point){const b=selectionBounds(d.before,ids),snap=snapBox({...b,x:b.x+dx,y:b.y+dy},d.before,ids);dx+=snap.delta[0];dy+=snap.delta[1];setSnapGuides(snap.guides);}
       const objects=d.before.objects.map(o=>ids.includes(o.id)?moveGeometry(o,([x,y],ri,i)=>d.point&&(d.point[0]!==ri||d.point[1]!==i)?[x,y]:[x+dx,y+dy]):o);
       // Objects already outside the hoop (e.g. text that grew) can be dragged back in.
-      if(objects.some((o,i)=>ids.includes(o.id)&&outsideHoop(o.rings,hoop)&&!outsideHoop(d.before.objects[i].rings,hoop))){setSnapGuides([]);return;}
+      if(objects.some((o,i)=>ids.includes(o.id)&&outsideHoop(extent(o),hoop)&&!outsideHoop(extent(d.before.objects[i]),hoop))){setSnapGuides([]);return;}
       dragTo({...d.before,objects});
     }
   }
@@ -808,7 +812,7 @@ function StudioEditor() {
         {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} artwork={showImage?project.artwork:undefined} imageOpacity={imageOpacity}/>}
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
-            if(editing&&item?.curve&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
+            if(editing&&(item?.curve||item?.rails)&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
             const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object');if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
               <defs><pattern id="fine-grid" width={viewSettings.gridSize/viewSettings.subdivisions} height={viewSettings.gridSize/viewSettings.subdivisions} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize/viewSettings.subdivisions} 0 L 0 0 0 ${viewSettings.gridSize/viewSettings.subdivisions}`} fill="none" stroke="var(--grid)" strokeWidth={.5/canvasScale}/></pattern><pattern id="grid" width={viewSettings.gridSize} height={viewSettings.gridSize} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize} 0 L 0 0 0 ${viewSettings.gridSize}`} fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
               {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="var(--bg-workspace)"/>
@@ -828,7 +832,7 @@ function StudioEditor() {
               {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
               {ends&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
-              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'} closeHover={closeHover} color={item?.color||palette[3]} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} corners={corners} canvasScale={canvasScale}/>}
+              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'} closeHover={closeHover} color={item?.color||palette[3]} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} blocks={tool==='blocks'} corners={corners} canvasScale={canvasScale}/>}
               {shapePreview&&shapeDraft&&<ShapeOverlay shapePreview={shapePreview} shapeDraft={shapeDraft} canvasScale={canvasScale}/>}
               {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale} units={viewSettings.units}/>}
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
@@ -844,14 +848,14 @@ function StudioEditor() {
       </header>
       <div className="top-actions">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title={t("Design check: problems that could spoil the stitch-out")} aria-label={t("Design check: {v0}{v1}",{v0:badge,v1:fails?t(', {v0} likely to fail',{v0:fails}):''})}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={t('exportWarning.other',{count:fails})}>{t('failsSummary',{count:fails})}</small>}</button>}<Button label={t("Export PES")} size="sm" variant="primary" isLoading={busy} isDisabled={hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}/></div>
       {<div className="tool-banner">
-        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
+        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
         {!colourPick&&(pathTool(tool)||tool==='points'||editing||tool==='select'&&item)&&<div className="banner-actions">
           {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</button><button title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</button><Button label={closedDraft?t("Close shape"):t("Done")} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
           {editing&&<div className="point-actions" role="group" aria-label={t("Point editing tools")}>
             <button aria-label={t("Move points")} title={t("Drag a point to move it")} aria-pressed={pointMode==='move'} onClick={()=>setPointMode('move')}><Icon name="select" size={15}/><span>{t("Move")}</span></button>
-            <button aria-label={t("Add point")} title={t("Click the curve to insert a point")} aria-pressed={pointMode==='add'} disabled={!!item?.curve&&item.curve.points.length>=200} onClick={()=>setPointMode('add')}><Icon name="plus" size={15}/><span>{t("Add point")}</span></button>
+            <button aria-label={t("Add point")} title={t("Click the curve to insert a point")} aria-pressed={pointMode==='add'} disabled={!!item?.curve&&item.curve.points.length>=200||!!item?.rails&&item.rails.points[0].length>=100} onClick={()=>setPointMode('add')}><Icon name="plus" size={15}/><span>{t("Add point")}</span></button>
             <button aria-label={t("Remove point")} title={t("Click a point to remove it, or select one and press Delete")} aria-pressed={pointMode==='remove'} onClick={()=>setPointMode('remove')}><Icon name="minus" size={15}/><span>{t("Remove")}</span></button>
-            {item?.curve&&<button aria-label={activePoint&&item.curve.corners?.[activePoint[1]]?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1])}><Icon name={activePoint&&item.curve.corners?.[activePoint[1]]?'curve':'closed'} size={15}/><span>{activePoint&&item.curve.corners?.[activePoint[1]]?t("Curve"):t("Corner")}</span></button>}
+            {(item?.curve||item?.rails)&&(()=>{const corner=!!activePoint&&isCorner(item,...activePoint);return <button aria-label={corner?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1],activePoint[0])}><Icon name={corner?'curve':'closed'} size={15}/><span>{corner?t("Curve"):t("Corner")}</span></button>;})()}
             {item?.curve&&!item.curve.closed&&<button aria-label={t("Continue curve")} title={activePoint?.[1]===0?t("Continue from the first point"):t("Continue from the last point")} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>{t("Continue")}</span></button>}
           </div>}
           {tool==='select'&&item&&!multi&&!item.hidden&&!item.locked&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
@@ -882,7 +886,9 @@ function StudioEditor() {
           {['running','bean','backstitch'].includes(item.kind)&&<label><span className="field-heading">{t("Stitch tolerance · mm")}{item.tolerance!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({tolerance:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:.2})}</span>}</span><input type="number" min=".1" max="1" step=".1" value={item.tolerance??.2} onChange={e=>{const n=Number(e.target.value);if(n>=.1&&n<=1)updateObject({tolerance:n});}}/></label>}
           {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop}/>}
           {item.kind==='cross'&&<><CrossSettings item={item} onChange={updateObject}/><StitchAngle value={item.angle} onChange={angle=>updateObject({angle})}/></>}
-          {isWideKind(item.kind)&&<div className="setting-grid"><label><span className="field-heading">{t("Width · mm")}</span><input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label><label htmlFor="split-input"><span className="field-heading">{t("Split above · mm")}{source('splitLength')}</span><input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
+          {isRopeKind(item.kind)&&<label htmlFor="rope-width-input"><span className="field-heading">{t("Rope width · mm")}{item.ropeWidth!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({ropeWidth:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:ropeDefaults.width})}</span>}</span><input id="rope-width-input" type="number" min={ropeLimits.width[0]} max={ropeLimits.width[1]} step=".1" value={item.ropeWidth??ropeDefaults.width} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=ropeLimits.width[0]&&n<=ropeLimits.width[1])updateObject({ropeWidth:n});}}/></label>}
+          {item.kind==='e-stitch'&&<label className="check-label"><input type="checkbox" checked={!!item.eFlipped} onChange={e=>updateObject({eFlipped:e.target.checked||undefined})}/>{t("Flip teeth to the other side")}</label>}
+          {usesSplit(item.kind)&&<div className="setting-grid">{isWideKind(item.kind)&&<label><span className="field-heading">{t("Width · mm")}</span><input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label>}<label htmlFor="split-input"><span className="field-heading">{t("Split above · mm")}{source('splitLength')}</span><input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
           {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/>{t("Short stitches on curves")}{source('shortStitches')}</label>}
           {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&usesPull(item.kind)&&<label htmlFor="pull-input"><span className="field-heading">{t("Pull compensation · mm")}{source('pullCompensation')}</span><input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
           {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input"><span className="field-heading">{t("Underlay")}{source('underlay')}</span><select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{t(underlayNames[u])}</option>)}</select></label>}
