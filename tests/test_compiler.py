@@ -1233,3 +1233,39 @@ class NonRowFillTests(unittest.TestCase):
             sewn = [c for c in r['commands'] if c['type']=='stitch']
             self.assertEqual([sewn[0]['x'],sewn[0]['y']],[30,45],pattern)
             self.assertEqual([sewn[-1]['x'],sewn[-1]['y']],[60,45],pattern)
+
+
+class ShapeOperationTests(unittest.TestCase):
+    """Fills produced by the editor's Cut holes and Flatten overlaps compile and respect their holes."""
+    @staticmethod
+    def editor(*objects):
+        return {"version": 1, "name": "Shapes", "machine": "brother-pr1x", "hoop": "100x100", "fabric": "woven", **EDITOR,
+                "objects": [{"id": i, "name": i, "kind": "fill", "color": c, "length": 2.5, "angle": a, "satinWidth": 2, **o} for i, c, a, o in objects]}
+
+    @staticmethod
+    def sampled(result, owner):
+        for c in result["commands"]:
+            if c["type"] == "stitch" and c.get("objectId") == owner:
+                for t in (0, .25, .5, .75, 1):
+                    yield c["fromX"]+(c["x"]-c["fromX"])*t, c["fromY"]+(c["y"]-c["fromY"])*t
+
+    def test_cut_holes_from_a_curve_shape(self):
+        circle = [[50+12*math.cos(i/12*math.tau), 50+12*math.sin(i/12*math.tau)] for i in range(12)]
+        p = self.editor(("base", "#c99d72", 35, {"rings": [[[20,20],[80,20],[80,80],[20,80]]]}),
+                        ("hole", "#f4e5cc", 0, {"rings": [circle], "curve": {"points": circle, "closed": True, "spline": "levien"}}))
+        payload = node("cut-holes", {"project": p, "ids": ["base", "hole"]})
+        self.assertEqual([o["id"] for o in payload["objects"]], ["base"])
+        self.assertEqual(len(payload["objects"][0]["rings"]), 2)
+        result = compile_project(payload)
+        points = list(self.sampled(result, "base"))
+        self.assertGreater(len(points), 200)
+        self.assertFalse([q for q in points if math.dist(q, (50, 50)) < 11.6])
+
+    def test_flatten_keeps_a_small_overlap_under_the_later_fill(self):
+        p = self.editor(("lower", "#c99d72", 0, {"rings": [[[20,20],[60,20],[60,60],[20,60]]]}),
+                        ("upper", "#664538", 90, {"rings": [[[40,40],[80,40],[80,80],[40,80]]]}))
+        payload = node("flatten", {"project": p, "ids": ["lower", "upper"]})
+        result = compile_project(payload)
+        lower = list(self.sampled(result, "lower"))
+        self.assertFalse([q for q in lower if q[0] > 40.75 and q[1] > 40.75])
+        self.assertTrue([q for q in lower if 40.05 < q[0] < 40.5 and q[1] > 45])

@@ -17,6 +17,22 @@ Existing project names, layer names and text are preserved; new objects use the 
 - Draw open and closed shapes with corner and curve points, satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
   fill direction, constant-width satin, underlay, and pull compensation.
+- Shape tools (object settings, Shape tools section): Union, Subtract and Intersect
+  two or more closed shapes (the first in sew order keeps its stitch settings);
+  Cut holes (the fill sewn first is cut by the other selected closed shapes, which
+  are removed unless "Keep cutting shapes" is on) and a Cut holes drawing mode
+  (O): draw closed shapes inside the selected fill to punch it; Flatten overlaps
+  (each later fill is removed from the earlier fills it overlaps, inset 0.4 mm so
+  the edges interlock; fully hidden fills are deleted; also the "Flatten overlaps"
+  fix on the design check's stacked-stitches warning); Offset (grow or shrink by
+  N mm with rounded joins, in place or as a new object, for outlines and appliqué
+  allowances); and the Knife (K): drag a straight line across shapes to split each
+  into the parts left and right of it (closed shapes need both ends outside them;
+  open paths split where they cross). Each operation is one undo step. Results are
+  plain-ring objects (outer outline plus even-odd hole rings, outer rings
+  counter-clockwise by area sign, holes opposite, collinear points and slivers
+  removed); curve anchors are dropped, points stay editable per ring. Boolean
+  operations use `polygon-clipping` (`lib/polygon.ts`, `lib/shape-ops.ts`).
 - PR1X hoop profiles: 100 × 100, 180 × 130, 300 × 200, and 60 × 40 mm. Select
   the hoop actually fitted to your machine. Profiles are limits, not a machine
   connection.

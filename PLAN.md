@@ -194,3 +194,14 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   fabric advice and design-check summary. Saved Setup speed defaults to 650 stitches/min
   (max 1000); Info and sheet include 30 s/change and 3 s/trim planning allowances.
   Desktop popover/undo/print-preview browser checks remain pending.
+- **Shape operations from Ember (done)**. `lib/polygon.ts` wraps `polygon-clipping` 0.15.7
+  (MIT, the clipper Ember uses; inputs snapped to 1e-6 mm with coarser retries) and adds round
+  offsets (union of edge capsules) and the knife split; `lib/shape-ops.ts` works on objects:
+  Cut holes (selection, keep or remove cutters; O drawing mode), Flatten overlaps (sew order,
+  0.4 mm inset, hidden fills deleted, design-check "Flatten overlaps" fix on stacked fills),
+  Union/Subtract/Intersect (first object keeps settings), Offset (grow/shrink, in place or as a
+  copy) and Knife (K, straight line, left/right parts named "Name 1/2"). One undo step each;
+  results become plain-ring objects (curve anchors dropped). Shape tools section in the object
+  settings; Cut holes and Knife modes are shortcuts and buttons, not dock tools. The canvas
+  context menu was not on this branch's base, so its entries are still to add. Node and Python
+  tests (compiled fills with Cut holes holes and flattened overlaps). Desktop browser checks pending.
