@@ -91,6 +91,7 @@ function reach(o: StitchObject, p: Project) {
 function colourBlocks(p: Project) {
   const blocks: {color: string; objects: number[]}[] = [];
   p.objects.forEach((o, i) => {
+    if(o.layoutOnly)return;
     if (!o.rings.length) return;
     for (const color of [o.color, ...(o.text?.border && isFillKind(o.kind) ? [o.text.border.color] : [])].map(c => c.toLowerCase())) {
       const last = blocks.at(-1);
@@ -104,6 +105,7 @@ export function checkProject(p: Project): Warning[] {
   const out: RawWarning[] = [], hoop = hoops[p.hoop];
   const add = (code: string, o: StitchObject, bounds: Box, severity: Severity, values: Record<string, number>) => out.push({code, objectId: o.id, bounds: bounds.map(n => round(n, 2)) as Box, severity, values});
   for (const o of p.objects) {
+    if(o.layoutOnly)continue;
     if (!o.rings.length) continue;
     const b = box(o.rails ? blockOutline(o.rails) : o.rings.flat()), g = box([[b[0], b[1]], [b[2], b[3]]], reach(o, p));
     const margin = Math.min(g[0], g[1], hoop.width-g[2], hoop.height-g[3]);

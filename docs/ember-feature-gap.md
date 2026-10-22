@@ -60,7 +60,7 @@ not applicable.
 | A | Edit angles | **no** (see the fill spec) |
 | G | Edit gradient | **no** (see the fill spec) |
 | F | Edit the streamline flow field | **no** (see the patterns spec) |
-| P | Map to path | **no** |
+| P | Map to path | yes via object settings; P remains the Points tool |
 | W | Convert to redwork | **no** |
 | 7 | Click to stitch (one image selected) | yes (selected or top visible image) |
 | 8 | Auto digitize (one image selected) | partial (Auto trace button) |
@@ -78,7 +78,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Copy / Cut | Serialise the selection as `EMBER_SHAPES_DATA:` + base64 JSON (`format:"ember-shapes-v2"`, with objects, group parents, group names, group start/end points and map-to-path bindings; `tc`/`td`/`tu`). On paste every object gets a new id and group ids are remapped, so a paste never collides with the original | **no** |
 | Paste (empty canvas) | Reads the clipboard. An image becomes a new uploaded image; Ember text data is pasted at its original coordinates (no offset) | **no** |
 | Selected colors ▸ | Submenu of swatches for the colours used in the design; a click recolours the selection | **no** |
-| Show / Hide needle points | Toggles needle-penetration dots for the selection | **no** |
+| Show / Hide needle points | Toggles needle-penetration dots for the selection | yes via Setup and playback overlay controls |
 | Hide / Show (all) | "Hidden" means transparency 0, and it is still exported | yes (layer eye) |
 | Lock / Unlock (n) | Locked objects can't be selected by marquee or Ctrl+A, moved, resized or edited; most actions are disabled | yes (layer padlock, Ctrl/⌘ L) |
 | Reshape | Enter point editing | yes (Edit points) |
@@ -110,13 +110,13 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Knife (K) | One or more unlocked shapes. You draw a cut path (corner/curve clicks; Ctrl/⌘ snaps). On Enter the path is sampled at 7.5 units, and each selected shape it crosses is split into separate shapes (`3865` `handleCompleteKnife`, command `sp`, `didCut`). | free | **no** |
 | Start/end (E) | Set the start and end points for one fill, Blocks or outline object, or for a whole group (`groupRouteEnds`). | free | partial: per object only, no group ends |
 | Edit angles (A) / Edit gradient (G) / Edit flow field (F) | See `docs/ember-fill-spec.md` §2.3 and §2.8 and `docs/ember-patterns-spec.md` | gradient Pro | no |
-| Map to path (P) | Select the shapes and click an open path (hover highlights valid paths: open, ≥ 2 points, not text, not letters). Copies of the selection are placed along the path. **Repeat**: *Fill* ("Pack as many as fit and stretch across the path") or *Count* ("Place an exact number of repeats", min 1). **Rotate** ("Rotate objects to follow the path tangent"), **Reverse**, **Hide path** ("Keep the path for layout but hide it from stitches and the sequencer"). Start, end and mid handles are draggable; Accept or Reject. The result is a live binding (`pathAlongBindings`), so editing the path or the prototype re-lays the copies. Edit map to path / Detach from path. | **Pro** | **no** (text-on-path exists for text only) |
+| Map to path (P) | Select the shapes and click an open path (hover highlights valid paths: open, ≥ 2 points, not text, not letters). Copies of the selection are placed along the path. **Repeat**: *Fill* ("Pack as many as fit and stretch across the path") or *Count* ("Place an exact number of repeats", min 1). **Rotate** ("Rotate objects to follow the path tangent"), **Reverse**, **Hide path** ("Keep the path for layout but hide it from stitches and the sequencer"). Start, end and mid handles are draggable; Accept or Reject. The result is a live binding (`pathAlongBindings`), so editing the path or the prototype re-lays the copies. Edit map to path / Detach from path. | **Pro** | yes: object settings Map to path; Fill / Count / Spacing, rotate, reverse, offset, centre alignment, hidden guide, live group binding and Unlink. Preview and numeric controls; no draggable layout handles |
 | Convert to redwork (W) | ≥ 1 outline object (or existing redwork plus more). Merges them into one `redwork` object that keeps its sources, with a stitch length (default 2 mm). Stitches come from one route over all the source lines that sews each line twice with no trims (`5729` module 56547, class `c`, `canConvertSelection`). Resizing transforms the sources. | **Pro** | **no** (in TODO "More stitch types") |
 | Break apart redwork | Restores the source outline objects | **Pro** | **no** |
 | Flatten | ≥ 2 unlocked fill objects. For every pair whose outlines overlap by ≥ 1 unit², taken in sew order, the **later** object's outline is added as a hole in the **earlier** one, so the lower fill no longer sews under the upper one. One undo step ("Flatten N holes into shape"; `2723` class `ec`, planner `lJ` in module 43408, which uses polygon-clipping `intersection`). | free | **no** |
 | Split SVG | One SVG image. Converts it into native shapes: fills become fill objects, strokes become outline objects, holes are flattened into the fills, and stroke gaps under 1 mm are joined (`rA(image,{flattenHoles:true, joinStrokeGapMm:1})`). | free | yes: native shapes (one group) or a reference image to trace; fills/holes, running/satin strokes, basic CSS and transforms |
 | Click to stitch (7) | One image. Traces it into candidate regions (raster images via server `/api/vectorize`, SVG directly), then shows them. "Click on a region to convert it to stitches. Drag to select multiple regions at once." Converted regions use the current run/fill template (`rQ`). | **Pro** | yes: Click to stitch (7) flood-fills the clicked colour (tolerance slider) with a hover preview; click adds a Tatami fill, Shift-click a running outline. No drag-select of several regions |
-| Auto digitize (8) | One image. Traces it (`rY`) and then: simplifies with RDP ε = clamp(0.0028 × max(w,h), 0.32, 2.5) and a touch pad of clamp(0.003 × max, 1.25, 2.5) (`rV`); filled paths become fills (with the default fill applied) and strokes become outlines; regions are grouped by colour, colour groups sorted by **hue**, and each group is ordered nearest-neighbour from its top-left centroid; the largest region with holes in a non-dominant colour keeps only the holes it needs. All regions are added in one undo step. | **Pro** | partial: Auto trace (80 px grid, colour count, background removal); regions are grouped in colour order without the hue and nearest-neighbour ordering |
+| Auto digitize (8) | One image. Traces it (`rY`) and then: simplifies with RDP ε = clamp(0.0028 × max(w,h), 0.32, 2.5) and a touch pad of clamp(0.003 × max, 1.25, 2.5) (`rV`); filled paths become fills (with the default fill applied) and strokes become outlines; regions are grouped by colour, colour groups sorted by **hue**, and each group is ordered nearest-neighbour from its top-left centroid; the largest region with holes in a non-dominant colour keeps only the holes it needs. All regions are added in one undo step. | **Pro** | yes for ordering: dominant area first, hue colour groups, small dark detail colours last, nearest-centroid ordering and physical RDP tolerance; tracing remains an 80 px raster; only the new regions are ordered and appended after existing objects; Click to stitch keeps click order |
 
 ### 1.5 Text (`page` `ib`, `iy`, `iN`, `iC` at ~229k; text panel ~231–235k)
 
@@ -136,7 +136,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Sequencer: Colors | Consecutive objects with the same thread (by colour id) are merged into one row with a layered 160 × 160 preview (`eF`). Dragging a row moves the whole run; a click selects the run (Shift for a range). It exposes colour changes at a glance. | **no** |
 | Sequencer: Images | List of reference images: upload, reorder, select. Per-image hide, lock and transparency come from the context menu. Images can be resized and rotated with the same handles as shapes. | yes: Artwork-tab image list with thumbnails, reorder, hide, lock, delete, per-image opacity; canvas select, move, scale and rotate. Not yet: right-click image menu |
 | Colors (palette) | Tabs **All** (search across every brand), **Brands** (accordion of 78 catalogues with per-brand search: Madeira, Sulky, Isacord-like polyesters, Robison-Anton, Gunold, Brother Country (61), "Default" (62)…), **Selected** (threads of the selection). Each thread has brand, code, name and RGB, and a click recolours the selection. Data: `/colors.json`. There is **no** nearest-colour matching in the UI. | **no** (colour input, 6-swatch palette, image eyedropper) |
-| Visibility | Units **in / cm**; **Grid size** (min 0.1 cm / 0.05 in); **Show grid**; **Snap to grid** ("Snaps drags to the fine grid") with **Fine grid** n subdivisions per cell; **Snap to objects** ("Aligns to other shapes' edges and centers"); **Show rulers**; **Show cursor position** ("Live readout of the pointer"); overlays **Show jumps**, **Show trims** (red scissors marks), **Show tie-ons** (green markers for tie-on and tie-off), **Show selected needle points** (`nu`). | partial: a fixed 5 mm grid pattern; Travel shows jumps and trims; no snapping, rulers, cursor readout or tie markers |
+| Visibility | Units **in / cm**; **Grid size** (min 0.1 cm / 0.05 in); **Show grid**; **Snap to grid** ("Snaps drags to the fine grid") with **Fine grid** n subdivisions per cell; **Snap to objects** ("Aligns to other shapes' edges and centers"); **Show rulers**; **Show cursor position** ("Live readout of the pointer"); overlays **Show jumps**, **Show trims** (red scissors marks), **Show tie-ons** (green markers for tie-on and tie-off), **Show selected needle points** (`nu`). | yes: persisted display units, configurable grid/snaps/rulers/cursor, independent jumps, scissors trims, tie-in/off marks and selected penetration dots in Setup and playback |
 | Object snapping detail | While dragging, for each axis the moving box's edges and centre are compared with every other visible, non-reference object's left/centre/right (or top/centre/bottom), plus grid lines within ±2 cells. Candidates within the threshold are scored: object snaps beat grid snaps, then the smaller distance wins, then centre-to-centre. When the moving box lies inside a target, edge-to-centre matches are skipped and the centre threshold is 2.5×. Guides are magenta lines (0xe11d8f) spanning both boxes, plus a crosshair when the object is centred in another (`au`, `lq`). | **no** |
 | Info | Project name, dimensions, shape count, colour changes, total colours, stitch count, **Open design summary**. No sewing time. | yes, mostly (size, stitches, thread changes, jumps/trims, engine). Shape and colour counts are missing |
 | Version history | Every cloud save is a version: view (read-only), "Make current" | n/a (cloud, Pro). Local undo/redo only |
@@ -151,8 +151,8 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Export dialog | Filename, format, **Origin point** (9 positions: "Sets this point as (0, 0) in the exported file") | partial: PES export. No filename field or origin choice |
 | Export image | PNG of the realistic render ("Open the realistic view to generate a preview first") | yes: Project → Export image, scale and fabric/transparency options |
 | Upload embroidery | Open an existing machine file in the editor to modify it | partial: PES/PEC preview only |
-| Measurements | Editor menu unit switch in/cm | n/a (Threadroom uses mm) |
-| Measure tool | Magenta arrow; the readout shows mm, inches and the **angle** in degrees | partial: mm only |
+| Measurements | Editor menu unit switch in/cm | yes: Setup display units mm/cm/in; geometry stays in mm |
+| Measure tool | Magenta arrow; the readout shows mm, inches and the **angle** in degrees | yes: display-unit length, clockwise degrees, secondary inches; Shift snaps to 15° |
 
 ### 1.8 Playback, hoop, machine, other
 
@@ -161,7 +161,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Playback speed | A button cycles 0.25×, 0.5×, 1×, 4×, 8×, 16× ("Speed: Nx") | yes (0.25×–16× selector, 1× = 450 stitches/s) |
 | Hoop / machine settings | None in the editor; the machine matters only when sending ("Design is too large for this machine") | **yes** (PR1X hoops, fabric, ties, trims; ahead of Ember) |
 | Estimated sewing time | None | **no** (TODO) |
-| Pixel art editor | A separate 32 × 32 grid painter with a small palette; the result opens in the editor to stitch | **no** |
+| Pixel art editor | A separate 32 × 32 grid painter with a small palette; the result opens in the editor to stitch | yes: Artwork modal imports an image or uses the reference; configurable grid, quantisation, optional Brother matching, painting/erasing and cross fills per colour |
 | Paste image | A clipboard image becomes a reference image | **no** |
 
 ---
@@ -278,12 +278,18 @@ tests and README.
     into separate objects that inherit the settings, named "Name 1/2…", placed next to each other in sew order.
     Lines are split at intersections.
 
-15. **Auto-trace ordering like Ember** · S · no dependencies
+15. **Auto-trace ordering like Ember** — **done** (2026-10-22) · S · no dependencies
     *Value:* fewer trims and colour changes straight after tracing (the traced bear still has 185 trims).
     *Scope:* after tracing, order regions by colour group (hue order, dominant/background colour first) and,
     within a group, nearest-neighbour from the top-left centroid. Add the size-proportional simplification
     tolerance (0.0028 × max dimension, clamped to 0.32–2.5 units, converted to mm). Measure the trims on the bear
     before and after.
+    *Implemented:* `lib/trace-order.ts`, pure raster entry point `traceRaster`. Headless benchmark on
+    `public/bear-reference.png`: 72 × 80 raster, 60 × 66.86 mm centred, 5 colours, background removed,
+    woven defaults. Old RGB-sort versus new order: **51 → 52 trims**, **741.5 → 571.4 mm jumps**,
+    **3 → 3 colour changes**, **5772 → 5685 stitches** (32 regions, 968 vertices both). Raster resized
+    with macOS `sips`, compiled through `geometryPayload` and Python. Centroid ordering improves travel
+    here; it does not guarantee fewer trims because the fill planner also chooses routes inside holes.
 
 16. **Click to stitch (pick regions after tracing)** · M · depends on 15
     **Implemented differently** (no dependency on 15): a click flood-fills the clicked colour of the image
@@ -301,14 +307,18 @@ tests and README.
     stroked paths become running outlines; join stroke gaps < 1 mm; colours become threads (5's nearest Brother
     match offered).
 
-18. **Overlay toggles: trims, ties, needle points** · S · no dependencies
+18. **Overlay toggles: trims, ties, needle points** — **done** (2026-10-22) · S · no dependencies
     *Value:* see exactly where the machine cuts and ties. *Scope:* in the Travel legend, independent toggles
     for jumps, trim markers (scissors), tie-in/tie-off markers and needle-penetration dots for the selected
     objects, all from the compiled commands.
+    *Implemented:* three batched SVG paths; separate persisted switches in Setup and playback. Python
+    tags actual lock stitches with `tie: in/off`; no inferred ties on untrimmed connectors.
 
-19. **Measure angle + inches** · S · no dependencies
+19. **Measure angle + inches** — **done** (2026-10-22) · S · no dependencies
     *Scope:* the measure readout adds the angle (0° = +x, clockwise like the stitch angle) so it can be copied
     into the fill angle, plus inches in small text.
+    *Implemented:* length follows mm/cm/in view settings, degrees are clockwise from +x in [0,360),
+    Shift snaps the endpoint to 15° while keeping its distance; a secondary inches line appears in mm/cm.
 
 20. **Export PNG of the realistic view — done** · S · no dependencies
     *Value:* a local mock-up to show family before stitching (no sharing service). *Scope:* render the thread
@@ -333,23 +343,35 @@ tests and README.
     must not be copied). Start with one block alphabet (A–Z, a–z, 0–9, basic punctuation) digitised in Threadroom
     itself; letters insert as one group per character of editable two-rail satin.
 
-24. **Map to path** · L · depends on 1 and 2
+24. **Map to path** — **done** (2026-10-22) · L · depends on 1 and 2
     *Value:* borders of repeated hearts or stars around a name. *Scope:* select a prototype plus an open path;
     modes Fill (as many as fit, spacing stretched) and Count (exact N, ≥ 1), rotate to tangent, reverse, hide path
     (kept but not stitched or listed). Live binding re-lays copies when the path changes; Detach makes them
     ordinary objects.
+    *Implemented:* settings panel with preview/apply, Fill / Count / fixed gap, rotate, reverse,
+    start offset and centre alignment. `groups[].pathBinding` stores prototypes, member IDs and settings;
+    commit and drag boundaries re-layout atomically. Select Edit guide path to reveal a hidden guide for
+    point edits. Unlink, deleting the guide, or breaking group membership detaches current copies.
+    Clipboard/duplicate copies are ordinary groups, avoiding bindings to an absent guide. Standard 80-object,
+    12,000-point and hoop limits apply; rejected layouts leave the prior project intact.
 
 25. **Needle-density heat map in the design check — done** · M · no dependencies
     *Value:* shows *where* dense spots are. *Scope:* overlay coloured by penetrations/mm² (radius 1.5 mm,
     fixed scale per design) from the compiled stitches, toggled from the density warning.
 
-26. **Pixel art to cross stitch** · M · low priority
+26. **Pixel art to cross stitch** — **done** (2026-10-22) · M · low priority
     *Scope:* a 32 × 32 (configurable) painter in a modal, with the palette from 5; the result becomes cross-stitch
     fills per colour on the existing cross-stitch grid.
+    *Implemented:* Artwork → Pixel art to cross stitch imports PNG/JPEG/WebP or uses the reference.
+    Default 32 × 32, configurable 1–96 rows/columns, 1–32 colours, 1–20 mm cells in 0.5 mm steps.
+    Nearest sampling/colour quantisation (no dithering), alpha-aware preview, optional Brother matching,
+    paint/erase, and one `cross` object per used colour. Shared edges are cancelled into rings with holes;
+    all colours share the same physical lattice. Existing complexity and hoop limits are checked before
+    the single undo step. A coincident colour landing explicitly retains its PEC trim.
 
 Not planned: version history and auto-save to the cloud, publishing, Ember Link/Bridge transfer, other
-machine formats, the export origin-point choice (the PR1X positions PES designs by their centre), and the
-in/cm unit switch (Threadroom stays in mm).
+machine formats, and the export origin-point choice (the PR1X positions PES designs by their centre).
+Local mm/cm/in display units are supported; geometry stays in mm.
 
 ### Dependency summary
 

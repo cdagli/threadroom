@@ -276,7 +276,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'images'
   const tolerant=(o:StitchObject)=>o.tolerance!==undefined&&['running','bean','backstitch'].includes(o.kind);
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
-  return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
+  return {...rest,objects:rest.objects.filter(o=>o.rings.length&&!o.layoutOnly).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
     if(o.rails)return [{...o,rings:[blockCentre(o.rails)],railPaths:railSamples(o.rails)}];
     if(!o.text){const rings=o.curve?[curveRing(o.curve,!isFillKind(o.kind))]:o.rings;return [o.curve&&line(o.kind)&&!tolerant(o)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);

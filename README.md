@@ -18,7 +18,29 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
 
 - Import PNG/JPG/WebP/SVG reference images (up to 10 per project), move, scale and
   rotate them on the canvas, and trace flat colours into editable regions. Tracing
-  runs locally in the browser.
+  runs locally in the browser. Auto trace appends
+  regions after existing objects, sews the dominant area first, groups colours by hue with
+  dark details last, and orders each colour by nearest centroid; physical RDP simplification
+  preserves holes.
+- Setup and playback have independent, remembered overlay switches for jumps,
+  scissors trims, actual tie-in/off stitches and selected objects’ needle dots.
+  Measure (M) shows display-unit length, clockwise degrees and inches; hold Shift
+  while dragging to snap to 15°.
+- **Map to path** in object settings: select one or more motifs, choose an open
+  guide, preview and apply. Fill, Count and fixed-spacing modes support tangent
+  rotation, reverse, start offset and centre alignment. The saved group binding
+  re-lays all copies when a guide or placed prototype changes, keeping stitch
+  settings. Edit guide path reveals a hidden guide; hidden guides are excluded
+  from stitches and Layers. Unlink freezes the copies into ordinary objects.
+  Deleting the guide or breaking group membership also detaches; clipboard copies
+  and duplicates are ordinary groups. Layouts respect hoop and design limits.
+- **Pixel art to cross stitch** in Artwork: import a raster image or use the selected
+  reference image. Preview a configurable grid (default 32 × 32), set cell size in mm and
+  colour count, optionally match Brother threads, and paint/erase cells. Create
+  adds one cross-stitch fill per used colour, merging cell boundaries into rings
+  with holes and preserving the same lattice across colours, in one undo step.
+  Supports 1–96 rows/columns, 1–32 colours and 1–20 mm cells (0.5 mm steps), subject
+  to the existing hoop, 80-object and 12,000-point limits.
 - Draw open and closed shapes with corner and curve points, two-rail satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
   fill direction, constant-width satin, underlay, and pull compensation.

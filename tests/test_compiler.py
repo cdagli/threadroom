@@ -197,7 +197,7 @@ class CompilerTests(unittest.TestCase):
         # Keep the committed reference stable: elapsed time is deliberately not a fixture.
         expected = json.loads(Path("tests/stitch-library.json").read_text())
         self.assertEqual(result["pes"], expected["pes"])
-        self.assertEqual(result["commands"], expected["commands"])
+        self.assertEqual([{k:v for k,v in c.items() if k != "tie"} for c in result["commands"]], expected["commands"])
         self.assertEqual({k:v for k,v in result["stats"].items() if k != "durationMs"},
                          {k:v for k,v in expected["stats"].items() if k != "durationMs"})
         Path("tests/stitch-library.project.json").write_text(json.dumps(p))
@@ -1410,3 +1410,12 @@ class ShapeOperationTests(unittest.TestCase):
         lower = list(self.sampled(result, "lower"))
         self.assertFalse([q for q in lower if q[0] > 40.75 and q[1] > 40.75])
         self.assertTrue([q for q in lower if 40.05 < q[0] < 40.5 and q[1] > 45])
+
+class OverlayMetadataTests(unittest.TestCase):
+    def test_compiled_ties_describe_actual_locks(self):
+        p = objects_project({"id":"overlay", "kind":"running", "rings":[[[20,20],[30,20]]], "tieIn":"tack", "tieOff":"triangle", "lockSize":1})
+        commands = compile_project(p)['commands']
+        self.assertEqual({c['tie'] for c in commands if c.get('tie')}, {'in','off'})
+        self.assertTrue(all(c['type']=='stitch' and c['objectId']=='overlay' for c in commands if c.get('tie')))
+        p['objects'][0].update(tieIn='none',tieOff='none')
+        self.assertFalse(any(c.get('tie') for c in compile_project(p)['commands']))

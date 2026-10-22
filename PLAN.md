@@ -268,3 +268,41 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Desktop browser checks pending: both SVG import choices/undo/editing; PNG downloads
   with fabric/transparency and large resolution; density alignment during pan/zoom,
   radius changes, timeline playback, fresh recompilation and English/Turkish labels.
+
+
+## Ember backlog 15, 18, 19, 24, 26 — implemented 2026-10-22
+
+- 15: pure trace ordering/simplification helpers; dominant area first, hue colour
+  groups, dark details last and nearest centroids within a colour. Bear benchmark
+  records travel 741.5 → 571.4 mm, trims 51 → 52, colour changes unchanged at 3;
+  centroid routing does not promise fewer intra-fill trims. See the gap document.
+- 18: independent jumps/trims/ties/selected penetration toggles in Setup and
+  playback; persisted view schema migrates old settings. Batched SVG paths use
+  compiler lock metadata and the visible playback prefix.
+- 19: display-unit measurement, secondary inches, clockwise degrees; Shift
+  snaps to 15° without changing distance.
+- 24: group-owned path bindings retain prototypes, instance IDs and settings;
+  commit/drag hooks re-layout atomically with undo. Fill/count/fixed-gap preview,
+  tangent rotation, reverse, offset, centre alignment, hide/edit guide and unlink.
+  Guide removal or broken membership detaches; clipboard copies are ordinary
+  groups. Hoop/complexity validation rejects layouts without changing the design.
+- 26: image/reference pixel modal, nearest-colour quantisation, optional Brother
+  matching, canvas preview with paint/erase, cell-edge merging with holes and one
+  native cross fill per colour. Tests verify occupied cells through the Python
+  engine and PES decoding. Explicit zero-distance PEC jumps retain cuts when
+  adjacent colours meet at the same needle position.
+
+Verification: typecheck, Python/Node tests, production build, typed en/tr and formal
+Turkish tests, and contrast audit. No browser used for this batch; human checks:
+trace the bear and inspect sew order; toggle overlays separately during scrub and
+reload; measure/snap in mm/cm/in; map multiple motifs to a curved guide, edit it,
+change settings, undo/reload/unlink; import/paint a pixel grid, match threads and
+export PES in both languages. Path layouts use numeric controls, without Ember’s
+additional draggable start/end/mid layout handles.
+
+Merged with reference images, click-to-stitch, SVG import, PNG export and density:
+auto trace orders only the newly traced regions (appended after existing objects);
+Click to stitch adds one region per click, so its results keep the click order; pixel art reads the selected
+entry of `project.images`; design SVG layering is stitches < density < trims/ties/needle
+points < travel < selection/handles; path bindings survive locks, hiding and the
+transform box.

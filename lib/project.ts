@@ -1,3 +1,4 @@
+import {validPathSettings,type PathBinding} from './path-binding';
 import {validThread,type Thread} from './threads';
 import {createT,type Translator,type Key} from './i18n';
 import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} from './fill-patterns';
@@ -16,7 +17,7 @@ export type Locks = {tieIn: Lock; tieOff: Lock; lockSize: number};
 // Fabric-driven values are optional: unset values follow the project's fabric profile.
 export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
-  hidden?: boolean; locked?: boolean; group?: string; thread?: Thread; // locked: not hit-tested or edited on the canvas, still sewn
+  hidden?: boolean; locked?: boolean; layoutOnly?: boolean; group?: string; thread?: Thread; // locked: not hit-tested or edited on the canvas, still sewn
   length: number; angle: number; satinWidth: number;
   fillLength?: number; handStitch?: 0|1|2|3|4|5; gradient?: FillGradient;
   fillUnderlays?: FillUnderlay[];
@@ -43,11 +44,11 @@ export type RefImage = Artwork & {id: string; rotation?: number; opacity: number
 export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
   fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; images?: RefImage[]; artwork?: Artwork;
-  groups?: {id: string; name: string}[];
+  groups?: {id: string; name: string; pathBinding?:PathBinding}[];
   sewingSpeed?: number; // stitches/minute; unset = 650, PR1X maximum 1000
 };
 // trim: a jump that starts with a thread cut; travel: an untrimmed connecting stitch between runs.
-export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; objectIndex?: number; objectId?: string; fromObjectId?: string; trim?: boolean; travel?: boolean};
+export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; objectIndex?: number; objectId?: string; fromObjectId?: string; trim?: boolean; tie?: 'in'|'off'|null; travel?: boolean};
 export type Severity = 'fail' | 'check';
 // A compiler design-check finding; bounds [x0, y0, x1, y1] in mm (see lib/check.ts).
 export type RawWarning = {code: string; objectId: string | null; bounds: [number, number, number, number]; severity: Severity; values: Record<string, number>; fromId?: string};
@@ -243,6 +244,7 @@ export function validProject(value: unknown): value is Project {
     if (!o || typeof o.id !== 'string' || typeof o.name !== 'string' || !Object.hasOwn(kindNames,o.kind) || !/^#[0-9a-f]{6}$/i.test(o.color) || !Array.isArray(o.rings) || (!o.rings.length && !o.text)) return false;
     if(o.fillRule!==undefined&&o.fillRule!=='nonzero')return false;
     if(o.thread!==undefined&&!validThread(o.thread,o.color))return false;
+    if(o.layoutOnly!==undefined&&typeof o.layoutOnly!=='boolean')return false;
     if(o.hidden!==undefined&&typeof o.hidden!=='boolean'||o.locked!==undefined&&typeof o.locked!=='boolean'||o.group!==undefined&&(typeof o.group!=='string'||!groups.has(o.group)))return false;
     if (o.text !== undefined && (!validText(o.text) || o.curve)) return false;
     for (const r of o.rings) {
@@ -282,6 +284,13 @@ export function validProject(value: unknown): value is Project {
     if(o.eFlipped!==undefined&&typeof o.eFlipped!=='boolean')return false;
   }
   if (p.images !== undefined && !validImages(p.images)) return false;
+  if(new Set(p.objects.map(o=>o.id)).size!==p.objects.length)return false;
+  for(const g of p.groups??[]){const b=g.pathBinding;if(b!==undefined){
+    if(!b||typeof b.pathId!=='string'||!validPathSettings(b.settings)||!Array.isArray(b.prototypes)||!b.prototypes.length||b.prototypes.some(o=>!o||o.group!==undefined||o.layoutOnly)||!validProject({...p,groups:[],objects:b.prototypes,artwork:undefined,images:undefined}))return false;
+    if(!Array.isArray(b.members)||!b.members.length||b.members.length>80||b.members.some(row=>!Array.isArray(row)||row.length!==b.prototypes.length||row.some(id=>typeof id!=='string'||!p.objects.some(o=>o.id===id&&o.group===g.id))))return false;
+    const ids=b.members.flat();if(new Set(ids).size!==ids.length||ids.includes(b.pathId)||p.objects.some(o=>o.group===g.id&&!ids.includes(o.id)))return false;
+    const path=p.objects.find(o=>o.id===b.pathId);if(!path||path.text||path.rails||isFillKind(path.kind)||path.curve?.closed||path.rings.length!==1||path.rings[0].length<2||path.group&&p.groups?.some(g=>g.id===path.group&&g.pathBinding))return false;
+  }}
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;
   return true;
 }
