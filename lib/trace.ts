@@ -1,9 +1,10 @@
 import {createT,TranslationError,type Translator} from './i18n';
 import {object, type Artwork, type Point, type StitchObject} from './project';
+import {imageToWorld} from './images';
 
 /** Small flat-art tracer: quantise colour, find connected components and trace
  * pixel boundaries, preserving holes. No image is uploaded to the server. */
-export async function traceArtwork(art: Artwork, colours: number, ignoreBackground: boolean,t:Translator=createT('en')): Promise<StitchObject[]> {
+export async function traceArtwork(art: Artwork&{rotation?:number}, colours: number, ignoreBackground: boolean,t:Translator=createT('en')): Promise<StitchObject[]> {
   const image = new Image(); image.src = art.src; await image.decode();
   const factor=80/Math.max(image.naturalWidth, image.naturalHeight);
   const w=Math.max(2, Math.round(image.naturalWidth*factor)), h=Math.max(2,Math.round(image.naturalHeight*factor));
@@ -57,7 +58,7 @@ export async function traceArtwork(art: Artwork, colours: number, ignoreBackgrou
       } while(key!==first&&--budget>0);
       if(key!==first||ring.length<3)continue;
       const simplified=ring.filter((p,i)=>{const a=ring[(i+ring.length-1)%ring.length],b=ring[(i+1)%ring.length];return (p[0]-a[0])*(b[1]-p[1])!==(p[1]-a[1])*(b[0]-p[0]);});
-      if(simplified.length>=3)rings.push(simplified.map(([x,y])=>[art.x+x/w*art.width,art.y+y/h*art.height]));
+      if(simplified.length>=3)rings.push(simplified.map(([x,y])=>imageToWorld(art,[x/w,y/h])));
     }
     if(rings.length){const hex='#'+centres[label].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');result.push(object(t("Traced region {v0}",{v0:result.length+1}),rings,'fill',hex));}
     if(result.length>80)throw new TranslationError(t,"This artwork has too many small regions. Try fewer colours or simpler artwork.");

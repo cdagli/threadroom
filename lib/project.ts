@@ -2,6 +2,7 @@ import {validThread,type Thread} from './threads';
 import {createT,type Translator,type Key} from './i18n';
 import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} from './fill-patterns';
 import {validText, type TextSpec} from './text';
+import {validImages} from './images';
 export type Point = [number, number];
 export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual' | 'double-rope' | 'triple-rope' | 'satin-block';
 // Two-rail satin block: left/right rail anchors paired by index (rung k = left[k], right[k]).
@@ -36,10 +37,12 @@ export type StitchObject = {
   rotation?:number; // accumulated editor rotation, degrees
   fillRule?: 'nonzero'; // set by geometryPayload for text
 };
+// Legacy single reference image (read from old files; migrateImages turns it into images[0]).
 export type Artwork = {src: string; name: string; x: number; y: number; width: number; height: number};
+export type RefImage = Artwork & {id: string; rotation?: number; opacity: number; hidden?: boolean; locked?: boolean};
 export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
-  fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; artwork?: Artwork;
+  fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; images?: RefImage[]; artwork?: Artwork;
   groups?: {id: string; name: string}[];
   sewingSpeed?: number; // stitches/minute; unset = 650, PR1X maximum 1000
 };
@@ -277,6 +280,7 @@ export function validProject(value: unknown): value is Project {
     if(o.ropeWidth!==undefined&&!inRange(o.ropeWidth,...ropeLimits.width))return false;
     if(o.eFlipped!==undefined&&typeof o.eFlipped!=='boolean')return false;
   }
+  if (p.images !== undefined && !validImages(p.images)) return false;
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;
   return true;
 }

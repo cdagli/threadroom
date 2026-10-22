@@ -266,8 +266,8 @@ export function samplePath(points:Point[], length:number,t:Translator=createT('e
   return result;
 }
 
-export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'|'locks'|'objects'>&{objects:Resolved[]} {
-  const {artwork,fabric,locks,...rest}=project;void artwork;
+export function geometryPayload(project:Project):Omit<Project,'artwork'|'images'|'fabric'|'locks'|'objects'>&{objects:Resolved[]} {
+  const {artwork,images,fabric,locks,...rest}=project;void artwork;void images;
   // Smooth display tessellation is finer than running stitches. Sample along
   // the whole curve so its visual resolution does not set the stitch density.
   // Text outlines are also finely tessellated; a text border is sent as a

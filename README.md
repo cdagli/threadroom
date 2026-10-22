@@ -16,8 +16,9 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
 
 ## What works
 
-- Import PNG/JPG/WebP/SVG reference artwork, size it in millimetres, and trace
-  flat colours into editable regions. Tracing runs locally in the browser.
+- Import PNG/JPG/WebP/SVG reference images (up to 10 per project), move, scale and
+  rotate them on the canvas, and trace flat colours into editable regions. Tracing
+  runs locally in the browser.
 - Draw open and closed shapes with corner and curve points, two-rail satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
   fill direction, constant-width satin, underlay, and pull compensation.
@@ -306,8 +307,9 @@ The bear sample and the stitch-library fixture have no warnings on woven cotton.
 
 The editor always shows compiled stitches. **Lines** is the default: thin needle
 paths in the thread colour. **Realistic view** (the eye in the toolbar) toggles
-Lines ↔ **Thread**, a simulation of the sewn design on the project's fabric. The reference image
-always sits under the stitches, at any opacity: in Thread it is painted between the fabric and the threads.
+Lines ↔ **Thread**, a simulation of the sewn design on the project's fabric. Reference images
+always sit under the stitches, at any opacity, drawn bottom-up in list order: in Thread they are painted
+between the fabric and the threads.
 Selection, drawing, dragging, point editing and entry/exit handles work in both
 looks. The toggle only changes the stitch rendering.
 
@@ -506,13 +508,25 @@ anything is locked. Locks are saved in project JSON, autosave, undo/redo and as
 `data-threadroom-locked` in the editable SVG.
 
 Open **Artwork** in the side panel to import an image, then choose **Auto trace** for colour regions, **Trace outline**
-(closed shape) or **Trace line** (open shape) to trace by hand. Import fits
-the image automatically and starts a closed shape; use **Reference opacity** to see your tracing clearly.
-Colour count and background removal are under **Trace settings**.
+(closed shape) or **Trace line** (open shape) to trace by hand. Import adds the image on top of the
+image list (existing objects stay), fits it automatically and starts a closed shape; use **Reference
+opacity** to see your tracing clearly. Colour count and background removal are under **Trace settings**;
+traced regions are added after the existing objects (80 objects at most).
+
+The Artwork tab lists the reference images with thumbnails, top image first (Ember's image panel). Each
+row has show/hide, lock, bring forward / send backward and delete; the selected image (or, with none
+selected, the top visible one) gets **Image width** and **Reference opacity**, and is the one Auto trace,
+the eyedropper and Click to stitch use. With the Select tool, click an image on the canvas to select it:
+drag to move it, and use the transform box to scale (Shift: proportional corners, Alt: from the centre)
+and rotate (Shift: 15° steps). Arrow keys nudge it, Delete removes it and Ctrl/⌘ L locks it. Locked or
+hidden images take no canvas clicks, so you can draw over them; select a locked image from the list.
+Images are saved in the project (`images[]`: position, size, rotation, opacity, hidden, locked); older
+projects with a single `artwork` load as the first image. **Show reference** hides all of them at once
+for the current session. Images are never sent to the stitch engine.
 
 For thread colour, use the colour input or palette in the object settings. The
 **eyedropper** beside it picks from the reference image: click the image to apply
-its original RGB colour, regardless of reference opacity or stitches drawn over
+its original RGB colour, regardless of reference opacity, rotation or stitches drawn over
 it. It averages a small neighbourhood at the image’s original resolution and
 ignores fully transparent pixels. With several objects selected it colours all
 of them in one undo step. Clicking outside the image keeps the picker active;

@@ -8,7 +8,7 @@ import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
-import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
@@ -17,6 +17,8 @@ import {canvasMenu, objectMenu, type MenuAction, type MenuEntry} from '@/lib/con
 import {ContextMenu} from './context-menu';
 import {traceArtwork} from '@/lib/trace';
 import {artworkPixels, sampleArtwork} from '@/lib/artwork-color';
+import {activeImage, imageBounds, imageLimits, insideImage, migrateImages, moveImage, removeImage, toImageFrame, transformImage, updateImage} from '@/lib/images';
+import ImagesPanel from './images-panel';
 import {parse} from '@/lib/pes-parser';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
@@ -162,11 +164,14 @@ function StudioEditor() {
   const pressedAnchor=useRef<number|null>(null);
   const [settingsCollapsed,setSettingsCollapsed]=useState(false);
   const [cutKeep,setCutKeep]=useState(false);
-  const [imageOpacity,setImageOpacity]=useState(.5);
-  const [colourPick,setColourPick]=useState<{ids:string[];src:string}|null>(null),[pickHint,setPickHint]=useState('');
+  // A selected reference image (never together with selected objects) is moved and transformed on the canvas.
+  const [imageSel,setImageSel]=useState<string|null>(null);
+  useEffect(()=>{if(selection.length)setImageSel(null);},[selection]);
+  const [colourPick,setColourPick]=useState<{ids:string[];image:string}|null>(null),[pickHint,setPickHint]=useState('');
   const colourPickRef=useRef(colourPick);
   function cancelColourPick(){colourPickRef.current=null;setColourPick(null);setPickHint('');}
-  useEffect(()=>{cancelColourPick();},[tool,selection.join('|'),project.artwork?.src]);
+  const images=project.images??[],selImage=images.find(i=>i.id===imageSel),art=activeImage(project,imageSel);
+  useEffect(()=>{cancelColourPick();},[tool,selection.join('|'),art?.id]);
   useEffect(()=>{if(!pickHint)return;const timer=setTimeout(()=>setPickHint(''),3000);return()=>clearTimeout(timer);},[pickHint]);
   const [spacePan,setSpacePan]=useState(false),[panMode,setPanMode]=useState(false);
   const [navigating,setNavigating]=useState(false);
@@ -181,7 +186,7 @@ function StudioEditor() {
   function setShowTravel(next:boolean|((v:boolean)=>boolean)){setViewSettings(v=>({...v,showJumps:typeof next==='function'?next(v.showJumps):next}));}
   const displayLength=(mm:number)=>formatLength(mm,viewSettings.units,formatNumber);
   const clipboard=useRef<Project|null>(null),pasteCount=useRef(0),nudgeBurst=useRef(keyBurst());
-  const transformDrag=useRef<{before:Project;ids:string[];box:ReturnType<typeof selectionBounds>;start:Point;angle:number;handle:ScaleHandle|'rotate'}|null>(null);
+  const transformDrag=useRef<{before:Project;ids:string[];box:ReturnType<typeof selectionBounds>;start:Point;angle:number;handle:ScaleHandle|'rotate'|'move';image?:string}|null>(null);
   useEffect(()=>{setMessage('');setError('');setPickHint('');},[lang]);
   const [designIssues,setDesignIssues]=useState<Warning[]>([]),[checkError,setCheckError]=useState(''),[focusKey,setFocusKey]=useState<string|null>(null);
   const [editPoints,setEditPoints]=useState(false);
@@ -267,8 +272,8 @@ function StudioEditor() {
     let initialT=t;try{if(localStorage.getItem('threadroom-lang')==='en')initialT=createT('en');}catch{/* Storage is optional. */}
     try{setViewSettings(readViewSettings(localStorage.getItem('threadroom-view-v1')));clipboard.current=readClipboard(localStorage.getItem('threadroom-clipboard-v1'));}catch{/* Storage is optional. */}
     let p:Project=demo(initialT);
-    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
-    p=normalizeGroups(p);current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);
+    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=value;}}catch{/* Storage is optional. */}
+    p=migrateImages(normalizeGroups(p));current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
   },[]);
   useEffect(()=>{
@@ -313,7 +318,7 @@ function StudioEditor() {
   },[playing,compiled,speed]);
 
   function commit(next:Project, label='', merge?:string) {
-    next=normalizeGroups(next);
+    next=migrateImages(normalizeGroups(next));
     // Typing and slider drags coalesce into one undo step per field.
     const now=performance.now(),same=!!merge&&lastMerge.current?.key===merge&&now-lastMerge.current.time<1500;
     lastMerge.current=merge?{key:merge,time:now}:null;
@@ -369,7 +374,7 @@ function StudioEditor() {
   function updateObject(patch:Partial<StitchObject>){if(!item||item.locked)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
     let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};if(patch.color!==undefined&&!patch.thread)delete next.thread;for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
-  function restoreSelection(p:Project){setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length?kept:p.objects[0]?[p.objects[0].id]:[];});}
+  function restoreSelection(p:Project){if(!selection.length&&p.images?.some(i=>i.id===imageSel))return;setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length?kept:p.objects[0]?[p.objects[0].id]:[];});}
   function undo(){endDrag();setActivePoint(null);if(draftRef.current.length){if(canUndoDraft)popDraft();return;}if(!history.length)return;const before=history[history.length-1];setFuture(f=>[current.current,...f]);setHistory(history.slice(0,-1));current.current=before;setProject(before);restoreSelection(before);invalidate();setDraft([]);}
   function redo(){setActivePoint(null);if(!future.length)return;const previous=current.current;setHistory(h=>[...h,previous]);current.current=future[0];setProject(future[0]);restoreSelection(future[0]);setFuture(future.slice(1));invalidate();}
   // Phones show the side panel as a drawer over the canvas, so it closes when the canvas is needed.
@@ -440,7 +445,9 @@ function StudioEditor() {
   }
   function editableSelection(){const ids=unlockedIds(current.current,selection);if(selection.length&&!ids.length)setMessage(t('Locked objects can’t be changed. Unlock them first.'));return ids;}
   function editSelection(m:Matrix,rotation=0,merge?:string){
-    const p=current.current,ids=editableSelection();if(!ids.length)return;const next=transformSelection(p,ids,m,rotation);if(!next){setError(t('Transform stays inside the hoop.'));return;}if(next!==p)commit(next,'',merge);
+    const p=current.current,image=!selection.length&&p.images?.find(i=>i.id===imageSel);
+    if(image){if(image.locked){setMessage(t('This image is locked. Unlock it first.'));return;}const next=transformImage(p,image.id,m);if(!next)setError(t('The image can’t be transformed that way.'));else if(next!==p)commit(next,'',merge);return;}
+    const ids=editableSelection();if(!ids.length)return;const next=transformSelection(p,ids,m,rotation);if(!next){setError(t('Transform stays inside the hoop.'));return;}if(next!==p)commit(next,'',merge);
   }
   function selectionAction(action:'flipH'|'flipV'|'rotate'){
     const b=selectionBounds(current.current,unlockedIds(current.current,selection));editSelection(around(centre(b),action==='flipH'?-1:1,action==='flipV'?-1:1,action==='rotate'?90:0),action==='rotate'?90:0);
@@ -475,28 +482,32 @@ function StudioEditor() {
     moveQueue.current?.cancel();const before=dragUndo.current.cancel();transformDrag.current=null;drag.current=null;setSnapGuides([]);
     if(before){current.current=before;setProject(before);invalidate();setSaved(false);}
   }
-  function deleteSelected(){if(!selected)return;const ids=editableSelection();if(!ids.length)return;commit({...project,objects:project.objects.filter(o=>!ids.includes(o.id))});setSelection(selection.filter(id=>!ids.includes(id)));}
-  function lockSelection(ids=selection){if(!ids.length)return;const next=toggleLock(current.current,ids),locked=next.objects.some(o=>ids.includes(o.id)&&o.locked);commit(next,t(locked?'locked.other':'unlocked.other',{count:ids.length}));if(locked)setEditPoints(false);}
+  function deleteSelected(){if(!selected){if(selImage&&!selImage.locked)deleteImage(selImage.id);return;}const ids=editableSelection();if(!ids.length)return;commit({...project,objects:project.objects.filter(o=>!ids.includes(o.id))});setSelection(selection.filter(id=>!ids.includes(id)));}
+  function lockSelection(ids=selection){if(!ids.length){if(selImage)changeImage(selImage.id,{locked:selImage.locked?undefined:true});return;}const next=toggleLock(current.current,ids),locked=next.objects.some(o=>ids.includes(o.id)&&o.locked);commit(next,t(locked?'locked.other':'unlocked.other',{count:ids.length}));if(locked)setEditPoints(false);}
   function unlockEverything(){commit(unlockAll(current.current),t('All objects unlocked'));}
   function selectAll(){const ids=selectableIds(current.current);setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);setTool('select');}
   function groupSelection(){if(items.length<2)return;commit(groupObjects(project,selection,undefined,t).project);}
   function ungroupSelection(){commit(ungroupObjects(project,selection));}
   function hideObjects(ids:string[]){const hidden=!project.objects.filter(o=>ids.includes(o.id)).every(o=>o.hidden);commit({...project,objects:project.objects.map(o=>ids.includes(o.id)?{...o,hidden}:o)});}
   function renameObject(id:string,name:string,group:boolean){commit(group?{...project,groups:project.groups?.map(g=>g.id===id?{...g,name:name.slice(0,40)}:g)}:{...project,objects:project.objects.map(o=>o.id===id?{...o,name:name.slice(0,40)}:o)});}
+  // Reference images: one undo step per change; opacity and size fields coalesce while dragging.
+  function changeImage(id:string,patch:Partial<RefImage>,merge?:string){commit(updateImage(current.current,id,patch),'',merge&&`image:${id}:${merge}`);}
+  function deleteImage(id:string){commit(removeImage(current.current,id));if(imageSel===id)setImageSel(null);}
+  function selectImage(id:string|null){setSelected(null);setEditPoints(false);setImageSel(id);}
   function toggleColourPick(){
     if(colourPickRef.current){cancelColourPick();return;}
-    const art=current.current.artwork;if(!art||!unlockedIds(current.current,selection).length||hasDraft)return;
-    endDrag();const session={ids:unlockedIds(current.current,selection),src:art.src};colourPickRef.current=session;setColourPick(session);setPickHint('');setShowImage(true);setHover(null);
+    if(!art||!unlockedIds(current.current,selection).length||hasDraft)return;
+    endDrag();const session={ids:unlockedIds(current.current,selection),image:art.id};colourPickRef.current=session;setColourPick(session);setPickHint('');setShowImage(true);setHover(null);
     svg.current?.focus({preventScroll:true});
     void artworkPixels(art.src,t).catch(e=>{if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));});
   }
   async function pickColour(p:Point){
-    const session=colourPickRef.current,art=current.current.artwork;if(!session||!art)return;
-    if(p[0]<art.x||p[1]<art.y||p[0]>art.x+art.width||p[1]>art.y+art.height){setPickHint(t("Click inside the reference image."));return;}
+    const session=colourPickRef.current,art=current.current.images?.find(i=>i.id===session?.image);if(!session||!art)return;
+    if(!insideImage(art,p)){setPickHint(t("Click inside the reference image."));return;}
     try{
       const pixels=await artworkPixels(art.src,t);
-      if(colourPickRef.current!==session||current.current.artwork!==art)return;
-      const color=sampleArtwork(pixels,art,p);if(!color){setPickHint(t("No visible image pixels here. Try another point."));return;}
+      if(colourPickRef.current!==session||!current.current.images?.includes(art))return;
+      const color=sampleArtwork(pixels,art,toImageFrame(art,p));if(!color){setPickHint(t("No visible image pixels here. Try another point."));return;}
       const before=current.current;cancelColourPick();
       commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?recolorObject(o,color):o)},t("Thread colour picked: {v0}",{v0:color.toUpperCase()}));
     }catch(e){if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));}
@@ -536,14 +547,14 @@ function StudioEditor() {
       if(e.code==='Space'&&!(e.target instanceof HTMLElement&&e.target.closest('button,a'))){e.preventDefault();setSpacePan(true);return;}
       if(e.key==='Escape'&&focusKey){e.preventDefault();setFocusKey(null);return;}
       if(e.key==='Escape'&&(shapeDraft||measure)){e.preventDefault();moveQueue.current?.cancel();setShapeDraft(null);shapePress.current=null;setMeasure(null);return;}
-      if(e.key==='Escape'){e.preventDefault();if(hasDraft)cancelDrawing();else if(editing)finishEditing();else{setTool('select');setEditPoints(false);setSelected(null);}return;}
+      if(e.key==='Escape'){e.preventDefault();if(hasDraft)cancelDrawing();else if(editing)finishEditing();else{setTool('select');setEditPoints(false);setSelected(null);setImageSel(null);}return;}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();if(e.shiftKey&&!hasDraft)redo();else undo();return;}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='g'){e.preventDefault();if(!hasDraft){if(e.shiftKey)ungroupSelection();else groupSelection();}return;}
       if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='l'){e.preventDefault();if(!hasDraft)lockSelection();return;}
       if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='a'){e.preventDefault();if(!hasDraft&&!editing)selectAll();return;}
       if((e.ctrlKey||e.metaKey)&&['c','x','v','d'].includes(e.key.toLowerCase())){if(!hasDraft){e.preventDefault();const key=e.key.toLowerCase();if(key==='c'||key==='x')copySelected(key==='x');else pasteSelected(key==='d');}return;}
       if(e.ctrlKey||e.metaKey||e.altKey)return;
-      if(!hasDraft&&selection.length&&e.key.startsWith('Arrow')){e.preventDefault();nudge(e.key,e.shiftKey,e.repeat);return;}
+      if(!hasDraft&&(selection.length||selImage)&&e.key.startsWith('Arrow')){e.preventDefault();nudge(e.key,e.shiftKey,e.repeat);return;}
       if(!hasDraft&&selection.length&&e.shiftKey&&['h','v'].includes(e.key.toLowerCase())){e.preventDefault();selectionAction(e.key.toLowerCase()==='h'?'flipH':'flipV');return;}
       if(e.key==='+'||e.key==='='){e.preventDefault();zoomBy(1.2);return;}
       if(e.key==='-'||e.key==='_'){e.preventDefault();zoomBy(1/1.2);return;}
@@ -581,6 +592,7 @@ function StudioEditor() {
     }
     endDrag();pressedAnchor.current=null;if(e.button>2)return;
     const handle=(e.target as SVGElement).closest('[data-transform]')?.getAttribute('data-transform') as ScaleHandle|'rotate'|undefined;
+    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!selection.length&&selImage&&!selImage.locked){transformDrag.current={before:current.current,ids:[],box:imageBounds(selImage),start:point(e),angle:selImage.rotation??0,handle,image:selImage.id};dragUndo.current.begin(current.current);capture(e);return;}
     if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
     const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
@@ -624,8 +636,11 @@ function StudioEditor() {
         if(source?.id===item.id){setActivePoint(null);return;}
       }
       if(e.button!==0)return;
+      // Reference images sit under every object; locked or hidden ones take no canvas clicks.
+      const imageHit=!source&&!editing?current.current.images?.find(i=>i.id===target.closest('[data-image]')?.getAttribute('data-image')&&!i.locked&&!i.hidden):undefined;
+      if(imageHit){selectImage(imageHit.id);transformDrag.current={before:current.current,ids:[],box:imageBounds(imageHit),start:p,angle:imageHit.rotation??0,handle:'move',image:imageHit.id};dragUndo.current.begin(current.current);capture(e);return;}
       if(source){const ids=selection.includes(source.id)?unlockedIds(current.current,selection):[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
-      else if(!editing)setSelected(null);
+      else if(!editing){setSelected(null);setImageSel(null);}
     }
   }
   function scaleForCanvas(){return viewportScale(viewport.current,svg.current!.getBoundingClientRect(),hoop);}
@@ -648,6 +663,14 @@ function StudioEditor() {
     const transform=transformDrag.current;
     if(transform){
       let m:Matrix,rotation=0,guides:SnapGuide[]=[];
+      if(transform.image){
+        if(transform.handle==='move'&&current.current===transform.before&&Math.hypot(p[0]-transform.start[0],p[1]-transform.start[1])*canvasScale<3)return;
+        if(transform.handle==='move')m=translate(p[0]-transform.start[0],p[1]-transform.start[1]);
+        else if(transform.handle==='rotate')m=around(centre(transform.box),1,1,rotationGesture(transform.box,transform.start,p,e.shiftKey,transform.angle));
+        else{const h=handlePoint(transform.box,transform.handle);m=scaleGesture(transform.box,transform.handle,[h[0]+p[0]-transform.start[0],h[1]+p[1]-transform.start[1]],e.shiftKey,e.altKey);}
+        const next=transformImage(transform.before,transform.image,m);if(next&&next!==current.current)dragTo(next);return;
+      }
+      if(transform.handle==='move')return;
       if(transform.handle==='rotate'){rotation=rotationGesture(transform.box,transform.start,p,e.shiftKey,transform.angle);m=around(centre(transform.box),1,1,rotation);}
       else{const h=handlePoint(transform.box,transform.handle),q:Point=[h[0]+p[0]-transform.start[0],h[1]+p[1]-transform.start[1]],snap=snapBox({x:q[0],y:q[1],width:0,height:0},transform.before,transform.ids,true);guides=snap.guides;m=scaleGesture(transform.box,transform.handle,[q[0]+snap.delta[0],q[1]+snap.delta[1]],e.shiftKey,e.altKey);}
       const next=transformSelection(transform.before,transform.ids,m,rotation);if(next){if(next!==current.current)dragTo(next);const b=selectionBounds(next,transform.ids);setSnapGuides(guides.filter(g=>{const a=g.axis==='x'?[b.x,b.x+b.width/2,b.x+b.width]:[b.y,b.y+b.height/2,b.y+b.height];return a.some(v=>Math.abs(v-g.value)<1e-4);}));}return;
@@ -722,7 +745,7 @@ function StudioEditor() {
   }
   function chooseTool(next:Tool){cancelColourPick();if(next==='holes'&&next!==tool&&!(item&&!multi&&isFillKind(item.kind)&&!item.hidden&&!item.locked&&shapeRegion(item))){setError(t("Select a fill to cut holes in."));return;}if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
-  function fitArtwork(width=project.artwork?.width||hoop.width,height=project.artwork?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
+  function fitArtwork(width=art?.width||hoop.width,height=art?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
   function editObject(){setTool('select');setEditPoints(true);setActivePoint(null);setPointMode('move');}
   const draftSpline=continuation?project.objects.find(o=>o.id===continuation.id)?.curve?.spline:'levien';
   const displayDraft=useMemo(()=>pathTool(tool)?curvePoints(draft,false,corners,draftSpline):draft,[tool,draft,corners,draftSpline]);
@@ -731,7 +754,7 @@ function StudioEditor() {
   const shapePreview=useMemo(()=>tool==='shape'&&shapeDraft?(()=>{const s=shapeOf(shapeDraft);return curvePoints(s.points,true,s.corners,'levien');})():null,[tool,shapeDraft,shapeKind,hoop]);
   function changeHoop(value:string){
     const nextHoop=hoops[value],dx=(nextHoop.width-hoop.width)/2,dy=(nextHoop.height-hoop.height)/2;
-    commit({...project,hoop:value,objects:project.objects.map(o=>moveGeometry(o,([x,y])=>[x+dx,y+dy])),artwork:project.artwork?{...project.artwork,x:project.artwork.x+dx,y:project.artwork.y+dy}:undefined});fit();
+    commit({...project,hoop:value,objects:project.objects.map(o=>moveGeometry(o,([x,y])=>[x+dx,y+dy])),...(project.images&&{images:project.images.map(i=>({...i,x:i.x+dx,y:i.y+dy}))})});fit();
   }
   function resizeDesign(width:number){
     if(!size.width||!Number.isFinite(width)||width<=0)return;
@@ -764,13 +787,17 @@ function StudioEditor() {
   async function loadImage(src:string,name:string){
     const img=new Image();img.src=src;await img.decode();
     if(img.naturalWidth*img.naturalHeight>25_000_000)throw new TranslationError(t,"Use an image smaller than 25 megapixels.");
+    const p=current.current,list=p.images??[];if(list.length>=imageLimits.count)throw new TranslationError(t,"Use at most {v0} reference images. Delete one first.",{v0:imageLimits.count});
     const ratio=img.naturalHeight/img.naturalWidth, width=Math.min(60,hoop.width*0.75,hoop.height*0.75/ratio),height=width*ratio;
-    commit({...project,name:name.replace(/\.[^.]+$/,''),objects:[],artwork:{src,name,width,height,x:(hoop.width-width)/2,y:(hoop.height-height)/2}});setSelected(null);setShowImage(true);setImageOpacity(.65);fitArtwork(width,height);setTool('closed');
+    // Images are added on top of the list; an empty design takes the image's name.
+    const image:RefImage={id:crypto.randomUUID(),src,name,width,height,x:(hoop.width-width)/2,y:(hoop.height-height)/2,opacity:.65};
+    commit({...p,...(!p.objects.length&&!list.length&&{name:name.replace(/\.[^.]+$/,'').slice(0,40)}),images:[...list,image]});selectImage(image.id);setShowImage(true);fitArtwork(width,height);setTool('closed');
   }
   async function trace(){
-    if(!project.artwork||hasDraft)return;setBusy(true);setError('');
-    const before=project, version=revision.current;
-    try{const objects=await traceArtwork(before.artwork!,colours,ignoreBg,t);if(revision.current!==version)return;commit({...before,objects},t('regions.other',{count:objects.length}));setSelected(objects[0]?.id||null);setShowImage(true);setImageOpacity(.25);setEditPoints(false);setTool('select');leavePanel();}catch(e){setError(errorText(e,t,'Tracing failed.'));}finally{setBusy(false);}
+    if(!art||hasDraft)return;setBusy(true);setError('');
+    const before=project, version=revision.current, source=art;
+    // Traced regions are added after the existing objects; the traced image fades to show them.
+    try{const objects=await traceArtwork(source,colours,ignoreBg,t);if(revision.current!==version)return;if(before.objects.length+objects.length>80)throw new TranslationError(t,"A design holds at most 80 objects. Delete some objects first.");commit(updateImage({...before,objects:[...before.objects,...objects]},source.id,{opacity:.25}),t('regions.other',{count:objects.length}));setSelected(objects[0]?.id||null);setShowImage(true);setEditPoints(false);setTool('select');leavePanel();}catch(e){setError(errorText(e,t,'Tracing failed.'));}finally{setBusy(false);}
   }
   async function generate(exportFile=false):Promise<boolean>{
     if(hasDraft){setError(t("Finish or cancel the current path before previewing."));return false;}
@@ -820,13 +847,15 @@ function StudioEditor() {
   const badge=issues.length?t('issues.other',{count:issues.length}):stitchState==='pending'?t("Checking…"):stitchState==='offline'?t("Shapes OK"):t("Ready to stitch");
   const needle=visible?.indices[visibleSewn-1]===sewn-1?compiled?.commands[sewn-1]:undefined;
   const count=compiled?sewnStitches(compiled,sewn):0,thread=look==='thread'&&!!compiled;
+  const shownImages=useMemo(()=>showImage?(project.images??[]).filter(i=>!i.hidden):[],[showImage,project.images]);
+  const imageBox=useMemo(()=>selImage&&!selImage.hidden&&!selImage.locked?imageBounds(selImage):null,[selImage]);
 
   const source=(key:Setting)=>!item?null:item[key]!==undefined?<button type="button" className="field-value reset" title={isLockSetting(key)?t("Reset to the Setup value"):fromFabric(item.kind,key)?t("Reset to the fabric default"):t("Reset to the default")} onClick={e=>{e.preventDefault();updateObject({[key]:undefined});}}>{t("Reset")}</button>:<span className="field-value inherited">{isLockSetting(key)?t("Setup"):fromFabric(item.kind,key)?t("Fabric"):t("Default")}</span>;
   const lockOptions=Object.entries(lockNames).map(([k,v])=><option key={k} value={k}>{t(v)}</option>);
   const setLocks=(patch:Partial<Locks>,merge?:string)=>commit({...project,locks:{...project.locks,...patch}},'',merge&&`setup:${merge}`);
   const inRange=(v:string,[a,b]:readonly [number,number])=>v!==''&&Number(v)>=a&&Number(v)<=b;
   const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:t("Layers")},{id:'artwork',icon:'image',label:t("Artwork")},{id:'setup',icon:'settings',label:t("Setup")},{id:'info',icon:'info',label:t("Info")}];
-  const eyedropper=<button type="button" className="image-eyedropper" aria-label={t("Pick thread colour from reference image")} title={project.artwork?t("Pick original reference image colour"):t("Import reference artwork to pick a colour")} aria-pressed={!!colourPick} disabled={!project.artwork} onClick={toggleColourPick}><Icon name="eyedropper" size={17}/></button>;
+  const eyedropper=<button type="button" className="image-eyedropper" aria-label={t("Pick thread colour from reference image")} title={art?t("Pick original reference image colour"):t("Import reference artwork to pick a colour")} aria-pressed={!!colourPick} disabled={!art} onClick={toggleColourPick}><Icon name="eyedropper" size={17}/></button>;
   return <main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
     <input ref={file} type="file" tabIndex={-1} className="visually-hidden" aria-label={t("Import artwork or project")} accept=".png,.jpg,.jpeg,.webp,.svg,.pes,.pec,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/>
     <div id="project-menu" className="toolbar-popover project-popover" popover="auto" role="menu" aria-label={t("Project")}>
@@ -849,7 +878,7 @@ function StudioEditor() {
     </div>
     <section className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
-        {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} artwork={showImage?project.artwork:undefined} imageOpacity={imageOpacity}/>}
+        {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages}/>}
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(editing&&(item?.curve||item?.rails)&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
@@ -862,13 +891,14 @@ function StudioEditor() {
               <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="var(--centre-cross)" strokeWidth=".15" pointerEvents="none"/></>}
               {viewSettings.showGrid&&viewSettings.subdivisions>1&&viewSettings.gridSize/viewSettings.subdivisions*canvasScale>=6&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#fine-grid)" opacity=".5" pointerEvents="none"/>}
               {viewSettings.showGrid&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>}
-              {showImage&&project.artwork&&!thread&&<image href={project.artwork.src} x={project.artwork.x} y={project.artwork.y} width={project.artwork.width} height={project.artwork.height} preserveAspectRatio="none" opacity={imageOpacity} pointerEvents="none"/>}
+              {shownImages.map(i=><g key={i.id} data-image={i.id} transform={i.rotation?`rotate(${i.rotation} ${i.x+i.width/2} ${i.y+i.height/2})`:undefined} pointerEvents={tool==='select'&&!editing&&!i.locked&&!colourPick?'all':'none'}>{thread?<rect x={i.x} y={i.y} width={i.width} height={i.height} fill="transparent"/>:<image href={i.src} x={i.x} y={i.y} width={i.width} height={i.height} preserveAspectRatio="none" opacity={i.opacity}/>}</g>)}
               <>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" pointerEvents="none" opacity={showTravel?.35:1}/>)}
                 {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="var(--travel-jump)" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="var(--travel-line)" strokeWidth={2/canvasScale} strokeLinecap="round"/>
                   <path d={stitchPaths.trims.map(([x,y])=>{const a=3.5/canvasScale;return `M${x-a} ${y-a}L${x+a} ${y+a}M${x-a} ${y+a}L${x+a} ${y-a}`;}).join('')} stroke="var(--danger)" strokeWidth={1.8/canvasScale} strokeLinecap="round"/></g>}</>
               {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
               {focus&&<IssueMarker focus={focus} canvasScale={canvasScale}/>}
               {tool==='select'&&!editing&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
+              {tool==='select'&&!hasDraft&&!selection.length&&imageBox&&<TransformBox box={imageBox} canvasScale={canvasScale}/>}
               {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
               {ends&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
@@ -880,7 +910,7 @@ function StudioEditor() {
         </svg>
         {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
         {cursor&&<output className="cursor-position" aria-label={t('Cursor position')}>X {displayLength(cursor[0])} · Y {displayLength(cursor[1])}</output>}
-        {!project.objects.length&&!project.artwork&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
+        {!project.objects.length&&!images.length&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
       </div>
       <header className="project-chip">
         <a className="brand" href="/" aria-label={t("Threadroom home")}>t<span className="brand-dot">.</span></a>
@@ -985,13 +1015,11 @@ function StudioEditor() {
       </>}
       {panelTab==='artwork'&&<section className="panel-section">
         <button className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>{t("Import file")}</strong></button>
-        {!project.artwork&&<p className="section-copy">{t("PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.")}</p>}
-        {project.artwork&&<div className="artwork-settings">
-          <div className="asset-name">{project.artwork.name}</div>
+        {!images.length&&<p className="section-copy">{t("PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.")}</p>}
+        {images.length>0&&<ImagesPanel images={images} active={art?.id??null} selected={imageSel} disabled={hasDraft} onSelect={selectImage} onChange={changeImage} onMove={(id,delta)=>commit(moveImage(current.current,id,delta))} onDelete={deleteImage}/>}
+        {art&&<div className="artwork-settings">
           <Button label={t("Auto trace")} variant="primary" icon={<Icon name="region"/>} isLoading={busy} isDisabled={hasDraft} width="100%" onClick={()=>void trace()}/>
           <div className="manual-trace"><button disabled={hasDraft} title={t("Closed shape (2)")} onClick={()=>{chooseTool('closed');setShowImage(true);leavePanel();}}>{t("Trace outline")}</button><button disabled={hasDraft} title={t("Open shape (1)")} onClick={()=>{chooseTool('open');setShowImage(true);leavePanel();}}>{t("Trace line")}</button></div>
-          <label>{t("Image width · mm")}<input type="number" min="5" max={hoop.width} step="1" disabled={hasDraft} value={Math.round(project.artwork.width*10)/10} onChange={e=>{const w=Number(e.target.value);if(w>0&&w<=hoop.width){const a=project.artwork!;const height=a.height*w/a.width;commit({...project,artwork:{...a,width:w,height,x:(hoop.width-w)/2,y:(hoop.height-height)/2}});}}}/></label>
-          <label>{t("Reference opacity")}<input type="range" min=".1" max="1" step=".05" value={imageOpacity} onChange={e=>{setImageOpacity(Number(e.target.value));setShowImage(true);}}/></label>
           <label className="check-label"><input type="checkbox" checked={showImage} onChange={e=>setShowImage(e.target.checked)}/>{t("Show reference")}</label>
           <button className="text-button" onClick={()=>fitArtwork()}>{t("Fit image")}</button>
           <details className="trace-options"><summary>{t("Trace settings")}</summary><label>{t("Colours")}<select value={colours} onChange={e=>setColours(Number(e.target.value))}>{[2,3,4,5,6,8].map(n=><option key={formatNumber(n)} value={formatNumber(n)}>{formatNumber(n)}</option>)}</select></label><label className="check-label"><input type="checkbox" checked={ignoreBg} onChange={e=>setIgnoreBg(e.target.checked)}/>{t("Remove background")}</label></details>

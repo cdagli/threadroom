@@ -145,6 +145,13 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   This deliberately differs from Ember, which can fill an open path.
 - **Image colour picker** (done). An eyedropper beside the thread colour samples the reference image's original
   pixels at the clicked point, ignoring the reference opacity on screen.
+- **Reference images panel (done)**. `project.images[]` (≤ 10; id, data URL, mm box, rotation, opacity,
+  hidden, locked; validated) replaces the single `artwork`, which still loads and migrates to `images[0]`.
+  Artwork-tab list with thumbnails, show/hide, lock, reorder and delete; width and opacity for the
+  selected (else top visible) image, which Auto trace, the eyedropper and Click to stitch use. Select-tool
+  canvas selection with move and the shared transform box (scale/rotate; images can't skew or mirror);
+  locked/hidden images take no canvas clicks. Drawn bottom-up under the stitches in Lines and Thread.
+  `lib/images.ts` with node tests. Desktop browser checks pending.
 - **Reference image always at the bottom** (done). In Realistic view the image is drawn into the thread canvas
   between the fabric and the threads (not in the SVG above it), so stitches always cover it at any opacity.
 - **All Ember stitch and fill types.** Row and tile patterns **done**: Hearts sm/md/lg,
