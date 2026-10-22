@@ -1,6 +1,6 @@
 import {createT,errorText,type Translator,type Key} from './i18n';
 import {defaultTrimJump, hoops, hasCrossStyle, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
-import {moveGeometry, reclose} from './curves';
+import {blockOutline, moveGeometry, railSamples, reclose} from './curves';
 
 // Design check: fast geometry checks run in the editor; stitch checks (short/long stitches, density,
 // jumps, trims) come from the compiler (embroidery/compiler.py design_check). Bounds are [x0, y0, x1, y1] mm.
@@ -82,6 +82,7 @@ export function raster(rings: Point[][], rule: 'evenodd' | 'nonzero' = 'evenodd'
 
 // How far stitches reach past the drawn line: half the column for satin styles, the satin text border.
 function reach(o: StitchObject, p: Project) {
+  if (o.rails) return resolve(o, p.fabric, p.locks).pullCompensation/2;
   if (isWideKind(o.kind)) return (o.satinWidth+resolve(o, p.fabric, p.locks).pullCompensation)/2;
   return o.text?.border?.kind === 'satin' && isFillKind(o.kind) ? o.text.border.width/2 : 0;
 }
@@ -103,7 +104,7 @@ export function checkProject(p: Project): Warning[] {
   const add = (code: string, o: StitchObject, bounds: Box, severity: Severity, values: Record<string, number>) => out.push({code, objectId: o.id, bounds: bounds.map(n => round(n, 2)) as Box, severity, values});
   for (const o of p.objects) {
     if (!o.rings.length) continue;
-    const b = box(o.rings.flat()), g = box([[b[0], b[1]], [b[2], b[3]]], reach(o, p));
+    const b = box(o.rails ? blockOutline(o.rails) : o.rings.flat()), g = box([[b[0], b[1]], [b[2], b[3]]], reach(o, p));
     const margin = Math.min(g[0], g[1], hoop.width-g[2], hoop.height-g[3]);
     if (margin < -.001) add('outside-hoop', o, g, 'fail', {by: round(-margin)});
     else if (margin < limits.edge) add('near-edge', o, g, 'check', {margin: round(margin), limit: limits.edge});
@@ -123,6 +124,17 @@ export function checkProject(p: Project): Warning[] {
       if (o.satinWidth < limits.satinWidth) add('satin-narrow', o, g, 'fail', {width: o.satinWidth, limit: limits.satinWidth});
       else if (bite > limits.satinWide && r.splitLength > limits.satinWide) add('satin-long', o, g, 'fail', {bite: round(Math.min(bite, r.splitLength)), split: r.splitLength, limit: limits.satinWide});
       else if (o.satinWidth > limits.satinWide) add('satin-wide', o, g, 'check', {width: o.satinWidth, limit: limits.satinWide});
+    }
+    if (o.rails) {
+      // Blocks: the same rules on the local width between the rails, marked where they apply.
+      const r = resolve(o, p.fabric, p.locks), [left, right] = railSamples(o.rails), widths = left.map((q, i) => Math.hypot(right[i][0]-q[0], right[i][1]-q[1]));
+      const where = (test: (w: number, k: number) => boolean) => {const i = widths.flatMap((w, k) => test(w, k) ? [k] : []); return i.length ? {bounds: box(i.flatMap(k => [left[k], right[k]]), r.pullCompensation/2+.5), widths: i.map(k => widths[k])} : null;};
+      // Tapered tips (narrow runs reaching an end) are normal; flag pinches, and fail a block narrow throughout.
+      const thin = widths.map(w => w < limits.satinWidth), tipStart = thin.indexOf(false), tipEnd = thin.lastIndexOf(false);
+      const narrow = where((w, k) => w < limits.satinWidth && (tipStart < 0 || k > tipStart && k < tipEnd)), long = where(w => w+r.pullCompensation > limits.satinWide), wide = where(w => w > limits.satinWide);
+      if (narrow) add('satin-narrow', o, narrow.bounds, tipStart < 0 ? 'fail' : 'check', {width: round(Math.min(...narrow.widths), 2), limit: limits.satinWidth});
+      else if (long && r.splitLength > limits.satinWide) add('satin-long', o, long.bounds, 'fail', {bite: round(Math.min(Math.max(...long.widths)+r.pullCompensation, r.splitLength)), split: r.splitLength, limit: limits.satinWide});
+      else if (wide) add('satin-wide', o, wide.bounds, 'check', {width: round(Math.max(...wide.widths)), limit: limits.satinWide});
     }
   }
   const blocks = colourBlocks(p), distinct = new Set(blocks.map(b => b.color)).size;
@@ -192,7 +204,7 @@ export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix 
     case 'fill-small': case 'fill-narrow':
       return o.curve ? null : {label: t("Use running stitch"), title: t("Sew this shape as a running stitch outline"), apply: q => replace(q, kindFix(o, 'running'))};
     case 'satin-narrow':
-      return o.curve?.closed ? null : {label: t("Use bean stitch"), title: t("A triple running stitch: strong and thin"), apply: q => replace(q, kindFix(o, 'bean'))};
+      return o.curve?.closed || o.rails ? null : {label: t("Use bean stitch"), title: t("A triple running stitch: strong and thin"), apply: q => replace(q, kindFix(o, 'bean'))};
     case 'text-small': {
       // Scaling moves the editable text settings with the outline (transformText), so it stays text.
       const hoop = hoops[p.hoop], [x0, y0, x1, y1] = box(o.rings.flat()), k = w.values.limit/o.text!.size, cx = (x0+x1)/2, cy = (y0+y1)/2, grow = reach(o, p);

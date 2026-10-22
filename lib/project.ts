@@ -2,7 +2,9 @@ import {createT,type Translator,type Key} from './i18n';
 import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} from './fill-patterns';
 import {validText, type TextSpec} from './text';
 export type Point = [number, number];
-export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual';
+export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual' | 'double-rope' | 'triple-rope' | 'satin-block';
+// Two-rail satin block: left/right rail anchors paired by index (rung k = left[k], right[k]).
+export type Rails = {points: [Point[], Point[]]; corners?: [boolean[], boolean[]]};
 export type FillGradient = {mode:'ramp';start:number;end:number;endSpacing:number}|{mode:'plateau';center:number;width:number;endSpacing:number};
 export type FillUnderlay = {angle:number;spacing:number;length:number;inset:number};
 export type Underlay = 'none' | 'center' | 'edge' | 'zigzag' | 'edge-zigzag' | 'tatami' | 'edge-tatami';
@@ -26,6 +28,9 @@ export type StitchObject = {
   entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
   tieIn?: Lock; tieOff?: Lock; lockSize?: number; // unset follows the project's locks
   curve?: {points: Point[]; closed: boolean; corners?: boolean[]; spline?: 'levien'};
+  rails?: Rails; // satin-block only; rings then hold the centre line
+  ropeWidth?: number; // rope runs: offset either side (mm); unset is ropeDefaults.width
+  eFlipped?: boolean; // E-stitch: teeth on the other side; unset keeps the original side
   text?: TextSpec;
   fillRule?: 'nonzero'; // set by geometryPayload for text
 };
@@ -52,11 +57,18 @@ export const hoops: Record<string, {width: number; height: number; label: Key}> 
   '300x200': {width: 300, height: 200, label: '300 × 200 mm'},
   '60x40': {width: 60, height: 40, label: '60 × 40 mm'},
 };
-export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
-export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
+export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', 'double-rope':'Double rope run', 'triple-rope':'Triple rope run', 'satin-block':'Satin block', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
+export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', 'double-rope':'A zigzag rope over a hidden double run', 'triple-rope':'A twisted rope sewn out and back', 'satin-block':'Satin between two drawn rails; the width can change', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
 export const isFillKind=(kind:Kind)=>kind==='fill'||kind==='cross';
 export const hasCrossStyle=(o:StitchObject)=>o.crossStyle!==undefined||(['crossSize','threadCount','coverage','dense','flipped'] as const).some(k=>o[k]!==undefined);
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
+export const isRopeKind=(kind:Kind)=>kind==='double-rope'||kind==='triple-rope';
+// Satin settings without a width: blocks take their width from the rails.
+export const isSatinKind=(kind:Kind)=>kind==='satin'||kind==='satin-block';
+export const usesSplit=(kind:Kind)=>isWideKind(kind)||kind==='satin-block';
+// Ember's rope run defaults; the width is the offset each side, so the rope is twice as wide.
+export const ropeDefaults={width:.4,length:1.5};
+export const ropeLimits={width:[.2,2] as const};
 export type FabricProfile = {label: Key; fill: number; satin: number; fillUnderlay: Underlay; satinUnderlay: Underlay; pull: number; stabilizer: Key; topping: Key};
 // The only fabric table: geometryPayload sends resolved values, so the compiler has no fabric defaults.
 // fill/satin: row and column spacing (mm); pull: compensation (mm).
@@ -70,10 +82,10 @@ export const fabrics: Record<Fabric, FabricProfile> = {
   denim: {label: 'Denim / twill', fill: .4, satin: .38, fillUnderlay: 'tatami', satinUnderlay: 'center', pull: .15, stabilizer: 'Heavy tear-away', topping: 'None'},
 };
 export const underlayNames: Record<Underlay, Key> = {none: 'None', center: 'Center walk', edge: 'Edge walk', zigzag: 'Light zigzag', 'edge-zigzag': 'Edge + zigzag', tatami: 'Light tatami', 'edge-tatami': 'Edge + tatami'};
-export const underlayOptions=(kind:Kind):Underlay[]=>isFillKind(kind)?['none','edge','tatami','edge-tatami']:kind==='satin'?['none','center','edge','zigzag','edge-zigzag']:['none'];
-export const usesSpacing=(kind:Kind)=>isFillKind(kind)||isWideKind(kind);
+export const underlayOptions=(kind:Kind):Underlay[]=>isFillKind(kind)?['none','edge','tatami','edge-tatami']:isSatinKind(kind)?['none','center','edge','zigzag','edge-zigzag']:['none'];
+export const usesSpacing=(kind:Kind)=>isFillKind(kind)||usesSplit(kind);
 export const usesPull=usesSpacing;
-export const usesShortStitches=(kind:Kind)=>kind==='satin'||kind==='zigzag';
+export const usesShortStitches=(kind:Kind)=>isSatinKind(kind)||kind==='zigzag';
 // Bites above 7 mm loosen and snag on baby clothes (PR1X sews up to 12.7 mm); width cap 10 mm
 // keeps even an unsplit bite with 1 mm compensation within the machine limit.
 export const satinLimits={width:[.5,10] as const,split:[3,12] as const};
@@ -90,16 +102,17 @@ export const isLockSetting=(key:Setting):key is keyof Locks=>key==='tieIn'||key=
 // Profile default for an unset value; null when the stitch style ignores the setting.
 export function profileDefault(kind:Kind, fabric:Fabric, key:Exclude<Setting,keyof Locks>):number|Underlay|boolean|null {
   const f=fabrics[fabric];
-  if(key==='splitLength')return isWideKind(kind)?satinDefaults.splitLength:null;
+  if(key==='splitLength')return usesSplit(kind)?satinDefaults.splitLength:null;
   if(key==='shortStitches')return usesShortStitches(kind)?satinDefaults.shortStitches:null;
-  if(key==='spacing')return kind==='fill'?f.fill:kind==='satin'?f.satin:usesSpacing(kind)?1.5:null;
-  if(key==='underlay')return kind==='fill'?f.fillUnderlay:kind==='satin'?f.satinUnderlay:kind==='cross'?'none':null;
+  if(key==='spacing')return kind==='fill'?f.fill:isSatinKind(kind)?f.satin:usesSpacing(kind)?1.5:null;
+  if(key==='underlay')return kind==='fill'?f.fillUnderlay:isSatinKind(kind)?f.satinUnderlay:kind==='cross'?'none':null;
   return usesPull(kind)?f.pull:null;
 }
 // True when the default comes from the fabric (not a fixed style default such as zigzag spacing).
-export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&!isLockSetting(key)&&(kind==='fill'||kind==='satin');
+export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&!isLockSetting(key)&&(kind==='fill'||isSatinKind(kind));
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
-export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean};
+// railPaths: the compile payload's sampled block rails, equal length and paired by index.
+export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]};
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
   const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin';
   const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults};
@@ -201,6 +214,13 @@ const validLock=(v:unknown)=>typeof v==='string'&&Object.hasOwn(lockNames,v);
 const validSize=(v:unknown)=>typeof v==='number'&&v>=lockLimits.size[0]&&v<=lockLimits.size[1];
 const inRange=(v:unknown,lo:number,hi:number)=>typeof v==='number'&&Number.isFinite(v)&&v>=lo&&v<=hi;
 const validPoint=(pt:unknown)=>Array.isArray(pt)&&pt.length===2&&pt.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1000);
+// Both rails carry one anchor per rung: 2–100 rungs, no curve or text on the same object.
+function validRails(r:unknown,o:StitchObject):boolean {
+  if(!r||typeof r!=='object'||o.curve||o.text)return false;
+  const {points,corners}=r as Rails;
+  if(!Array.isArray(points)||points.length!==2||!points.every(Array.isArray)||points[0].length!==points[1].length||points[0].length<2||points[0].length>100||!points.every(rail=>rail.every(validPoint)))return false;
+  return corners===undefined||Array.isArray(corners)&&corners.length===2&&corners.every((c,i)=>Array.isArray(c)&&c.length===points[i].length&&c.every(v=>typeof v==='boolean'));
+}
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
@@ -246,6 +266,10 @@ export function validProject(value: unknown): value is Project {
       if(!o.curve.points.every(validPoint))return false;
       if(o.curve.corners!==undefined&&(!Array.isArray(o.curve.corners)||o.curve.corners.length!==o.curve.points.length||Array.from(o.curve.corners).some(c=>typeof c!=='boolean')))return false;
     }
+    if((o.kind==='satin-block')!==(o.rails!==undefined))return false;
+    if(o.rails!==undefined&&!validRails(o.rails,o))return false;
+    if(o.ropeWidth!==undefined&&!inRange(o.ropeWidth,...ropeLimits.width))return false;
+    if(o.eFlipped!==undefined&&typeof o.eFlipped!=='boolean')return false;
   }
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;
   return true;

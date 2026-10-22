@@ -1233,3 +1233,144 @@ class NonRowFillTests(unittest.TestCase):
             sewn = [c for c in r['commands'] if c['type']=='stitch']
             self.assertEqual([sewn[0]['x'],sewn[0]['y']],[30,45],pattern)
             self.assertEqual([sewn[-1]['x'],sewn[-1]['y']],[60,45],pattern)
+
+
+class EmberRopeAndBlockTests(unittest.TestCase):
+    path = [[20,30],[40,36],[60,30],[75,45]]
+
+    @staticmethod
+    def block(left, right, **settings):
+        centre = [[(a[0]+b[0])/2, (a[1]+b[1])/2] for a, b in zip(left, right)]
+        return project("satin-block", [centre], railPaths=[left, right], **settings)
+
+    @staticmethod
+    def stitches(result):
+        return [((c['fromX'], c['fromY']), (c['x'], c['y'])) for c in result['commands'] if c['type'] == 'stitch']
+
+    def test_rope_runs_sew_a_hidden_double_run_then_alternating_offsets(self):
+        rope = C.tolerant_path(self.path, 1.5, 1)
+        for kind, count in (("double-rope", 3), ("triple-rope", 5)):
+            passes = C.line_passes(project(kind, [self.path], length=1.5)["objects"][0], self.path)
+            self.assertEqual(len(passes), count, kind)
+            out, back, first = passes[0][0], passes[1][0], passes[2][0]
+            self.assertEqual((out[0], out[-1], back), (self.path[0], self.path[-1], out[::-1]))
+            self.assertTrue(all(math.dist(a, b) <= 3+1e-9 for a, b in zip(out, out[1:])))
+            self.assertEqual(len(first), len(rope))
+            sides = []
+            for i, (p, q) in enumerate(zip(rope, first)):
+                self.assertAlmostEqual(math.dist(p, q), .4)
+                a, b = rope[max(0, i-1)], rope[min(len(rope)-1, i+1)]
+                sides.append((b[0]-a[0])*(q[1]-p[1])-(b[1]-a[1])*(q[0]-p[0]) > 0)
+            self.assertEqual(sides, [i % 2 == 0 for i in range(len(rope))], "even points +w, odd points -w")
+            if kind == "triple-rope":
+                mirrored = passes[3][0][::-1]
+                for p, q, m in zip(rope, first, mirrored):
+                    self.assertAlmostEqual(m[0], 2*p[0]-q[0])
+                    self.assertAlmostEqual(m[1], 2*p[1]-q[1])
+                self.assertEqual(passes[4][0], out)
+        wide = C.line_passes(project("double-rope", [self.path], length=1.5, ropeWidth=1)["objects"][0], self.path)[2][0]
+        self.assertAlmostEqual(math.dist(wide[3], rope[3]), 1)
+
+    def test_rope_runs_compile_deterministically_within_machine_limits(self):
+        square = [[30,30],[60,30],[60,60],[30,60],[30,30]]
+        counts = {}
+        for kind in ("double-rope", "triple-rope"):
+            for rings in ([self.path], [square]):
+                p = project(kind, rings, length=1.5)
+                r = compile_project(p)
+                self.assertEqual(r['pes'], compile_project(copy.deepcopy(p))['pes'])
+                self.assertLessEqual(r['stats']['maxStitch'], C.SATIN_MAX)
+                self.assertLessEqual(max(math.dist(a, b) for a, b in self.stitches(r)), 3.1)  # 3 mm base run; rope stitches <= L+2w
+                self.assertEqual(r['warnings'], [])
+                counts[kind, len(rings[0])] = r['stats']['stitches']
+            self.assertNotEqual(compile_project(project(kind, [self.path], ropeWidth=.8))['pes'], compile_project(project(kind, [self.path]))['pes'])
+            sewn = [c for c in compile_project(project(kind, [self.path], tieIn="none", tieOff="none"))['commands'] if c['type'] == 'stitch']
+            self.assertEqual([sewn[0]['x'], sewn[0]['y']], self.path[0])
+        self.assertGreater(counts["triple-rope", 4], counts["double-rope", 4])
+        for width in (.1, 2.5, "1"):
+            with self.assertRaises(ValueError):
+                compile_project(project("double-rope", [self.path], ropeWidth=width))
+
+    def test_e_stitch_flip_moves_the_stem_and_unset_keeps_todays_output(self):
+        line = [[[20,40],[60,40]]]
+        base = compile_project(project("e-stitch", line, satinWidth=3, spacing=1.5))['pes']
+        self.assertEqual(base, compile_project(project("e-stitch", line, satinWidth=3, spacing=1.5, eFlipped=False))['pes'])
+        self.assertNotEqual(base, compile_project(project("e-stitch", line, satinWidth=3, spacing=1.5, eFlipped=True))['pes'])
+        plain, flipped = satin_path(line[0], 1.5, 3, "e-stitch"), satin_path(line[0], 1.5, 3, "e-stitch", flip=True)
+        self.assertEqual({round(p[1], 6) for p in plain[::3]}, {38.5})
+        self.assertEqual({round(p[1], 6) for p in flipped[::3]}, {41.5})
+        self.assertEqual({round(p[1], 6) for p in flipped[1::3]}, {38.5})
+        with self.assertRaises(ValueError):
+            compile_project(project("e-stitch", line, eFlipped="yes"))
+
+    def test_straight_block_equals_constant_width_satin(self):
+        left, right = [[30,39],[60,39]], [[30,41],[60,41]]
+        block = compile_project(self.block(left, right, spacing=.4))
+        satin = compile_project(project("satin", [[[30,40],[60,40]]], satinWidth=2, spacing=.4))
+        self.assertEqual(block['pes'], satin['pes'])
+        pulled = C.block_path(left, right, .4, .4)
+        self.assertEqual({round(p[1], 6) for p in pulled}, {38.8, 41.2})
+
+    def test_tapered_block_rungs_interpolate_width_and_follow_spacing(self):
+        left, right = [[20,40],[60,40]], [[20,41],[60,45]]
+        rungs = C.block_rungs(left, right, .4)
+        l, r = 40, math.dist(*right)
+        self.assertEqual(len(rungs), round((r*2/3+l/3)/.4)+1)
+        for a, b in rungs:
+            self.assertAlmostEqual(a[0], b[0])
+            self.assertAlmostEqual(math.dist(a, b), 1+4*(a[0]-20)/40)
+        # Rungs pair by sample index, so a skewed rung pairing is followed rather than straightened.
+        skew = C.block_rungs([[20,40],[40,40],[60,40]], [[20,44],[30,44],[60,44]], .4)
+        mid = len(skew)//2
+        self.assertLess(skew[mid][1][0], skew[mid][0][0])
+        path = C.block_path(left, right, .4, 0, 7, False)
+        self.assertTrue(all(abs(p[1]-40) < 1e-9 for p in path[::2]))
+
+    def test_block_compiles_from_editor_rails_with_satin_settings_and_underlays(self):
+        rails = {"points": [[[20,40],[40,35],[60,40]], [[20,44],[40,45],[60,52]]]}
+        editor = {"version": 1, "name": "Blocks", "machine": "brother-pr1x", "hoop": "100x100", "fabric": "woven", **EDITOR,
+                  "objects": [{"id": "b", "name": "Block", "kind": "satin-block", "color": "#c99d72", "rings": [[[20,42],[60,46]]],
+                               "length": 2.5, "angle": 0, "satinWidth": 2, "rails": rails}]}
+        p = resolved(editor)
+        obj = p["objects"][0]
+        self.assertEqual((obj["spacing"], obj["underlay"], obj["splitLength"], obj["shortStitches"]), (.4, "center", 7, True))
+        self.assertEqual(len(obj["railPaths"][0]), len(obj["railPaths"][1]))
+        r = compile_project(p)
+        self.assertEqual(r['pes'], compile_project(copy.deepcopy(p))['pes'])
+        self.assertLessEqual(r['stats']['maxStitch'], 7.2)
+        self.assertFalse([w for w in r['warnings'] if w['code'] == 'long-stitches'])
+        self.assertAlmostEqual(r['stats']['height'], 17.2, delta=.3)
+        for underlay, count in (("none", 1), ("center", 2), ("edge", 3), ("zigzag", 2), ("edge-zigzag", 4)):
+            o = {**obj, "underlay": underlay}
+            passes = C.line_passes(o, o["rings"][0])
+            self.assertEqual(len(passes), count, underlay)
+            for (a, _), (b, _) in zip(passes, passes[1:]):
+                self.assertLess(math.dist(a[-1], b[0]), 12.5, underlay)
+            compile_project({**p, "objects": [o]})
+        self.assertGreater(compile_project({**p, "objects": [{**obj, "splitLength": 12}]})['stats']['maxStitch'], 7.2)
+        # A tight arc compresses the inner rail, so short stitches change it.
+        arc = lambda radius: [[50+radius*math.cos(math.radians(a)), 50+radius*math.sin(math.radians(a))] for a in range(0, 91, 10)]
+        bend = self.block(arc(2), arc(8), spacing=.4)
+        self.assertNotEqual(compile_project(bend)['pes'], compile_project(self.block(arc(2), arc(8), spacing=.4, shortStitches=False))['pes'])
+        self.assertNotEqual(r['pes'], compile_project({**p, "objects": [{**obj, "pullCompensation": .6}]})['pes'])
+        # Narrow blocks get a centre walk at most, as satin does.
+        thin = self.block([[20,40],[60,40]], [[20,41],[60,41]], underlay="edge-zigzag")["objects"][0]
+        self.assertEqual(len(C.line_passes(thin, thin["rings"][0])), 2)
+        # An entry at the far end sews the block from its last rung.
+        far = compile_project({**p, "objects": [{**obj, "underlay": "none", "tieIn": "none", "entry": obj["rings"][0][-1]}]})
+        first = next(c for c in far['commands'] if c['type'] == 'stitch')
+        self.assertLess(math.dist([first['x'], first['y']], [60, 40]), .5)
+
+    def test_block_rails_are_validated(self):
+        left, right = [[30,39],[60,39]], [[30,41],[60,41]]
+        for rails in (None, [left], [left, right[:1]], [left[:1], right[:1]], [left, [[30,41],[160,41]]], [left, [[30,41],[60]]]):
+            p = self.block(left, right)
+            p["objects"][0]["railPaths"] = rails
+            with self.assertRaises(ValueError):
+                compile_project(p)
+        with self.assertRaises(ValueError):
+            compile_project(self.block(left, right, underlay="tatami"))
+        p = self.block(left, right)
+        del p["objects"][0]["splitLength"]
+        with self.assertRaises(ValueError):
+            compile_project(p)

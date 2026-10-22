@@ -15,7 +15,10 @@ Spacing, underlay and pull compensation arrive resolved from the editor's
 fabric profile (lib/project.ts); the compiler has no fabric defaults.
 Runs that change colour or start more than trimJump mm away are tied off,
 trimmed and tied in (per-object tack/triangle locks); nearer runs join with
-one stitch. Cross fills sew rows of half-crosses and return over them.
+one stitch. Cross fills sew rows of half-crosses and return over them. Rope runs sew a
+hidden double run, then one (double) or two mirrored (triple) passes whose
+points alternate either side of the path. Satin blocks sew satin between two
+rails the editor samples in pairs (railPaths), so the width follows the rails.
 This is an experimental digitizer, not Ink/Stitch's production fill engine.
 """
 import base64
@@ -35,7 +38,8 @@ MAX_STITCHES = 100_000
 CONNECT_TOLERANCE = 0.1
 FILL_KINDS = ("fill", "cross")
 WIDE_KINDS = ("satin", "zigzag", "e-stitch")
-KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual")
+ROPE_KINDS = ("double-rope", "triple-rope")
+KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual", *ROPE_KINDS, "satin-block")
 SATIN_MAX = 12.7  # PR1X / PES single stitch limit
 # Short stitches: shorten alternate inner bites by SHORT_INSET of the width where the
 # inner rail is compressed below SHORT_RATIO of the centre line and its needle hits
@@ -50,6 +54,13 @@ EDGE_INSET, MIN_UNDERLAY_FILL, MIN_UNDERLAY_SATIN, TRAVEL_MARGIN, TRAVEL_LIMIT =
 ORDER_BUDGET = 20_000  # section-order search steps per part
 LOCKS = ("none", "tack", "triangle")
 UNDERLAYS = {"fill": ("none", "edge", "tatami", "edge-tatami"), "satin": ("none", "center", "edge", "zigzag", "edge-zigzag")}
+UNDERLAYS["satin-block"] = UNDERLAYS["satin"]
+# Ember rope runs: offset 0.4 mm each side (0.2-2); the rope pass follows the path within 1 mm,
+# the hidden base run uses 3 mm travel stitches within 0.5 mm.
+ROPE_WIDTH, ROPE_TOLERANCE, TRAVEL_LENGTH, TRAVEL_TOLERANCE = .4, 1, 3, .5
+# Satin blocks measure spacing a third of the way from the outer to the inner rail (Ember's
+# fractional spacing 0.33), so a curved block is neither starved outside nor crowded inside.
+BLOCK_FRACTION = 1/3
 
 
 def number(value, minimum, maximum, label):
@@ -145,7 +156,24 @@ def validate(project):
         number(obj.get("angle", 0), -180, 180, "Fill angle")
         number(obj.get("satinWidth", 2), 0.5, 10, "Satin width")
         number(obj.get("pullCompensation"), 0, 1, "Pull compensation")
-        if obj["kind"] in WIDE_KINDS or sweep:
+        if "ropeWidth" in obj:
+            number(obj["ropeWidth"], .2, 2, "Rope width")
+        if "eFlipped" in obj and not isinstance(obj["eFlipped"], bool):
+            raise ValueError("E-stitch flip must be on or off.")
+        if obj["kind"] == "satin-block":
+            rails = obj.get("railPaths")
+            if not isinstance(rails, list) or len(rails) != 2 or not all(isinstance(r, list) for r in rails) or len(rails[0]) != len(rails[1]) or len(rails[0]) < 2:
+                raise ValueError("A satin block needs two rails with the same number of points.")
+            for rail in rails:
+                count += len(rail)
+                if count > 12_000:
+                    raise ValueError("Simplify this design to fewer than 12,000 control points.")
+                for point in rail:
+                    if not isinstance(point, list) or len(point) != 2:
+                        raise ValueError("Invalid path coordinate.")
+                    number(point[0], 0, width, "X position")
+                    number(point[1], 0, height, "Y position")
+        if obj["kind"] in WIDE_KINDS or obj["kind"] == "satin-block" or sweep:
             number(obj.get("splitLength"), 3, 12, "Split length")
             if not isinstance(obj.get("shortStitches"), bool):
                 raise ValueError("Short stitches must be on or off.")
@@ -910,7 +938,7 @@ def route_fill(obj, at, entry, target, underlay_only=False):
     return [path for path in out if len(path) > 1]
 
 
-def satin_path(ring, spacing, width, style="satin", split=0, short=False):
+def satin_path(ring, spacing, width, style="satin", split=0, short=False, flip=False):
     # Constant-width satin along a user-drawn centre line.
     points = sample_path(ring, spacing)
     closed = len(ring) > 2 and math.dist(ring[0], ring[-1]) < 1e-6
@@ -936,13 +964,124 @@ def satin_path(ring, spacing, width, style="satin", split=0, short=False):
     for j, f in enumerate(frames):
         i = f[0]
         if style == "e-stitch":
-            # Walk one rail; each bite goes across and back to that rail.
-            result.extend([at(f, -1), at(f, 1), at(f, -1)])
+            # Walk one rail; each bite goes across and back to that rail. Flipped walks the other.
+            s = 1 if flip else -1
+            result.extend([at(f, s), at(f, -s), at(f, s)])
             continue
         side = 1 if i % 2 else -1
         ratio = compression(j, side) if short and (i//2) % 2 else 1
         result.append(at(f, side, width/2-SHORT_INSET*width) if ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else at(f, side))
     return split_bites(result, split)
+
+
+def rope_points(points, width, sign=1):
+    """Ember's rope offsets: point i moves +width (even i) or -width (odd i) along its normal,
+    times sign. The tangent averages the unit directions to both neighbours (one at the ends);
+    a reversal or straight run uses the incoming direction. Normal = tangent turned +90 deg."""
+    def unit(a, b):
+        d = math.dist(a, b)
+        return [(b[0]-a[0])/d, (b[1]-a[1])/d] if d > 1e-9 else None
+    out = []
+    for i, p in enumerate(points):
+        back = unit(points[i-1], p) if i else None
+        ahead = unit(p, points[i+1]) if i+1 < len(points) else None
+        t = back if back and ahead and abs(back[0]*ahead[1]-back[1]*ahead[0]) <= 1e-6 else [back[0]+ahead[0], back[1]+ahead[1]] if back and ahead else back or ahead or [1, 0]
+        d = math.hypot(*t) or 1
+        s = width*sign*(1 if i % 2 == 0 else -1)
+        out.append([p[0]-t[1]/d*s, p[1]+t[0]/d*s])
+    return out
+
+
+def rope_passes(obj, ring):
+    """Double: base run out and back, rope out. Triple adds the mirrored rope back and the base run out again."""
+    length, width = obj.get("length", 2.5), obj.get("ropeWidth", ROPE_WIDTH)
+    rope, travel = tolerant_path(ring, length, ROPE_TOLERANCE), tolerant_path(ring, TRAVEL_LENGTH, TRAVEL_TOLERANCE)
+    limit = max(3, length+2*width+.01)  # a rope stitch never exceeds L + 2w, so it is never split
+    passes = [(travel, 3), (travel[::-1], 3), (rope_points(rope, width), limit)]
+    if obj["kind"] == "triple-rope":
+        passes += [(rope_points(rope, width, -1)[::-1], limit), (travel, 3)]
+    return passes
+
+
+def lerp(a, b, t):
+    return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t]
+
+
+def block_rungs(left, right, spacing):
+    """N+1 rungs, N = round(blended length/spacing): both rails are sampled at the same quad and
+    fraction, so the rungs follow the drawn pairing."""
+    lengths = [max(l, r)*(1-BLOCK_FRACTION)+min(l, r)*BLOCK_FRACTION for l, r in
+               ((math.dist(left[k], left[k+1]), math.dist(right[k], right[k+1])) for k in range(len(left)-1))]
+    cumulative = [0]
+    for v in lengths:
+        cumulative.append(cumulative[-1]+v)
+    total, n, k, rungs = cumulative[-1], max(1, round(cumulative[-1]/spacing)), 0, []
+    for j in range(n+1):
+        d = total*j/n
+        while k < len(lengths)-1 and cumulative[k+1] < d:
+            k += 1
+        u = min(1, max(0, (d-cumulative[k])/lengths[k])) if lengths[k] > 1e-12 else 1 if j else 0
+        rungs.append((lerp(left[k], left[k+1], u), lerp(right[k], right[k+1], u)))
+    return rungs
+
+
+def block_path(left, right, spacing, pull=0, split=0, short=False):
+    """Satin between paired rails: penetrations alternate left/right on successive rungs, each end
+    pushed out by half the pull compensation; short stitches and splitting as in satin_path."""
+    rungs = block_rungs(left, right, spacing)
+    def end(j, side, inset=0):
+        a, b = rungs[j]
+        w, mid = math.dist(a, b), lerp(a, b, .5)
+        reach = (w+pull)/2-inset*(w+pull)
+        return [mid[0]+(b[0]-a[0])/w*reach*side, mid[1]+(b[1]-a[1])/w*reach*side] if w > 1e-9 else mid
+    def compression(j, side):
+        a, b = max(0, j-1), min(len(rungs)-1, j+1)
+        centre = math.dist(lerp(*rungs[a], .5), lerp(*rungs[b], .5))
+        return math.dist(end(a, side), end(b, side))/centre if centre > 1e-9 else 1
+    result = []
+    for j in range(len(rungs)):
+        side = 1 if j % 2 else -1
+        ratio = compression(j, side) if short and (j//2) % 2 else 1
+        result.append(end(j, side, SHORT_INSET) if ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else end(j, side))
+    return split_bites(result, split)
+
+
+def inset_rails(left, right, inset):
+    """Both rails moved inset mm towards each other along the rungs, meeting at the centre at most."""
+    out = [[], []]
+    for a, b in zip(left, right):
+        w = math.dist(a, b)
+        t = min(.5, inset/w) if w > 1e-9 else .5
+        out[0].append(lerp(a, b, t))
+        out[1].append(lerp(b, a, t))
+    return out
+
+
+def block_width(obj):
+    left, right = obj["railPaths"]
+    return sum(math.dist(a, b) for a, b in zip(left, right))/len(left)
+
+
+def block_passes(obj, ring):
+    """Satin block passes along ring (the centre line, possibly reversed); like line_passes, each
+    underlay pass reverses so it starts where the previous ended, then the satin."""
+    left, right = obj["railPaths"]
+    centre = obj["rings"][0]
+    if math.dist(ring[0], centre[-1]) < math.dist(ring[0], centre[0]):
+        left, right = left[::-1], right[::-1]
+    length, underlay, passes = obj.get("length", 2.5), satin_underlay(obj), []
+    oriented = lambda pts: pts if len(passes) % 2 == 0 else pts[::-1]
+    pair = lambda l, r: (l, r) if len(passes) % 2 == 0 else (l[::-1], r[::-1])
+    edges = inset_rails(left, right, .25)
+    if underlay == "center":
+        passes.append((sample_path(oriented([lerp(a, b, .5) for a, b in zip(left, right)]), length), 3))
+    if "edge" in underlay:
+        for rail in edges:
+            passes.append((sample_path(oriented(rail), length), 3))
+    if "zigzag" in underlay:
+        passes.append((block_path(*pair(*edges), 2), 3))
+    passes.append((block_path(*pair(left, right), obj["spacing"], obj["pullCompensation"], obj["splitLength"], obj["shortStitches"]), SATIN_MAX))
+    return passes
 
 
 def split_bites(path, limit):
@@ -1082,14 +1221,18 @@ LINE_PASSES = {"none": 0, "center": 1, "edge": 2, "zigzag": 1, "edge-zigzag": 3}
 
 
 def satin_underlay(obj):
-    width = obj.get("satinWidth", 2)
-    return "center" if obj["kind"] == "satin" and width < MIN_UNDERLAY_SATIN and obj["underlay"] != "none" else obj["underlay"]
+    width = block_width(obj) if obj["kind"] == "satin-block" else obj.get("satinWidth", 2)
+    return "center" if obj["kind"] in ("satin", "satin-block") and width < MIN_UNDERLAY_SATIN and obj["underlay"] != "none" else obj["underlay"]
 
 
 def line_passes(obj, ring):
     """Underlay passes then the top pass, alternating direction so each starts
     where the previous ended: [(points, longest stitch)]."""
     kind, length, width = obj["kind"], obj.get("length", 2.5), obj.get("satinWidth", 2)
+    if kind in ROPE_KINDS:
+        return rope_passes(obj, ring)
+    if kind == "satin-block":
+        return block_passes(obj, ring)
     underlay, inset = satin_underlay(obj), max(0.1, width-0.5)
     passes = []
     oriented = lambda: ring if len(passes) % 2 == 0 else ring[::-1]
@@ -1103,7 +1246,7 @@ def line_passes(obj, ring):
     r = oriented()
     if kind in WIDE_KINDS:
         pull = obj["pullCompensation"]
-        passes.append((satin_path(r, obj["spacing"], width+pull, kind, obj["splitLength"], obj["shortStitches"] and kind != "e-stitch"), SATIN_MAX))
+        passes.append((satin_path(r, obj["spacing"], width+pull, kind, obj["splitLength"], obj["shortStitches"] and kind != "e-stitch", obj.get("eFlipped", False)), SATIN_MAX))
         return passes
     use_tolerance = kind in ("running", "bean", "backstitch") and "tolerance" in obj
     path = r if kind == "manual" else tolerant_path(r, length, obj["tolerance"]) if use_tolerance else line_path(r, length)
@@ -1144,14 +1287,16 @@ def route_lines(obj, at, entry, exit, target):
     last ring and its end; on a closed running outline the exit is reached by
     retracing the shorter way along the outline."""
     rings, kind = obj["rings"], obj["kind"]
-    count = LINE_PASSES.get(satin_underlay(obj), 0)+1 if kind in WIDE_KINDS or kind == "satin" else 1
+    count = LINE_PASSES.get(satin_underlay(obj), 0)+1 if kind in WIDE_KINDS or kind in ("satin", "satin-block") else 1
+    # A block's centre line is always open, even when its ends meet.
+    closed = lambda ring: closed_ring(ring) and kind != "satin-block"
     def options(ring, start):
-        if closed_ring(ring):
+        if closed(ring):
             r = ring_from(ring, start, kind == "manual")
             return [(r, r[0], r[0])]
         return [(r, r[0], r[-1] if count % 2 else r[0]) for r in (ring, ring[::-1])]
     pending, plan, cur = list(range(len(rings))), [], entry or at
-    nearest = lambda p: min(pending, key=lambda i: min(math.dist(p, q) for q in ((rings[i][0], rings[i][-1]) if not closed_ring(rings[i]) else [nearest_on([rings[i]], p, False)[2]])))
+    nearest = lambda p: min(pending, key=lambda i: min(math.dist(p, q) for q in ((rings[i][0], rings[i][-1]) if not closed(rings[i]) else [nearest_on([rings[i]], p, False)[2]])))
     last = nearest(exit) if exit and len(rings) > 1 else None
     if last is not None and entry and nearest(entry) == last:
         last = None
@@ -1167,19 +1312,19 @@ def route_lines(obj, at, entry, exit, target):
         pending.remove(index)
         final = not pending
         ring = rings[index]
-        if closed_ring(ring) and final and exit and not (first and entry):
+        if closed(ring) and final and exit and not (first and entry):
             start = exit
         else:
             start = entry if first and entry else cur if cur is not None else ring[0]
         choices = options(ring, start)
-        if final and exit and not closed_ring(ring) and not (first and entry):
+        if final and exit and not closed(ring) and not (first and entry):
             r, _, _ = min(choices, key=lambda o: math.dist(o[2], exit))
         elif first and entry:
             r, _, _ = min(choices, key=lambda o: math.dist(o[1], entry))
         else:
             r, _, _ = min(choices, key=lambda o: (math.dist(cur, o[1]) if cur else 0)+(math.dist(o[2], target) if final and target else 0))
         passes = line_passes(obj, r)
-        if closed_ring(r) and final and exit and first and entry and kind not in WIDE_KINDS and math.dist(r[0], exit) > 1e-6:
+        if closed(r) and final and exit and first and entry and kind not in WIDE_KINDS and math.dist(r[0], exit) > 1e-6:
             _, i, q = nearest_on([r], exit, False)
             forward, backward = r[:i+1]+[q], r[i+1:][::-1]+[q]
             arc = min((forward, backward), key=lambda a: sum(math.dist(u, v) for u, v in zip(a, a[1:])))

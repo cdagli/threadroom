@@ -1,9 +1,12 @@
 import {bounds, isFillKind, pathData, type Command, type Compiled, type Project, type StitchObject, type Point} from './project';
 import {mergedOutline} from './text';
+import {blockOutline} from './curves';
 
 // Editor objects are immutable. Weak keys release cached geometry with undo history.
 const geometry=new WeakMap<StitchObject,ReturnType<typeof buildGeometry>>();
 function buildGeometry(o:StitchObject){
+  // A satin block shows (and hit-tests) as the area between its rails.
+  if(o.rails){const outline=[blockOutline(o.rails)];return {path:pathData(outline,true),bounds:bounds([{...o,rings:outline}]),border:'',guide:''};}
   return {path:pathData(o.rings,isFillKind(o.kind)||!!o.curve?.closed),bounds:bounds([o]),
     border:o.text?.border&&isFillKind(o.kind)?pathData(mergedOutline(o.rings),false):'',
     guide:o.text?.layout==='path'&&o.text.path?pathData([o.text.path],false):''};

@@ -5,7 +5,7 @@ const {isClosedShape,stitchGroups,changeStitchKind,curveRing,reclose,geometryPay
 const {object,demo,validProject}=load('project');
 const square=[[10,10],[30,10],[30,30],[10,30]],hole=[[15,15],[20,15],[20,20],[15,20]];
 const curve=closed=>{const c={points:square,closed,corners:[true,true,true,true]};return {...object('Curve',[curveRing(c)],closed?'fill':'running'),curve:c};};
-const lines=['running','bean','backstitch','satin','zigzag','e-stitch','underlay'];
+const lines=['running','bean','backstitch','double-rope','triple-rope','satin','zigzag','e-stitch','underlay'];
 
 test('Shape closure follows curve metadata, text, fill rings and repeated outline endpoints',()=>{
   for(const o of [curve(true),object('Fill',[square,hole]),object('Cross',[square],'cross'),object('Outline',reclose([square,hole],true),'bean'),{...object('Text',[]),text:{}}])assert.equal(isClosedShape(o),true);
