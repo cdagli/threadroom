@@ -122,9 +122,10 @@ export function importSVG(source:string,filename:string,project:Project,t:Transl
       if(fill&&Number(s.style['fill-opacity']??1)>0)add(paths.filter(p=>p.points.length>=3),'fill',fill);
       if(stroke&&Number(s.style['stroke-opacity']??1)>0){const raw=svgLength(s.style['stroke-width']);if(raw===null)throw Error('SVG');const width=raw*96/25.4*Math.sqrt(Math.abs(matrix[0]*matrix[3]-matrix[1]*matrix[2]));if(width>10)throw new TranslationError(t,'SVG strokes wider than 10 mm cannot be imported.');if(width>0)for(const p of paths.filter(p=>p.points.length>=2))add([p],width>=1.5?'satin':'running',stroke,width>=1.5?width:2);}
     }
-    // The SVG replaces the design as one unlocked group; reference images stay for comparison.
-    const result:Project={...migrateImages(project),name:filename.replace(/\.[^.]+$/,''),groups:[group],objects:joinStrokes(objects)};
-    if(!result.objects.length)throw new TranslationError(t,'This SVG has no supported visible shapes.');
+    // The SVG is added after the existing objects as one unlocked group; an empty design takes the file's name.
+    const added=joinStrokes(objects);if(!added.length)throw new TranslationError(t,'This SVG has no supported visible shapes.');
+    if(added.length<=80&&project.objects.length+added.length>80)throw new TranslationError(t,'A design holds at most 80 objects. Delete some objects first.');
+    const result:Project={...migrateImages(project),...(!project.objects.length&&{name:filename.replace(/\.[^.]+$/,'')}),groups:[...(project.groups??[]),group],objects:[...project.objects,...added]};
     if(!validProject(result))throw new TranslationError(t,'This SVG exceeds the editor limits (80 shapes, 12,000 points, 10 mm satin width).');
     return result;
   }catch(e){if(e instanceof TranslationError)throw e;throw new TranslationError(t,'This SVG could not be imported. Use paths, basic shapes, solid colours and transforms.');}

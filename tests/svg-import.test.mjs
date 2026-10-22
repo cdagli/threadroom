@@ -17,7 +17,7 @@ const parser={parseFromString(xml){
   }
   bad||=stack.length>0;return {documentElement:root,querySelector:s=>s==='parsererror'&&bad?{}:null,querySelectorAll:s=>all.filter(el=>el.localName===s)};
 }};
-const read=(svg,lang='en',name='flowers.svg')=>importSVG(svg,name,demo(),createT(lang),parser);
+const read=(svg,lang='en',name='flowers.svg')=>importSVG(svg,name,{...demo(),objects:[],groups:[]},createT(lang),parser);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} ≠ ${b}`);
 test('physical units and viewBox: SVG imports in millimetres, centred in the hoop',()=>{
   for(const [width,mm] of [['25.4mm',25.4],['2.54cm',25.4],['1in',25.4],['96px',25.4],['96',25.4]]){
@@ -74,10 +74,13 @@ test('malformed, unsupported and oversized input produce translated errors',()=>
   assert.throws(()=>read('<svg>'+Array(81).fill('<rect width="1" height="1"/>').join('')+'</svg>'),/limits/);
   for(const d of ['M0 0L','M0 x','M0 0 A1 2 0 2 0 5 5','M0 0 B2 3'])assert.throws(()=>pathData(d,[1,0,0,1,0,0]));
 });
-test('shape import keeps reference images, migrates legacy artwork and leaves the group unlocked',()=>{
+test('shape import adds one unlocked group after the design, keeps reference images and migrates legacy artwork',()=>{
   const image={id:'a',src:'data:image/png;base64,AA',name:'ref.png',x:1,y:2,width:10,height:10,opacity:.5},base={...demo(),images:[image]};
   const p=importSVG('<svg width="10mm" height="10mm" viewBox="0 0 10 10"><rect width="5" height="5"/><rect x="6" width="4" height="4" fill="red"/></svg>','logo.svg',base,createT('en'),parser);
-  assert.deepEqual(p.images,[image]);assert.equal(p.groups.length,1);assert.ok(p.objects.every(o=>o.group===p.groups[0].id&&!o.locked&&!o.hidden));assert.ok(validProject(p));
+  const added=p.objects.slice(base.objects.length),group=p.groups.at(-1);assert.deepEqual(p.objects.slice(0,base.objects.length),base.objects);assert.deepEqual(p.groups.slice(0,-1),base.groups??[]);assert.equal(p.name,base.name);
+  assert.deepEqual(p.images,[image]);assert.equal(added.length,2);assert.ok(added.every(o=>o.group===group.id&&!o.locked&&!o.hidden));assert.ok(validProject(p));
+  assert.equal(read('<svg width="10mm" height="10mm"><rect width="5" height="5"/></svg>','en','logo.svg').name,'logo');
+  assert.throws(()=>importSVG('<svg width="10mm" height="10mm"><rect width="5" height="5"/></svg>','x.svg',{...base,objects:Array.from({length:80},(_,i)=>({...base.objects[0],id:`o${i}`,group:undefined}))},createT('en'),parser),/at most 80 objects/);
   const {images:_,...plain}=demo(),q=importSVG('<svg width="10mm" height="10mm" viewBox="0 0 10 10"><rect width="5" height="5"/></svg>','x.svg',{...plain,artwork:{src:image.src,name:'old.png',x:0,y:0,width:5,height:5}},createT('en'),parser);
   assert.equal(q.artwork,undefined);assert.equal(q.images.length,1);assert.equal(q.images[0].name,'old.png');
 });

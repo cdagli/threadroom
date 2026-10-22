@@ -815,7 +815,7 @@ function StudioEditor() {
       if(f.size>8*1024*1024)throw new TranslationError(t,"Choose a file smaller than 8 MB.");
       if(/\.svg$/i.test(f.name)){
         if(asShapes===undefined){setPendingSVG(f);return;}
-        if(asShapes){const p=importSVG(await f.text(),f.name,project,t);commit(p);setSelected(p.objects[0]?.id??null);fit();leavePanel();return;}
+        if(asShapes){const before=current.current,p=importSVG(await f.text(),f.name,before,t);commit(p);setSelected(p.objects[before.objects.length]?.id??null);fit();leavePanel();return;}
       }
       if(/\.json$/i.test(f.name)){
         const p:unknown=JSON.parse(await f.text());if(!validProject(p))throw new TranslationError(t,"This is not a supported Threadroom project.");

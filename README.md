@@ -182,7 +182,7 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   transforms. Physical dimensions use mm/cm/in/96-dpi px; missing dimensions fit
   75% of the hoop. Compound fills preserve even-odd/nonzero holes; strokes become
   running lines or satin at widths ≥ 1.5 mm, with gaps under 1 mm joined.
-  Imports form one named group. Straight geometry keeps editable corner curves;
+  Imports form one named group added after the existing objects. Straight geometry keeps editable corner curves;
   Béziers and arcs flatten to rings at 0.04 mm tolerance.
 
 **Project → Export image** (backlog 20, done) downloads the full realistic stitch plan

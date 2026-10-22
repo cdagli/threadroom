@@ -250,7 +250,7 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   shapes or adding the SVG to `project.images` as a reference image to trace. DOMParser handles paths/basic shapes, nested transforms,
   physical dimensions/viewBox, basic CSS and solid paints. Fill rules preserve holes;
   strokes become running/satin and compatible gaps under 1 mm join. One named, unlocked group
-  replaces the design in one undo step; reference images are kept. Exact straight paths retain corner curves; arbitrary
+  is added after the existing objects in one undo step (an empty design takes the file name); reference images are kept. Exact straight paths retain corner curves; arbitrary
   Béziers/arcs use bounded 0.04 mm flattening. Unsupported rendering features and
   model-limit violations return translated errors; no imported markup is mounted.
 - **Export image (backlog 20, done)**. Project-menu PNG options share the realistic
