@@ -198,3 +198,6 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   toggles on layer and group rows, Ctrl/⌘ L, Unlock all in the Layers footer, Ctrl/⌘ A
   selects unlocked visible objects. Locked objects pass canvas clicks through and are
   read-only (overlay notice with Unlock); mixed selections transform only unlocked members.
+- **Canvas context menu (done)**. Select-tool right-click without drag (right-drag still
+  pans, drawing tools keep curve points); object and empty-canvas item lists in
+  `lib/context-menu.ts` with keyboard stepping and viewport placement; Shift F10 / Menu key.

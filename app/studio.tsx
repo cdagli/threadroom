@@ -12,7 +12,9 @@ import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, d
 import {curvePoints, curveRing, setCorner, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
-import {clientToWorld, panViewport, viewportScale, zoomViewport, type Viewport} from '@/lib/viewport';
+import {clientToWorld, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
+import {canvasMenu, objectMenu, type MenuAction, type MenuEntry} from '@/lib/context-menu';
+import {ContextMenu} from './context-menu';
 import {traceArtwork} from '@/lib/trace';
 import {artworkPixels, sampleArtwork} from '@/lib/artwork-color';
 import {parse} from '@/lib/pes-parser';
@@ -186,7 +188,8 @@ function StudioEditor() {
   const revision=useRef(0), playback=useRef(0),playRequest=useRef(0);
   const compiling=useRef<{version:number;controller:AbortController;promise:Promise<Compiled|null>}|null>(null);
   const drag=useRef<{id:string;start:Point;source:StitchObject;before:Project;ids?:string[];point?:[number,number];end?:'entry'|'exit';moved?:boolean}|null>(null);
-  const panDrag=useRef<{start:Point;source:Point}|null>(null);
+  const panDrag=useRef<{start:Point;source:Point;button?:number;target?:string|null}|null>(null);
+  const [menu,setMenu]=useState<{x:number;y:number;entries:MenuEntry[]}|null>(null);
   const moveQueue=useRef<ReturnType<typeof frameQueue>|null>(null);
   if(!moveQueue.current)moveQueue.current=frameQueue(run=>requestAnimationFrame(run),id=>cancelAnimationFrame(id));
   useEffect(()=>()=>moveQueue.current?.cancel(),[]);
@@ -497,6 +500,7 @@ function StudioEditor() {
       if(e.key==='?'){e.preventDefault();endDrag();setShortcutHelp(true);return;}
       if(e.key==='Escape'&&(transformDrag.current||drag.current)){e.preventDefault();cancelTransform();return;}
       if(transformDrag.current||drag.current)return;
+      if((e.key==='ContextMenu'||e.shiftKey&&e.key==='F10')&&tool==='select'&&!editing&&!hasDraft){e.preventDefault();const rect=svg.current!.getBoundingClientRect(),b=selectionBox,[x,y]=selection.length?worldToClient(viewport.current,[b.x+b.width/2,b.y+b.height/2],rect,hoop):[rect.left+rect.width/2,rect.top+rect.height/2];openMenu(x,y,null,true);return;}
       if(e.target instanceof HTMLElement&&e.target.closest('button,a')&&(e.key==='Enter'||e.code==='Space'))return;
       if(e.code==='Space'&&!(e.target instanceof HTMLElement&&e.target.closest('button,a'))){e.preventDefault();setSpacePan(true);return;}
       if(e.key==='Escape'&&focusKey){e.preventDefault();setFocusKey(null);return;}
@@ -549,7 +553,7 @@ function StudioEditor() {
     if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
     const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
-    if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan};capture(e);return;}
+    if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan,button:e.button,target:(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')};capture(e);return;}
     if(e.button!==0&&!smooth)return;
     const p=point(e);
     if(tool==='measure'){setMeasure({a:p,b:p});measuring.current=true;capture(e);return;}
@@ -637,8 +641,9 @@ function StudioEditor() {
     moveQueue.current?.flush();
     if(e.pointerType==='touch'){touches.current.delete(e.pointerId);if(touchNavigation.current){pinch.current=null;if(!touches.current.size){touchNavigation.current=false;touchStart.current=null;setNavigating(false);}return;}if(!touches.current.size)touchStart.current=null;}
     setNavigating(false);
-    const wasPanning=!!panDrag.current;panDrag.current=null;measuring.current=false;
-    if(wasPanning){draftPress.current=null;return;}
+    const panned=panDrag.current;panDrag.current=null;measuring.current=false;
+    // A right-click without drag in Select opens the canvas menu; right-drag stays a pan.
+    if(panned){draftPress.current=null;if(panned.button===2&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!colourPickRef.current&&Math.hypot(e.clientX-panned.start[0],e.clientY-panned.start[1])<4){applyViewport({...viewport.current,pan:panned.source});openMenu(e.clientX,e.clientY,panned.target??null);}return;}
     if(shapePress.current){const press=shapePress.current;shapePress.current=null;if(press.moved&&shapeDraft)finishShape({...shapeDraft,end:point(e),square:e.ctrlKey||e.metaKey});return;}
     const dragged=draftDrag.current?.moved;draftDrag.current=null;
     const press=draftPress.current;draftPress.current=null;
@@ -655,6 +660,22 @@ function StudioEditor() {
     if(drawing){setDrawing(false);const p=point(e);if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>[...d,p]);if(draftRef.current.length>=2)finish(draftRef.current);else cancelDrawing();}
   }
   function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
+  function openMenu(x:number,y:number,target:string|null,keyboard=false){
+    const p=current.current,o=target?p.objects.find(o=>o.id===target&&!o.hidden&&!o.locked):undefined,canPaste=!!clipboard.current?.objects.length;
+    let ids=selection;if(o&&!selection.includes(o.id)){ids=[o.id];setSelected(o.id);setEditPoints(false);}
+    setMenu({x,y,entries:o||keyboard?objectMenu(p,ids,canPaste):canvasMenu(p,canPaste)});
+  }
+  const closeMenu=useStableCallback(()=>{if(document.activeElement?.closest('.context-menu'))svg.current?.focus({preventScroll:true});setMenu(null);});
+  function menuAction(action:MenuAction){
+    const order={front:'bottom',forward:'down',backward:'up',back:'top'} as const;
+    if(action==='cut'||action==='copy')copySelected(action==='cut');else if(action==='paste'||action==='duplicate')pasteSelected(action==='duplicate');
+    else if(action==='delete')deleteSelected();else if(action==='group')groupSelection();else if(action==='ungroup')ungroupSelection();
+    else if(action==='lock'||action==='unlock')lockSelection();else if(action==='hide'||action==='show')hideObjects(selection);else if(action==='editPoints')editObject();
+    else if(action==='front'||action==='forward'||action==='backward'||action==='back')reorderSelection(order[action]);
+    else if(action==='flipH'||action==='flipV'||action==='rotate')selectionAction(action);else if(action==='selectAll')selectAll();else if(action==='unlockAll')unlockEverything();
+    else if(action==='fit')fit();else setViewSettings(v=>({...v,showGrid:!v.showGrid}));
+    svg.current?.focus({preventScroll:true});
+  }
   function chooseTool(next:Tool){cancelColourPick();if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
   function fitArtwork(width=project.artwork?.width||hoop.width,height=project.artwork?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
@@ -947,6 +968,7 @@ function StudioEditor() {
         <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?t("Engine connected"):apiState==='checking'?t("Connecting…"):t("Engine offline")}</div>
       </section>}
     </aside>
+    {menu&&<ContextMenu {...menu} grid={viewSettings.showGrid} onAction={menuAction} onClose={closeMenu}/>}
     {shortcutHelp&&<ShortcutHelp tools={tools} onClose={()=>{setShortcutHelp(false);requestAnimationFrame(()=>svg.current?.focus());}}/>}
   </main>;
 }

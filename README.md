@@ -389,12 +389,23 @@ work when focus is outside text inputs and native controls:
 | Ctrl/⌘ D | Duplicate selection |
 | Ctrl/⌘ A | Select all unlocked, visible objects |
 | Ctrl/⌘ L | Lock / unlock the selection |
+| Right-click / Shift F10 / Menu key | Canvas menu (Select tool) |
 | Arrow keys / Shift + arrows | Nudge 0.1 mm / 1 mm; repeated presses coalesce into one undo step per burst |
 | Shift H / Shift V | Flip horizontally / vertically |
 | Ctrl/⌘ Z / Ctrl/⌘ Shift Z | Undo / redo |
 | Ctrl/⌘ G / Ctrl/⌘ Shift G | Group / ungroup |
 | Delete / Backspace | Delete selection or active point; remove the last draft point |
 | Enter / Escape | Finish / cancel drawing or leave point editing |
+
+In the Select tool, a **right-click without dragging** opens a canvas menu (a
+right-drag still pans; drawing tools keep right-click for curve points). On an object
+it offers cut, copy, paste, duplicate, delete, group/ungroup, lock/unlock, hide/show,
+edit points, sew-order moves (bring to front = sew last, forward, backward, send to
+back = sew first), flips and 90° rotation; right-clicking an unselected object selects
+it first. On empty canvas it offers paste, select all, unlock all (while anything is
+locked), zoom to fit and the grid toggle. Shift F10 or the Menu key opens it for the
+selection. Arrow keys, Home and End move between enabled items, Enter activates, and
+Escape, Tab or a click elsewhere closes it; it is positioned inside the window.
 
 The internal clipboard keeps stitch settings and survives reloads in this browser
 using localStorage; it is separate from the system clipboard. Paste selects the new

@@ -940,6 +940,20 @@ export const en={
   "Ctrl / ⌘ A": "Ctrl / ⌘ A",
   "Lock / unlock selection": "Lock / unlock selection",
   "Select all unlocked objects": "Select all unlocked objects",
+  "Cut": "Cut",
+  "Copy": "Copy",
+  "Paste": "Paste",
+  "Duplicate": "Duplicate",
+  "Lock": "Lock",
+  "Bring to front (sew last)": "Bring to front (sew last)",
+  "Bring forward (sew later)": "Bring forward (sew later)",
+  "Send backward (sew earlier)": "Send backward (sew earlier)",
+  "Send to back (sew first)": "Send to back (sew first)",
+  "Select all": "Select all",
+  "Zoom to fit": "Zoom to fit",
+  "Canvas actions": "Canvas actions",
+  "Right-click / Shift F10": "Right-click / Shift F10",
+  "Open the canvas menu": "Open the canvas menu",
 } as const;
 export type Key=keyof typeof en;
 export const tr={
@@ -1882,6 +1896,20 @@ export const tr={
   "Ctrl / ⌘ A": "Ctrl / ⌘ A",
   "Lock / unlock selection": "Seçimi kilitle / kilidini aç",
   "Select all unlocked objects": "Kilitsiz tüm nesneleri seç",
+  "Cut": "Kes",
+  "Copy": "Kopyala",
+  "Paste": "Yapıştır",
+  "Duplicate": "Çoğalt",
+  "Lock": "Kilitle",
+  "Bring to front (sew last)": "En öne getir (en son dikilir)",
+  "Bring forward (sew later)": "Bir öne getir (daha sonra dikilir)",
+  "Send backward (sew earlier)": "Bir geriye gönder (daha önce dikilir)",
+  "Send to back (sew first)": "En geriye gönder (ilk dikilir)",
+  "Select all": "Tümünü seç",
+  "Zoom to fit": "Kasnağa sığdır",
+  "Canvas actions": "Tuval işlemleri",
+  "Right-click / Shift F10": "Sağ tık / Shift F10",
+  "Open the canvas menu": "Tuval menüsünü aç",
 } satisfies Record<Key,string>;
 export const dictionaries={en,tr};
 export type Values=Record<string,string|number>;

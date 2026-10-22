@@ -15,3 +15,7 @@ export function zoomViewport(view:Viewport,anchor:Point,requestedZoom:number,hoo
 export function panViewport(view:Viewport,delta:Point,scale:number):Viewport {
   return {...view,pan:[view.pan[0]-delta[0]/scale,view.pan[1]-delta[1]/scale]};
 }
+export function worldToClient(view:Viewport,world:Point,rect:{left:number;top:number;width:number;height:number},hoop:{width:number;height:number}):Point {
+  const width=hoop.width*1.18/view.zoom,height=hoop.height*1.18/view.zoom,scale=viewportScale(view,rect,hoop);
+  return [(world[0]-hoop.width/2-view.pan[0]+width/2)*scale+rect.left+(rect.width-width*scale)/2,(world[1]-hoop.height/2-view.pan[1]+height/2)*scale+rect.top+(rect.height-height*scale)/2];
+}
