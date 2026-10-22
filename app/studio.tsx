@@ -583,8 +583,8 @@ function StudioEditor() {
       if(e.key==='Enter'&&hasDraft){e.preventDefault();finish();return;}
       if(e.key==='Enter'&&editing){e.preventDefault();finishEditing();return;}
       if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();if(hasDraft){if(canUndoDraft)popDraft();}else if(editing)removePoint();else deleteSelected();return;}
-      if(!hasDraft&&e.key.toLowerCase()==='a'){e.preventDefault();toggleAngles();return;}
-      if(!hasDraft&&!editing&&e.key.toLowerCase()==='w'){e.preventDefault();redwork();return;}
+      if(tool==='select'&&!hasDraft&&!e.ctrlKey&&!e.metaKey&&(e.key.toLowerCase()==='a'||e.key.toLowerCase()==='f'&&!!item&&guideMode(item)==='flow')){e.preventDefault();toggleAngles();return;}
+      if(tool==='select'&&!hasDraft&&!editing&&!e.ctrlKey&&!e.metaKey&&e.key.toLowerCase()==='w'){e.preventDefault();redwork();return;}
       const key=e.key.toLowerCase(),next=tools.find(t=>t.key.toLowerCase()===key||t.alt?.toLowerCase()===key);if(next){e.preventDefault();chooseTool(next.id);}
     };
     const keyup=(e:KeyboardEvent)=>{setAngleSnap(e.ctrlKey||e.metaKey);if(e.code==='Space')setSpacePan(false);};
@@ -755,7 +755,7 @@ function StudioEditor() {
     const order={front:'bottom',forward:'down',backward:'up',back:'top'} as const;
     if(action==='cut'||action==='copy')copySelected(action==='cut');else if(action==='paste'||action==='duplicate')pasteSelected(action==='duplicate');
     else if(action==='delete')deleteSelected();else if(action==='group')groupSelection();else if(action==='ungroup')ungroupSelection();
-    else if(action==='lock'||action==='unlock')lockSelection();else if(action==='hide'||action==='show')hideObjects(selection);else if(action==='editPoints')editObject();
+    else if(action==='lock'||action==='unlock')lockSelection();else if(action==='hide'||action==='show')hideObjects(selection);else if(action==='editPoints')editObject();else if(action==='editAngles'||action==='editFlow')toggleAngles();else if(action==='redwork'||action==='breakApart')redwork();
     else if(action==='front'||action==='forward'||action==='backward'||action==='back')reorderSelection(order[action]);
     else if(action==='flipH'||action==='flipV'||action==='rotate')selectionAction(action);else if(action==='selectAll')selectAll();else if(action==='unlockAll')unlockEverything();
     else if(action==='cutHoles')applyShape(()=>cutHoles(current.current,selection,cutKeep,t));
@@ -804,7 +804,7 @@ function StudioEditor() {
   // Edit angles (A): a fill without guides starts with one across its bounds at the current angle.
   function toggleAngles(){if(!item||!guideMode(item)||item.locked)return;if(angles){setAngleMode(false);return;}setEditPoints(false);if(!item.angleGuides?.length&&guideMode(item)==='angles')updateObject(withGuides(item,[seedGuide(item)]));setAngleMode(true);}
   // Convert to redwork / Break apart (W): one undo step; the result is selected.
-  function redwork(){const ids=editableSelection();if(canBreakApart(project,ids)){const r=breakApart(project,ids[0]);if(r){commit(r.project,t('Redwork broken apart'));setSelection(r.ids);}return;}const r=canConvertToRedwork(project,ids)?convertToRedwork(project,ids,t):null;if(r){commit(r.project,t('Converted to redwork'));setSelected(r.id);}else if(ids.length)setMessage(t('Redwork sews each line twice, so choose lines and outlines without text.'));}
+  function redwork(){const ids=selection;if(current.current.objects.some(o=>ids.includes(o.id)&&o.locked)){setMessage(t('Locked objects can’t be changed. Unlock them first.'));return;}if(canBreakApart(project,ids)){const r=breakApart(project,ids[0]);if(r){commit(r.project,t('Redwork broken apart'));setSelection(r.ids);}return;}const r=canConvertToRedwork(project,ids)?convertToRedwork(project,ids,t):null;if(r){commit(r.project,t('Converted to redwork'));setSelected(r.id);}else if(ids.length)setMessage(t('Redwork sews each line twice, so choose lines and outlines without text.'));}
   function editObject(){if(current.current.objects.find(o=>o.id===selected)?.kind==='redwork')return;setTool('select');setEditPoints(true);setActivePoint(null);setPointMode('move');}
   const draftSpline=continuation?project.objects.find(o=>o.id===continuation.id)?.curve?.spline:'levien';
   const displayDraft=useMemo(()=>pathTool(tool)?curvePoints(draft,false,corners,draftSpline):draft,[tool,draft,corners,draftSpline]);

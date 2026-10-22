@@ -133,8 +133,11 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   overfilled. The gradient is hidden while guides sweep; underlays stay straight
   at the stitch angle. For Streamlines the same editor is *Edit flow field*: the
   arrows set the flow (Ember's inverse-square segment weights). Circular and
-  cross stitch fills have no guides. Guides move with the shape, are saved, undo
-  as one step per gesture and export to SVG.
+  cross stitch fills have no guides; F also opens *Edit flow field*. Guides move
+  with the shape (transform box, flip, rotate, map-to-path copies), are saved,
+  undo as one step per gesture and export to SVG. Shape operations keep them as
+  they are, knife pieces included, since they are directions in hoop space.
+  Locked or hidden fills can't be edited; the canvas menu has *Edit angles*.
 - **Redwork** (key W, or *Convert to redwork* in the settings): merges the
   selected lines and fill outlines (not text) into one redwork object (stitch
   length 2 mm) that keeps its sources; *Break apart* restores them where the
@@ -143,6 +146,8 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   continuous walk per connected group (Tarry's rule: an Euler circuit of the
   doubled lines, preferring unsewn pieces and the straightest continuation), so
   there are no trims inside a group; separate groups are joined nearest-first.
+  Locked objects block the conversion; the canvas menu has *Convert to redwork*
+  or *Break apart*. Shape operations leave redwork out, so its sources stay true.
 - **Satin blocks** (Blocks tool, key 3): click rail points alternately left,
   right, left, right (each pair is a rung; Enter finishes; at least two rungs, an
   unpaired last click is dropped). While drawing, both rails, the rungs and a

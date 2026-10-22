@@ -59,7 +59,7 @@ not applicable.
 | E | Start/end editing | partial: entry/exit handles are always visible on the selection |
 | A | Edit angles | yes (also Edit flow field for Streamlines) |
 | G | Edit gradient | **no** (see the fill spec) |
-| F | Edit the streamline flow field | **no** (see the patterns spec) |
+| F | Edit the streamline flow field | yes (Streamlines fills; A also works) |
 | P | Map to path | yes via object settings; P remains the Points tool |
 | W | Convert to redwork | yes (W also breaks a redwork apart) |
 | 7 | Click to stitch (one image selected) | yes (selected or top visible image) |

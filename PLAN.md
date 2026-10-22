@@ -193,6 +193,14 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Deviations: our own field blend (Ember's module 88458 is only outlined); turns along the outline
   can be long where rows run nearly parallel to it; sweep satin has no facet decomposition.
   Browser check pending for guide drawing, dragging and redwork conversion.
+  Merge follow-ups: canvas menu Edit angles / Edit flow field (one unlocked visible guided fill;
+  shown disabled when locked or hidden) and Convert to redwork / Break apart (canConvertToRedwork /
+  canBreakApart; any locked object in the selection disables it, and W then refuses with the locked
+  notice). A, F and W act only in the Select tool without Ctrl/⌘. Shortcut audit: tool keys S/V, H, M,
+  1–4, P, T, R, O, K, 7; actions A, F (Streamlines only), W, Shift H/V, ?; no clashes. Ember's H (cut
+  holes), R (reshape), P (map to path) and K stay as before (H pans, R shapes, P points, O cuts holes).
+  Shape operations keep angle guides unchanged (world-space directions, knife pieces too) and skip
+  redwork; map-to-path copies get guides and redwork sources through `moveGeometry`.
   Remaining: draggable Circular centre handle, curved (polyline) flow guides.
   Exact definitions in `docs/ember-patterns-spec.md`.
 - **Entry/exit handle size** (done: it was Chrome's default focus outline on the handle after a click). The selected object's entry/exit handle sometimes shows as a large dark
