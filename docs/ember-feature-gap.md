@@ -57,11 +57,11 @@ not applicable.
 | H | Cut holes | **no** |
 | K | Knife | **no** |
 | E | Start/end editing | partial: entry/exit handles are always visible on the selection |
-| A | Edit angles | **no** (see the fill spec) |
+| A | Edit angles | yes (also Edit flow field for Streamlines) |
 | G | Edit gradient | **no** (see the fill spec) |
 | F | Edit the streamline flow field | **no** (see the patterns spec) |
 | P | Map to path | yes via object settings; P remains the Points tool |
-| W | Convert to redwork | **no** |
+| W | Convert to redwork | yes (W also breaks a redwork apart) |
 | 7 | Click to stitch (one image selected) | yes (selected or top visible image) |
 | 8 | Auto digitize (one image selected) | partial (Auto trace button) |
 
@@ -109,10 +109,10 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Cut holes (H) | One unlocked fill object. You draw closed shapes (left click = corner, right/double click = curve point), and each finished shape becomes a hole in the fill (`K0.addHole`, class `ep`). Holes get their own small menu ("Delete hole"). The toolbar hides resize handles and control points while this mode is active. | free | **no**. Traced regions keep holes as extra `rings`, but you can't add, edit or delete holes on curve objects |
 | Knife (K) | One or more unlocked shapes. You draw a cut path (corner/curve clicks; Ctrl/⌘ snaps). On Enter the path is sampled at 7.5 units, and each selected shape it crosses is split into separate shapes (`3865` `handleCompleteKnife`, command `sp`, `didCut`). | free | **no** |
 | Start/end (E) | Set the start and end points for one fill, Blocks or outline object, or for a whole group (`groupRouteEnds`). | free | partial: per object only, no group ends |
-| Edit angles (A) / Edit gradient (G) / Edit flow field (F) | See `docs/ember-fill-spec.md` §2.3 and §2.8 and `docs/ember-patterns-spec.md` | gradient Pro | no |
+| Edit angles (A) / Edit gradient (G) / Edit flow field (F) | See `docs/ember-fill-spec.md` §2.3 and §2.8 and `docs/ember-patterns-spec.md` | gradient Pro | Edit angles and Edit flow field (straight guides) yes; Edit gradient no |
 | Map to path (P) | Select the shapes and click an open path (hover highlights valid paths: open, ≥ 2 points, not text, not letters). Copies of the selection are placed along the path. **Repeat**: *Fill* ("Pack as many as fit and stretch across the path") or *Count* ("Place an exact number of repeats", min 1). **Rotate** ("Rotate objects to follow the path tangent"), **Reverse**, **Hide path** ("Keep the path for layout but hide it from stitches and the sequencer"). Start, end and mid handles are draggable; Accept or Reject. The result is a live binding (`pathAlongBindings`), so editing the path or the prototype re-lays the copies. Edit map to path / Detach from path. | **Pro** | yes: object settings Map to path; Fill / Count / Spacing, rotate, reverse, offset, centre alignment, hidden guide, live group binding and Unlink. Preview and numeric controls; no draggable layout handles |
-| Convert to redwork (W) | ≥ 1 outline object (or existing redwork plus more). Merges them into one `redwork` object that keeps its sources, with a stitch length (default 2 mm). Stitches come from one route over all the source lines that sews each line twice with no trims (`5729` module 56547, class `c`, `canConvertSelection`). Resizing transforms the sources. | **Pro** | **no** (in TODO "More stitch types") |
-| Break apart redwork | Restores the source outline objects | **Pro** | **no** |
+| Convert to redwork (W) | ≥ 1 outline object (or existing redwork plus more). Merges them into one `redwork` object that keeps its sources, with a stitch length (default 2 mm). Stitches come from one route over all the source lines that sews each line twice with no trims (`5729` module 56547, class `c`, `canConvertSelection`). Resizing transforms the sources. | **Pro** | yes (`redwork` kind, sources kept and transformed; Tarry Euler walk in `embroidery/redwork.py`) |
+| Break apart redwork | Restores the source outline objects | **Pro** | yes |
 | Flatten | ≥ 2 unlocked fill objects. For every pair whose outlines overlap by ≥ 1 unit², taken in sew order, the **later** object's outline is added as a hole in the **earlier** one, so the lower fill no longer sews under the upper one. One undo step ("Flatten N holes into shape"; `2723` class `ec`, planner `lJ` in module 43408, which uses polygon-clipping `intersection`). | free | **no** |
 | Split SVG | One SVG image. Converts it into native shapes: fills become fill objects, strokes become outline objects, holes are flattened into the fills, and stroke gaps under 1 mm are joined (`rA(image,{flattenHoles:true, joinStrokeGapMm:1})`). | free | yes: native shapes (one group added to the design) or a reference image to trace; fills/holes, running/satin strokes, basic CSS and transforms |
 | Click to stitch (7) | One image. Traces it into candidate regions (raster images via server `/api/vectorize`, SVG directly), then shows them. "Click on a region to convert it to stitches. Drag to select multiple regions at once." Converted regions use the current run/fill template (`rQ`). | **Pro** | yes: Click to stitch (7) flood-fills the clicked colour (tolerance slider) with a hover preview; click adds a Tatami fill, Shift-click a running outline. No drag-select of several regions |
@@ -330,7 +330,7 @@ tests and README.
     rotation; a list in the Artwork tab with reorder; paste an image from the clipboard; the eyedropper samples
     the top visible image.
 
-22. **Redwork (convert outlines to a no-trim double pass)** · L · depends on 13 for closed sources
+22. **Redwork (convert outlines to a no-trim double pass)** · L · depends on 13 for closed sources · **done**
     *Value:* a classic beginner style that is clean on baby items, already in the TODO. *Scope:* a `redwork`
     object kind holding source curves and a stitch length (default 2 mm). The compiler builds the line graph,
     splits at intersections and endpoints, doubles every edge and walks an Euler circuit starting near the

@@ -1,5 +1,6 @@
 """Evenly spaced RK4 streamlines. Ember's unknown noise table is not copied.
-The default smooth angle field is translation-invariant around the shape bbox.
+The default smooth angle field is translation-invariant around the shape bbox; angle
+guides, when set, give Ember's flow field from guides instead (sweep.guide_field).
 """
 import math
 from collections import deque
@@ -40,11 +41,13 @@ def rk4(p, step, field):
     return [p[i]+step*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6 for i in (0,1)]
 
 
-def generate(rings, angle, separation):
+def generate(rings, angle, separation, guides=None):
     points = [p for r in rings for p in r]
     lo,hi = [min(p[i] for p in points) for i in (0,1)],[max(p[i] for p in points) for i in (0,1)]
     center = [(lo[i]+hi[i])/2 for i in (0,1)]
-    field,h,test = flow_field(angle,center),.1,separation/2
+    if guides:
+        from .sweep import guide_field
+    field,h,test = guide_field(guides) if guides else flow_field(angle,center),.1,separation/2
     accepted,lines,queue = SpatialHash(separation),[],deque([center])
     fallback = ([lo[0]+(i+.5)*separation,lo[1]+(j+.5)*separation] for j in range(math.ceil((hi[1]-lo[1])/separation)) for i in range(math.ceil((hi[0]-lo[0])/separation)))
     in_box = lambda p:all(lo[i]<=p[i]<=hi[i] for i in (0,1))
@@ -85,7 +88,7 @@ def generate(rings, angle, separation):
 def route_streamlines(obj, at, entry, target):
     rings,rule = obj['rings'],obj.get('fillRule','evenodd')
     separation = obj.get('patternParams',{}).get('separation',1.5)
-    lines = clip_lines(generate(rings,obj.get('angle',0),separation),rings,rule)
+    lines = clip_lines(generate(rings,obj.get('angle',0),separation,obj.get('angleGuides')),rings,rule)
     # Ember's redwork router doubles every streamline and every boundary ring.
     # Nearest-first routing with safe in-shape travel replaces its Euler router.
     lines += [r+[r[0]] for r in rings]

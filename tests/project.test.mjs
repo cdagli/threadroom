@@ -328,7 +328,8 @@ test('Non-row panels render translated controls and hide settings the engine ign
   const code=ts.transpileModule(readFileSync(new URL('../app/fill-settings.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
   for(const lang of ['en','tr']){
     const t=createT(lang),module={exports:{}};
-    const require=id=>id==='./i18n'?{useT:()=>({t})}:id.startsWith('@/lib/')?load(id.slice(6)):requireNode(id);
+    // Sibling app components (./angle-settings) are transpiled with the same loader.
+    const require=id=>id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?(()=>{const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(new URL(`../app/${id.slice(2)}.tsx`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;})():requireNode(id);
     new Function('module','exports','require',code)(module,module.exports,require);
     const {FillSettings,CrossSettings}=module.exports;
     const render=fillPattern=>{const item={...object('Fill',[square]),fillPattern};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100}}));};

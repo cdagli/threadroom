@@ -55,12 +55,14 @@ def clean(path, region=None, tolerance=.001):
     return out
 
 
-def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None):
+def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reorient=False, tolerance=None):
     """Nearest-first pieces; safe interior/boundary travel or a forced trim.
-    Each piece is a list of (needle path, split limit) passes (underlay first)."""
+    Each piece is a list of (needle path, split limit) passes (underlay first);
+    reorient lets each pass start at either end."""
     rings, rule = obj['rings'], obj.get('fillRule','evenodd')
     region, grid = C.Region(rings,rule), C.Grid(rings,rule)
-    tolerance = .001+obj['pullCompensation']/2 if obj.get('fillPattern') == 'sweepSatin' else .001
+    if tolerance is None:
+        tolerance = .001+obj['pullCompensation']/2 if obj.get('fillPattern') == 'sweepSatin' else .001
     out, cur = [], entry or at
     pending = list(pieces)
     last = min(pending,key=lambda ps:min(math.dist(p,target) for p in (ps[-1][0][0],ps[-1][0][-1]))) if target and pending and not ordered else None
@@ -70,7 +72,7 @@ def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None):
         passes = pending.pop(index)
         if not pending and target and obj.get('fillPattern') == 'sweepSatin' and math.dist(passes[-1][0][0],target)<math.dist(passes[-1][0][-1],target):
             passes = passes[:-1]+[(passes[-1][0][::-1],passes[-1][1])]
-        if obj.get('fillPattern') in ('sweepSatin','circular') or obj.get('crossStyle')=='half':
+        if reorient or obj.get('fillPattern') in ('sweepSatin','circular') or obj.get('crossStyle')=='half':
             oriented, prev = [], cur
             for j,(path,limit) in enumerate(passes):
                 aim = target if not pending and j==len(passes)-1 else None

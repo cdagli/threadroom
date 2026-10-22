@@ -47,6 +47,10 @@ import {PointHandles} from './point-handles';
 import {useStableCallback} from './use-stable-callback';
 import {ShapeTools,KnifeOverlay} from './shape-tools';
 import {combineShapes,cutHole,cutHoles,flattenOverlaps,knifeShapes,shapeRegion,type ShapeResult} from '@/lib/shape-ops';
+import {AngleGuideEditor} from './angle-guides';
+import {RedworkAction} from './redwork-action';
+import {guideMode,seedGuide,withGuides} from '@/lib/angle-guides';
+import {breakApart,canBreakApart,canConvertToRedwork,convertToRedwork} from '@/lib/redwork';
 import {changedObjectIds, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
 import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
@@ -205,7 +209,7 @@ function StudioEditor() {
   const transformDrag=useRef<{before:Project;ids:string[];box:ReturnType<typeof selectionBounds>;start:Point;angle:number;handle:ScaleHandle|'rotate'|'move';image?:string}|null>(null);
   useEffect(()=>{setMessage('');setError('');setPickHint('');},[lang]);
   const [designIssues,setDesignIssues]=useState<Warning[]>([]),[checkError,setCheckError]=useState(''),[focusKey,setFocusKey]=useState<string|null>(null);
-  const [editPoints,setEditPoints]=useState(false);
+  const [editPoints,setEditPoints]=useState(false),[angleMode,setAngleMode]=useState(false);
   const [panelTab,setPanelTab]=useState<PanelTab>('layers'),[panelOpen,setPanelOpen]=useState(true);
   const [pointMode,setPointMode]=useState<'move'|'add'|'remove'>('move'),[activePoint,setActivePoint]=useState<[number,number]|null>(null);
   const [continuation,setContinuation]=useState<{id:string;fromStart:boolean;base:number}|null>(null);
@@ -243,6 +247,7 @@ function StudioEditor() {
   const viewX=hoop.width/2-viewWidth/2+pan[0], viewY=hoop.height/2-viewHeight/2+pan[1];
   const canvasScale=viewportScale({zoom,pan},canvasSize,hoop)||1;
   const editing=editPoints&&tool==='select'&&!!item&&!item.hidden&&!item.locked&&!multi&&!item.text&&!hasDraft;
+  const angles=angleMode&&tool==='select'&&!!item&&!item.hidden&&!item.locked&&!multi&&!editing&&!hasDraft&&!!guideMode(item),flowGuides=!!item&&guideMode(item)==='flow';
   const handles=useMemo(()=>editing&&item?insertionHandles(item):[],[editing,item]);
   const addPreview=editing&&pointMode==='add'&&item&&hover?closestInsertion(item,hover):null;
   const canUndoDraft=hasDraft&&draft.length>(continuation?.base||0);
@@ -257,6 +262,7 @@ function StudioEditor() {
     return()=>{observer.disconnect();canvas.removeEventListener('wheel',wheel);};
   },[]);
   useEffect(()=>{setActivePoint(null);setPointMode('move');},[selected,editPoints]);
+  useEffect(()=>setAngleMode(false),[selected,tool]);
   useEffect(()=>{if(tool!=='open')setPathTarget(null);},[tool]);
   const missingGlyphs=useMemo(()=>{
     if(!item?.text||fontLoading)return [];void fontsReady;
@@ -577,6 +583,8 @@ function StudioEditor() {
       if(e.key==='Enter'&&hasDraft){e.preventDefault();finish();return;}
       if(e.key==='Enter'&&editing){e.preventDefault();finishEditing();return;}
       if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();if(hasDraft){if(canUndoDraft)popDraft();}else if(editing)removePoint();else deleteSelected();return;}
+      if(!hasDraft&&e.key.toLowerCase()==='a'){e.preventDefault();toggleAngles();return;}
+      if(!hasDraft&&!editing&&e.key.toLowerCase()==='w'){e.preventDefault();redwork();return;}
       const key=e.key.toLowerCase(),next=tools.find(t=>t.key.toLowerCase()===key||t.alt?.toLowerCase()===key);if(next){e.preventDefault();chooseTool(next.id);}
     };
     const keyup=(e:KeyboardEvent)=>{setAngleSnap(e.ctrlKey||e.metaKey);if(e.code==='Space')setSpacePan(false);};
@@ -793,7 +801,11 @@ function StudioEditor() {
     if(next==='stitch'&&next!==tool){const image=activeImage(current.current,imageSel);if(!image||image.hidden){setError(t("Show a reference image to use Click to stitch."));return;}setStitchImage(image.id);setShowImage(true);void workingPixels(image).catch(e=>setError(errorText(e,t,'Could not read the reference image.')));}if(next==='holes'&&next!==tool&&!(item&&!multi&&isFillKind(item.kind)&&!item.hidden&&!item.locked&&shapeRegion(item))){setError(t("Select a fill to cut holes in."));return;}if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
   function fitArtwork(width=art?.width||hoop.width,height=art?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
-  function editObject(){setTool('select');setEditPoints(true);setActivePoint(null);setPointMode('move');}
+  // Edit angles (A): a fill without guides starts with one across its bounds at the current angle.
+  function toggleAngles(){if(!item||!guideMode(item)||item.locked)return;if(angles){setAngleMode(false);return;}setEditPoints(false);if(!item.angleGuides?.length&&guideMode(item)==='angles')updateObject(withGuides(item,[seedGuide(item)]));setAngleMode(true);}
+  // Convert to redwork / Break apart (W): one undo step; the result is selected.
+  function redwork(){const ids=editableSelection();if(canBreakApart(project,ids)){const r=breakApart(project,ids[0]);if(r){commit(r.project,t('Redwork broken apart'));setSelection(r.ids);}return;}const r=canConvertToRedwork(project,ids)?convertToRedwork(project,ids,t):null;if(r){commit(r.project,t('Converted to redwork'));setSelected(r.id);}else if(ids.length)setMessage(t('Redwork sews each line twice, so choose lines and outlines without text.'));}
+  function editObject(){if(current.current.objects.find(o=>o.id===selected)?.kind==='redwork')return;setTool('select');setEditPoints(true);setActivePoint(null);setPointMode('move');}
   const draftSpline=continuation?project.objects.find(o=>o.id===continuation.id)?.curve?.spline:'levien';
   const displayDraft=useMemo(()=>pathTool(tool)?curvePoints(draft,false,corners,draftSpline):draft,[tool,draft,corners,draftSpline]);
   const closeHover=(tool==='open'||tool==='closed'||tool==='holes')&&draft.length>2&&!!hover&&Math.hypot(hover[0]-draft[0][0],hover[1]-draft[0][1])*canvasScale<12;
@@ -951,10 +963,11 @@ function StudioEditor() {
                 {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="var(--travel-jump)" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="var(--travel-line)" strokeWidth={2/canvasScale} strokeLinecap="round"/></g>}</>
               {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||!!o.layoutOnly&&!selection.includes(o.id)||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
               {focus&&<IssueMarker focus={focus} canvasScale={canvasScale}/>}
-              {tool==='select'&&!editing&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
-              {tool==='select'&&!hasDraft&&!selection.length&&imageBox&&<TransformBox box={imageBox} canvasScale={canvasScale}/>}
+              {angles&&item&&<AngleGuideEditor guides={item.angleGuides??[]} canvasScale={canvasScale} onChange={guides=>updateObject(withGuides(item,guides))} onExit={()=>{setAngleMode(false);svg.current?.focus({preventScroll:true});}}/>}
+              {tool==='select'&&!editing&&!angles&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
+              {tool==='select'&&!angles&&!hasDraft&&!selection.length&&imageBox&&<TransformBox box={imageBox} canvasScale={canvasScale}/>}
               {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
-              {ends&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
+              {ends&&!angles&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
               {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'||tool==='holes'} closeHover={closeHover} color={item?.color||palette[3]} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} blocks={tool==='blocks'} corners={corners} canvasScale={canvasScale}/>}
               {tool==='knife'&&shapeDraft&&<KnifeOverlay a={shapeDraft.start} b={shapeDraft.square?snapAngle(shapeDraft.start,shapeDraft.end):shapeDraft.end} canvasScale={canvasScale}/>}
@@ -975,7 +988,7 @@ function StudioEditor() {
       </header>
       <div className="top-actions">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title={t("Design check: problems that could spoil the stitch-out")} aria-label={t("Design check: {v0}{v1}",{v0:badge,v1:fails?t(', {v0} likely to fail',{v0:fails}):''})}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={t('exportWarning.other',{count:fails})}>{t('failsSummary',{count:fails})}</small>}</button>}<Button label={t("Export PES")} size="sm" variant="primary" isLoading={busy} isDisabled={hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}/></div>
       {<div className="tool-banner">
-        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
+        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
         {!colourPick&&(pathTool(tool)||tool==='points'||tool==='stitch'||editing||tool==='select'&&item)&&<div className="banner-actions">
           {tool==='stitch'&&<div className="draw-actions"><label className="stitch-tolerance" title={t("How far a colour may differ from the clicked one and still join the area")}>{t("Colour tolerance")}<input type="range" min={toleranceLimits[0]} max={toleranceLimits[1]} step="1" value={tolerance} onChange={e=>{const n=Number(e.target.value);setTolerance(n);hoverStitch(cursor,n);}}/><output>{formatNumber(tolerance)}</output></label><Button label={t("Done")} variant="primary" size="sm" onClick={()=>chooseTool('select')}/></div>}
           {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</button><button title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</button><Button label={closedDraft?t("Close shape"):t("Done")} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
@@ -986,7 +999,7 @@ function StudioEditor() {
             {(item?.curve||item?.rails)&&(()=>{const corner=!!activePoint&&isCorner(item,...activePoint);return <button aria-label={corner?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1],activePoint[0])}><Icon name={corner?'curve':'closed'} size={15}/><span>{corner?t("Curve"):t("Corner")}</span></button>;})()}
             {item?.curve&&!item.curve.closed&&<button aria-label={t("Continue curve")} title={activePoint?.[1]===0?t("Continue from the first point"):t("Continue from the last point")} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>{t("Continue")}</span></button>}
           </div>}
-          {tool==='select'&&item&&!multi&&!item.hidden&&!item.locked&&!item.text&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
+          {tool==='select'&&item&&!multi&&!item.hidden&&!item.locked&&!item.text&&item.kind!=='redwork'&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
           {tool==='select'&&item?.text&&!item.locked&&<button className="edit-points-button" onClick={focusText}>{t("Edit text")}</button>}
         </div>}
       </div>}
@@ -1004,17 +1017,18 @@ function StudioEditor() {
         <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
         <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected}/>
         <ShapeTools project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
-        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
+        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><RedworkAction project={project} selection={selection} onRun={redwork}/><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
         <fieldset disabled={hasDraft||allLocked} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}
           <label><span className="field-heading">{t("Object name")}</span><input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
           <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
+          <RedworkAction project={project} selection={selection} onRun={redwork}/>
           <ThreadPicker project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/>
           {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&<div className="setting-grid"><label><span className="field-heading">{t("Length · mm")}</span><input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input"><span className="field-heading">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm{source('spacing')}</span><input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>}
           {['running','bean','backstitch'].includes(item.kind)&&<label><span className="field-heading">{t("Stitch tolerance · mm")}{item.tolerance!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({tolerance:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:.2})}</span>}</span><input type="number" min=".1" max="1" step=".1" value={item.tolerance??.2} onChange={e=>{const n=Number(e.target.value);if(n>=.1&&n<=1)updateObject({tolerance:n});}}/></label>}
-          {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop}/>}
+          {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop} angles={{active:angles,onToggle:toggleAngles}}/>}
           {item.kind==='cross'&&<><CrossSettings item={item} onChange={updateObject}/><StitchAngle value={item.angle} onChange={angle=>updateObject({angle})}/></>}
           {isRopeKind(item.kind)&&<label htmlFor="rope-width-input"><span className="field-heading">{t("Rope width · mm")}{item.ropeWidth!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({ropeWidth:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:ropeDefaults.width})}</span>}</span><input id="rope-width-input" type="number" min={ropeLimits.width[0]} max={ropeLimits.width[1]} step=".1" value={item.ropeWidth??ropeDefaults.width} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=ropeLimits.width[0]&&n<=ropeLimits.width[1])updateObject({ropeWidth:n});}}/></label>}
           {item.kind==='e-stitch'&&<label className="check-label"><input type="checkbox" checked={!!item.eFlipped} onChange={e=>updateObject({eFlipped:e.target.checked||undefined})}/>{t("Flip teeth to the other side")}</label>}

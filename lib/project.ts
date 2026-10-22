@@ -5,7 +5,9 @@ import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} 
 import {validText, type TextSpec} from './text';
 import {validImages} from './images';
 export type Point = [number, number];
-export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual' | 'double-rope' | 'triple-rope' | 'satin-block';
+export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual' | 'double-rope' | 'triple-rope' | 'satin-block' | 'redwork';
+// A straight angle guide across a fill (Ember's Edit angles), from a to b.
+export type AngleGuide = {a: Point; b: Point};
 // Two-rail satin block: left/right rail anchors paired by index (rung k = left[k], right[k]).
 export type Rails = {points: [Point[], Point[]]; corners?: [boolean[], boolean[]]};
 export type FillGradient = {mode:'ramp';start:number;end:number;endSpacing:number}|{mode:'plateau';center:number;width:number;endSpacing:number};
@@ -35,6 +37,9 @@ export type StitchObject = {
   ropeWidth?: number; // rope runs: offset either side (mm); unset is ropeDefaults.width
   eFlipped?: boolean; // E-stitch: teeth on the other side; unset keeps the original side
   text?: TextSpec;
+  angleGuides?: AngleGuide[]; // fills: 1 sets the angle, 2+ sweep the rows (lib/angle-guides.ts)
+  rowShortening?: boolean; densityTrigger?: number; // sweep density control; unset = on, 0.5
+  sources?: StitchObject[]; // redwork: the objects Break apart restores
   rotation?:number; // accumulated editor rotation, degrees
   fillRule?: 'nonzero'; // SVG winding, also set by geometryPayload for text
 };
@@ -64,8 +69,8 @@ export const hoops: Record<string, {width: number; height: number; label: Key}> 
   '300x200': {width: 300, height: 200, label: '300 × 200 mm'},
   '60x40': {width: 60, height: 40, label: '60 × 40 mm'},
 };
-export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', 'double-rope':'Double rope run', 'triple-rope':'Triple rope run', 'satin-block':'Satin block', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
-export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', 'double-rope':'A zigzag rope over a hidden double run', 'triple-rope':'A twisted rope sewn out and back', 'satin-block':'Satin between two drawn rails; the width can change', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
+export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', 'double-rope':'Double rope run', 'triple-rope':'Triple rope run', 'satin-block':'Satin block', redwork:'Redwork', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
+export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', 'double-rope':'A zigzag rope over a hidden double run', 'triple-rope':'A twisted rope sewn out and back', 'satin-block':'Satin between two drawn rails; the width can change', redwork:'Every line sewn out and back, with no trims', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
 export const isFillKind=(kind:Kind)=>kind==='fill'||kind==='cross';
 export const hasCrossStyle=(o:StitchObject)=>o.crossStyle!==undefined||(['crossSize','threadCount','coverage','dense','flipped'] as const).some(k=>o[k]!==undefined);
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
@@ -282,6 +287,10 @@ export function validProject(value: unknown): value is Project {
     if(o.rails!==undefined&&!validRails(o.rails,o))return false;
     if(o.ropeWidth!==undefined&&!inRange(o.ropeWidth,...ropeLimits.width))return false;
     if(o.eFlipped!==undefined&&typeof o.eFlipped!=='boolean')return false;
+    if(o.angleGuides!==undefined&&(!Array.isArray(o.angleGuides)||o.angleGuides.length>8||Array.from(o.angleGuides).some(g=>!g||typeof g!=='object'||!validPoint(g.a)||!validPoint(g.b)||Math.hypot(g.b[0]-g.a[0],g.b[1]-g.a[1])<.1)))return false;
+    if(o.rowShortening!==undefined&&typeof o.rowShortening!=='boolean'||o.densityTrigger!==undefined&&!inRange(o.densityTrigger,.1,1))return false;
+    // Redwork sources are plain objects (no groups, no nested redwork), validated like a project.
+    if(o.sources!==undefined&&(o.kind!=='redwork'||!Array.isArray(o.sources)||!o.sources.length||Array.from(o.sources).some(s=>!s||s.kind==='redwork'||s.group!==undefined)||!validProject({...p,objects:o.sources,groups:undefined,artwork:undefined})))return false;
   }
   if (p.images !== undefined && !validImages(p.images)) return false;
   if(new Set(p.objects.map(o=>o.id)).size!==p.objects.length)return false;

@@ -181,8 +181,19 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Deviations: our satin spacing semantics (one penetration per spacing, as satin lines) rather than
   Ember's rung pairs; pull is half per side as for satin; fractional spacing fixed at 1/3.
   Browser check pending for block drawing and editing.
-  Remaining: draggable Circular centre handle, flow-guide editing, multi-guide satin,
-  full Euler routing.
+  Angle guides and redwork **done**: Edit angles (key A, button in Fill settings) draws straight
+  guides (`angleGuides`, ≤ 8, arrows with draggable ends, Delete removes, crossing guides red); one
+  guide sets the angle, two or more sweep row fills and satin fill along level lines of an
+  inverse-square blend of the guides (`embroidery/sweep.py`), with Ember's Density control (row
+  shortening on, trigger 0.1–1, default 0.5) shown only while guides sweep; Streamlines use the
+  guides as a flow field (Edit flow field). Convert to redwork / Break apart (key W, settings
+  button) merges lines and fill outlines into a `redwork` object that keeps its sources; the
+  compiler nodes the lines and sews every edge once each way with Tarry's Euler walk, no trims
+  within a connected group (`embroidery/redwork.py`). Unset guides keep today's output byte-for-byte.
+  Deviations: our own field blend (Ember's module 88458 is only outlined); turns along the outline
+  can be long where rows run nearly parallel to it; sweep satin has no facet decomposition.
+  Browser check pending for guide drawing, dragging and redwork conversion.
+  Remaining: draggable Circular centre handle, curved (polyline) flow guides.
   Exact definitions in `docs/ember-patterns-spec.md`.
 - **Entry/exit handle size** (done: it was Chrome's default focus outline on the handle after a click). The selected object's entry/exit handle sometimes shows as a large dark
   ring with a light fill (reported 2026-10-22). Find the cause (handle radius from a stale canvas scale,

@@ -11,7 +11,7 @@ export function objectMenu(p:Project,ids:readonly string[],canPaste:boolean):Men
   const entries:MenuEntry[]=[{action:'cut',disabled:!editable},{action:'copy'},{action:'paste',disabled:!canPaste},{action:'duplicate'},'separator',
     {action:'delete',disabled:!editable},'separator',{action:'group',disabled:chosen.length<2},{action:'ungroup',disabled:!chosen.some(o=>o.group!==undefined)},
     {action:locked?'unlock':'lock'},{action:hidden?'show':'hide'}];
-  if(single&&!single.text&&!single.locked&&!single.hidden)entries.push({action:'editPoints'});
+  if(single&&!single.text&&!single.locked&&!single.hidden&&single.kind!=='redwork')entries.push({action:'editPoints'});
   entries.push('separator',{action:'front',disabled:ids.includes(last??'')},{action:'forward',disabled:ids.includes(last??'')},{action:'backward',disabled:ids.includes(first??'')},{action:'back',disabled:ids.includes(first??'')},
     'separator',{action:'flipH',disabled:!editable},{action:'flipV',disabled:!editable},{action:'rotate',disabled:!editable});
   // Shape operations, enabled as in the Shape tools section (locked objects and satin Blocks don't count).

@@ -116,6 +116,33 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   within 1 mm. Both end at the far end of a line.
 - **E-stitch flip** puts the stem on the other edge (teeth point the other way);
   unset keeps the original side.
+- **Edit angles** (key A, or *Edit angles* in Fill settings): click twice to draw
+  an angle guide across a fill; drag either end to move it, Delete removes the
+  guide whose end is selected, Escape leaves. Guides show as arrows; crossing or
+  touching guides turn red and are ignored (the first sets the angle). A fill
+  without guides starts with one across its bounds at the current angle. One
+  guide sets the stitch angle (turning the angle input turns the guide). Two or
+  more (up to 8) bend row fills and satin fill: each guide has its own straight
+  rows and the fill blends them with inverse-square weights by distance to the
+  guide, so rows run parallel to every guide and turn smoothly between them.
+  Rows are spaced so the widest gap is the row space; *Density control* (shown
+  only while guides sweep, like Ember) has *Row shortening* (on) and *Density
+  trigger* (0.1–1, default 0.5): where neighbouring rows come closer than
+  trigger × row space, the two rows sharing a turn there stop short, recursively
+  (each further level halves the limit), so the inside of a bend is not
+  overfilled. The gradient is hidden while guides sweep; underlays stay straight
+  at the stitch angle. For Streamlines the same editor is *Edit flow field*: the
+  arrows set the flow (Ember's inverse-square segment weights). Circular and
+  cross stitch fills have no guides. Guides move with the shape, are saved, undo
+  as one step per gesture and export to SVG.
+- **Redwork** (key W, or *Convert to redwork* in the settings): merges the
+  selected lines and fill outlines (not text) into one redwork object (stitch
+  length 2 mm) that keeps its sources; *Break apart* restores them where the
+  redwork now is. The compiler splits the lines where they cross or touch and
+  sews every piece exactly twice, out and back over the same holes, as one
+  continuous walk per connected group (Tarry's rule: an Euler circuit of the
+  doubled lines, preferring unsewn pieces and the straightest continuation), so
+  there are no trims inside a group; separate groups are joined nearest-first.
 - **Satin blocks** (Blocks tool, key 3): click rail points alternately left,
   right, left, right (each pair is a rung; Enter finishes; at least two rungs, an
   unpaired last click is dropped). While drawing, both rails, the rungs and a
