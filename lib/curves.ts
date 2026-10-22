@@ -210,7 +210,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
     const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?tolerant(o)?closedRings:closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
     if(!text.border||!(o.kind==='fill'||o.kind==='cross'))return [letters];
     const b=text.border,outline=mergedOutline(o.rings);
-    return [letters,{...plain,tolerance:undefined,entry:undefined,exit:undefined,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',splitLength:Number(profileDefault(b.kind,fabric,'splitLength')??0),shortStitches:profileDefault(b.kind,fabric,'shortStitches')===true,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
+    return [letters,{...plain,tolerance:undefined,entry:undefined,exit:undefined,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,thread:b.thread??(b.color.toLowerCase()===o.color.toLowerCase()?o.thread:undefined),satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',splitLength:Number(profileDefault(b.kind,fabric,'splitLength')??0),shortStitches:profileDefault(b.kind,fabric,'shortStitches')===true,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];
   })};
 }
 

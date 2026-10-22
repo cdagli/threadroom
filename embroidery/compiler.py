@@ -25,6 +25,7 @@ import re
 import heapq
 import time
 
+from .threads import valid_thread
 from .patterns import FILL_PATTERNS, pattern_cycle
 
 from pystitch import (EmbPattern, EmbThread, STITCH, JUMP, TRIM,
@@ -79,6 +80,8 @@ def validate(project):
             raise ValueError("Unknown stitch type.")
         if not isinstance(obj.get("color"), str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", obj["color"]):
             raise ValueError("Thread colours must use six-digit hex values.")
+        if "thread" in obj and not valid_thread(obj["thread"], obj["color"]):
+            raise ValueError("Choose a valid Brother PEC thread matching the colour.")
         rings = obj.get("rings")
         if not isinstance(rings, list) or not 1 <= len(rings) <= 500:
             raise ValueError("An object needs at least one path.")
@@ -1396,7 +1399,7 @@ def compile_project(project):
     # no ties: pystitch writes every PEC jump after the first with the trim flag
     # (0x20) and drops TRIM itself, so a jump that must not trim is a stitch.
     color, last, trims, cuts = None, None, 0, []
-    for index, obj, chunks, points in runs:
+    for run_index, (index, obj, chunks, points) in enumerate(runs):
         changes = obj["color"].lower() != color
         trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump)
         if trim:
@@ -1413,6 +1416,20 @@ def compile_project(project):
             thread.set_hex_color(color)
             thread.description = str(obj.get("name", "Thread"))[:40].encode("ascii", "ignore").decode()
             thread.brand = "Threadroom"
+            # Same-RGB objects share a colour block. Prefer an assigned catalogue
+            # thread anywhere in that block, even when its first object is custom.
+            catalogue = None
+            for _, other, _, _ in runs[run_index:]:
+                if other["color"].lower() != color:
+                    break
+                if other.get("thread"):
+                    catalogue = other["thread"]
+                    break
+            if catalogue is not None:
+                thread.description = catalogue["name"]
+                thread.catalog_number = catalogue["code"]
+                thread.brand = "Brother"
+                thread.chart = "Brother"
             pattern.add_thread(thread)
         if last is None or trim:
             # Land with a stitch: pystitch encodes the first stitch after a trim as
@@ -1440,7 +1457,10 @@ def compile_project(project):
     connectors = {(round(a[0], 1), round(a[1], 1), round(b[0], 1), round(b[1], 1)) for a, b in zip(trace, trace[1:]) if b[3] == "connect"}
     commands, threads = [], []
     for thread in decoded.threadlist:
-        threads.append({"color": thread.hex_color(), "name": thread.description or "Thread"})
+        entry = {"color": thread.hex_color(), "name": thread.description or "Thread"}
+        if thread.brand == "Brother" and valid_thread({"brand": "brother", "code": thread.catalog_number, "name": thread.description}, thread.hex_color()):
+            entry["thread"] = {"brand": "brother", "code": thread.catalog_number, "name": thread.description}
+        threads.append(entry)
     block, cut = 0, False
     last = [width/2, height/2]
     sewn = []

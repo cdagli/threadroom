@@ -173,3 +173,13 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Desktop browser interaction check remains pending.
   Decisions taken overnight (review): Escape still discards a drawing draft and draft points stay
   draggable while drawing — both differ from Ember, which has neither.
+
+- **Brother thread catalogue (done)**. Generated all 64 Brother PEC colours from installed
+  pystitch; searchable translated picker, design swatches, CIEDE2000 matching for the
+  selection or whole design, validated metadata, one-step undo and PES v6 code/name entries.
+  TS/Python reference-pair, model and PES read-back tests pass; legacy PES bytes unchanged.
+- **Production worksheet (done)**. Project-menu/Info printable A4 or Letter sheet with
+  exported sew-order blocks, object names, stitch counts, design and step previews,
+  fabric advice and design-check summary. Saved Setup speed defaults to 650 stitches/min
+  (max 1000); Info and sheet include 30 s/change and 3 s/trim planning allowances.
+  Desktop popover/undo/print-preview browser checks remain pending.
