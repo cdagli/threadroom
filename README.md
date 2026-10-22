@@ -346,8 +346,9 @@ Toolbar, left to right (shortcut in brackets), as in Ember:
 
 **Play** shows the timeline and plays the stitch-out from the start in the
 current look; click it again to hide the bar and return to full progress. The
-bar has play/pause, a slider, the stitch counter and **Travel**, which works in
-both looks. Any edit stops playback and restores full progress.
+bar has play/pause, a slider, the stitch counter, a **speed** selector (0.25×, 0.5×,
+1×, 2×, 4×, 8× or 16× of the base 450 stitches per second, remembered in this browser
+with the view settings) and **Travel**, which works in both looks. Any edit stops playback and restores full progress.
 
 The **Layers** panel shows sew-order numbers, small shape previews, names and
 stitch types. Click to select, Ctrl/⌘-click to add or remove an object, and

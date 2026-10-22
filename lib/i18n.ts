@@ -961,6 +961,7 @@ export const en={
   "stitchCount.one": "{count} stitch",
   "stitchCount.other": "{count} stitches",
   "Drag to move these objects together in sew order": "Drag to move these objects together in sew order",
+  "Playback speed": "Playback speed",
 } as const;
 export type Key=keyof typeof en;
 export const tr={
@@ -1924,6 +1925,7 @@ export const tr={
   "stitchCount.one": "{count} dikiş",
   "stitchCount.other": "{count} dikiş",
   "Drag to move these objects together in sew order": "Bu nesneleri dikiş sırasında birlikte taşımak için sürükleyin",
+  "Playback speed": "Oynatma hızı",
 } satisfies Record<Key,string>;
 export const dictionaries={en,tr};
 export type Values=Record<string,string|number>;

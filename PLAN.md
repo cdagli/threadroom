@@ -205,3 +205,5 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   objects merge into draggable runs (swatch, Brother label, count, compiled stitches)
   moved as one block by `placeObjects`, which keeps groups whole; click a sew-order
   number to type a new position. "Sort by selection order" remains open.
+- **Playback speed (done)**. 0.25×–16× selector in the timeline bar (1× = 450 stitches/s),
+  saved with the per-browser view settings.

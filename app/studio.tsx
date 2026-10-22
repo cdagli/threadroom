@@ -2,7 +2,7 @@
 import {useT} from './i18n';
 import {TransformBox,SelectionTools,ViewControls,CanvasRulers,ShortcutHelp} from './editing-controls';
 import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
-import {defaultView,readViewSettings,unitValue,type ViewSettings} from '@/lib/view-settings';
+import {defaultView,playbackRate,playbackSpeeds,readViewSettings,unitValue,type ViewSettings} from '@/lib/view-settings';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
 import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
@@ -166,7 +166,7 @@ function StudioEditor() {
   const [colours,setColours]=useState(5), [ignoreBg,setIgnoreBg]=useState(true);
   const [showImage,setShowImage]=useState(true),[look,setLook]=useState<'lines'|'thread'>('lines');
   const [viewSettings,setViewSettings]=useState<ViewSettings>(defaultView),[shortcutHelp,setShortcutHelp]=useState(false),[cursor,setCursor]=useState<Point|null>(null),[snapGuides,setSnapGuides]=useState<SnapGuide[]>([]);
-  const showTravel=viewSettings.showJumps;
+  const showTravel=viewSettings.showJumps,speed=viewSettings.playbackSpeed;
   function setShowTravel(next:boolean|((v:boolean)=>boolean)){setViewSettings(v=>({...v,showJumps:typeof next==='function'?next(v.showJumps):next}));}
   const displayLength=(mm:number)=>`${formatNumber(unitValue(mm,viewSettings.units),viewSettings.units==='in'?3:1)} ${viewSettings.units}`;
   const clipboard=useRef<Project|null>(null),pasteCount=useRef(0),nudgeBurst=useRef(keyBurst());
@@ -297,9 +297,9 @@ function StudioEditor() {
   useEffect(()=>{
     if(!playing||!compiled)return;
     let last=performance.now();
-    const tick=(now:number)=>{const delta=(now-last)/1000;last=now;setProgress(p=>{const n=Math.min(1,p+delta*450/compiled.commands.length);if(n>=1)setPlaying(false);return n;});playback.current=requestAnimationFrame(tick);};
+    const tick=(now:number)=>{const delta=(now-last)/1000;last=now;setProgress(p=>{const n=Math.min(1,p+delta*playbackRate*speed/compiled.commands.length);if(n>=1)setPlaying(false);return n;});playback.current=requestAnimationFrame(tick);};
     playback.current=requestAnimationFrame(tick);return()=>cancelAnimationFrame(playback.current);
-  },[playing,compiled]);
+  },[playing,compiled,speed]);
 
   function commit(next:Project, label='', merge?:string) {
     next=normalizeGroups(next);
@@ -898,6 +898,7 @@ function StudioEditor() {
           <button className="play-button" aria-label={playing?t("Pause playback"):t("Play stitches")} title={playing?t("Pause"):t("Play the stitch-out from the start")} onClick={()=>{if(!playing&&progress>=1)setProgress(0);setPlaying(p=>!p);}}><Icon name={playing?'pause':'play'} size={16}/></button>
           <input className="playback" type="range" aria-label={t("Stitch playback")} min="0" max="1" step=".001" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false);}}/>
           <span className="stitch-counter">{formatNumber(count)} / {formatNumber(compiled.stats.stitches)}</span>
+          <label className="playback-speed" title={t('Playback speed')}><span className="visually-hidden">{t('Playback speed')}</span><select value={speed} onChange={e=>setViewSettings(v=>({...v,playbackSpeed:Number(e.target.value)}))}>{playbackSpeeds.map(n=><option key={n} value={n}>{formatNumber(n)}×</option>)}</select></label>
           <button className="travel-toggle" aria-pressed={showTravel} title={t("Travel view: show jumps, thread cuts and connecting stitches")} onClick={()=>setShowTravel(v=>!v)}><Icon name="route" size={16}/><span>{t("Travel")}</span></button>
         </div>}
         {apiState==='offline'&&!compiled&&<span className="sim-hint" role="status">{t("Engine offline · showing shapes")}</span>}

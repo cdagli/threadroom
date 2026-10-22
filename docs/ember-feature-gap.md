@@ -158,7 +158,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 
 | Feature | Ember | Threadroom |
 |---|---|---|
-| Playback speed | A button cycles 0.25×, 0.5×, 1×, 4×, 8×, 16× ("Speed: Nx") | **no** (fixed 450 stitches/s) |
+| Playback speed | A button cycles 0.25×, 0.5×, 1×, 4×, 8×, 16× ("Speed: Nx") | yes (0.25×–16× selector, 1× = 450 stitches/s) |
 | Hoop / machine settings | None in the editor; the machine matters only when sending ("Design is too large for this machine") | **yes** (PR1X hoops, fabric, ties, trims; ahead of Ember) |
 | Estimated sewing time | None | **no** (TODO) |
 | Pixel art editor | A separate 32 × 32 grid painter with a small palette; the result opens in the editor to stitch | **no** |
