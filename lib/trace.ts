@@ -1,3 +1,5 @@
+import type {ImagePixels} from './artwork-color';
+import {orderTrace,simplifyTrace,traceTolerance} from './trace-order';
 import {createT,TranslationError,type Translator} from './i18n';
 import {object, type Artwork, type Point, type StitchObject} from './project';
 
@@ -10,6 +12,12 @@ export async function traceArtwork(art: Artwork, colours: number, ignoreBackgrou
   const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
   const ctx=canvas.getContext('2d', {willReadFrequently:true})!;
   ctx.drawImage(image,0,0,w,h); const rgba=ctx.getImageData(0,0,w,h).data;
+  return orderTrace(traceRaster({width:w,height:h,data:rgba},art,colours,ignoreBackground,t).map(o=>simplifyTrace(o,traceTolerance(Math.max(art.width,art.height)))));
+}
+
+// Pure raster entry point also used by the headless sewing-order benchmark.
+export function traceRaster(image:ImagePixels,art:Artwork,colours:number,ignoreBackground:boolean,t:Translator=createT('en')):StitchObject[]{
+  const {width:w,height:h,data:rgba}=image;
   const pixels=Array.from({length:w*h}, (_,i)=>[rgba[i*4],rgba[i*4+1],rgba[i*4+2]]);
   const distance=(a:number[],b:number[])=>a.reduce((d,v,i)=>d+(v-b[i])**2,0);
   const usable=pixels.filter((_,i)=>rgba[i*4+3]>100);
@@ -64,5 +72,5 @@ export async function traceArtwork(art: Artwork, colours: number, ignoreBackgrou
   }
   if(!result.length)throw new TranslationError(t,"No regions found. Try keeping the background or using simpler artwork.");
   if(result.reduce((n,o)=>n+o.rings.reduce((m,r)=>m+r.length,0),0)>12000)throw new TranslationError(t,"This trace is too complex. Try fewer colours.");
-  return result.sort((a,b)=>a.color.localeCompare(b.color));
+  return result;
 }

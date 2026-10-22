@@ -1,4 +1,9 @@
 'use client';
+import {StitchOverlays,OverlayControls} from './stitch-overlays';
+import {measurePoint} from '@/lib/measure';
+import {MapToPath} from './map-to-path';
+import {syncPathBindings} from '@/lib/map-to-path';
+import {PixelCrossButton} from './pixel-cross';
 import {useT} from './i18n';
 import {TransformBox,SelectionTools,ViewControls,CanvasRulers,ShortcutHelp} from './editing-controls';
 import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
@@ -117,7 +122,7 @@ function StudioEditor() {
   const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
     {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
     {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
-    {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure a distance.')},
+    {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure length and angle. Shift: snap to 15°.')},
     {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Click left and right rail points in turn; satin is sewn between the rails.",{v0:pathHint})},
@@ -178,7 +183,6 @@ function StudioEditor() {
   const [showImage,setShowImage]=useState(true),[look,setLook]=useState<'lines'|'thread'>('lines');
   const [viewSettings,setViewSettings]=useState<ViewSettings>(defaultView),[shortcutHelp,setShortcutHelp]=useState(false),[cursor,setCursor]=useState<Point|null>(null),[snapGuides,setSnapGuides]=useState<SnapGuide[]>([]);
   const showTravel=viewSettings.showJumps,speed=viewSettings.playbackSpeed;
-  function setShowTravel(next:boolean|((v:boolean)=>boolean)){setViewSettings(v=>({...v,showJumps:typeof next==='function'?next(v.showJumps):next}));}
   const displayLength=(mm:number)=>formatLength(mm,viewSettings.units,formatNumber);
   const clipboard=useRef<Project|null>(null),pasteCount=useRef(0),nudgeBurst=useRef(keyBurst());
   const transformDrag=useRef<{before:Project;ids:string[];box:ReturnType<typeof selectionBounds>;start:Point;angle:number;handle:ScaleHandle|'rotate'}|null>(null);
@@ -267,7 +271,7 @@ function StudioEditor() {
     let initialT=t;try{if(localStorage.getItem('threadroom-lang')==='en')initialT=createT('en');}catch{/* Storage is optional. */}
     try{setViewSettings(readViewSettings(localStorage.getItem('threadroom-view-v1')));clipboard.current=readClipboard(localStorage.getItem('threadroom-clipboard-v1'));}catch{/* Storage is optional. */}
     let p:Project=demo(initialT);
-    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
+    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=syncPathBindings(normalizeGroups(value));}}catch{/* Storage is optional. */}
     p=normalizeGroups(p);current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
   },[]);
@@ -313,7 +317,7 @@ function StudioEditor() {
   },[playing,compiled,speed]);
 
   function commit(next:Project, label='', merge?:string) {
-    next=normalizeGroups(next);
+    try{next=syncPathBindings(normalizeGroups(next),current.current);}catch(e){setError(errorText(e,t,'Map to path exceeds the hoop or design limits.'));return;}
     // Typing and slider drags coalesce into one undo step per field.
     const now=performance.now(),same=!!merge&&lastMerge.current?.key===merge&&now-lastMerge.current.time<1500;
     lastMerge.current=merge?{key:merge,time:now}:null;
@@ -330,7 +334,7 @@ function StudioEditor() {
   function relayout(id:string){
     const p=current.current,o=p.objects.find(x=>x.id===id);if(!o?.text)return;
     const next=layoutObject(o);if(next===o)return;
-    current.current={...p,objects:p.objects.map(x=>x.id===id?next:x)};setProject(current.current);invalidate();setSaved(false);
+    current.current=syncPathBindings({...p,objects:p.objects.map(x=>x.id===id?next:x)},p);setProject(current.current);invalidate();setSaved(false);
   }
   function loadTextFonts(id:string,spec:TextSpec){
     setFontLoading(n=>n+1);
@@ -563,7 +567,7 @@ function StudioEditor() {
   function startDrag(d:Omit<NonNullable<typeof drag.current>,'before'>,e:ReactPointerEvent<SVGSVGElement>){endDrag();drag.current={...d,before:current.current};dragUndo.current.begin(current.current);capture(e);}
   function endDrag(){moveQueue.current?.flush();drag.current=null;transformDrag.current=null;setSnapGuides(g=>g.length?[]:g);lastMerge.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
   endDragRef.current=endDrag;
-  function dragTo(next:Project){next=normalizeGroups(next);dragUndo.current.update(next);current.current=next;setProject(next);invalidate();setSaved(false);}
+  function dragTo(next:Project){try{next=syncPathBindings(normalizeGroups(next),drag.current?.before??transformDrag.current?.before??current.current);}catch{return;}dragUndo.current.update(next);current.current=next;setProject(next);invalidate();setSaved(false);}
   function pointerDown(e:ReactPointerEvent<SVGSVGElement>){
     e.currentTarget.focus({preventScroll:true});
     if(colourPickRef.current){e.preventDefault();if(e.button===0)void pickColour(point(e));return;}
@@ -654,7 +658,7 @@ function StudioEditor() {
     }
     setAngleSnap(e.ctrlKey||e.metaKey);
     if(pathTool(tool)||tool==='points'||(editing&&pointMode==='add'))setHover(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height?p:null);
-    if(measuring.current){setMeasure(m=>m&&{...m,b:p});return;}
+    if(measuring.current){setMeasure(m=>m&&{...m,b:measurePoint(m.a,p,e.shiftKey)});return;}
     if((tool==='shape'||tool==='knife')&&shapeDraft){const press=shapePress.current;if(press&&Math.hypot(e.clientX-press.client[0],e.clientY-press.client[1])>4)press.moved=true;setShapeDraft({...shapeDraft,end:p,square:e.ctrlKey||e.metaKey});return;}
     if(panDrag.current){const d=panDrag.current;applyViewport(panViewport({zoom:viewport.current.zoom,pan:d.source},[e.clientX-d.start[0],e.clientY-d.start[1]],scaleForCanvas()));return;}
     if(draftDrag.current){const d=draftDrag.current;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(d.moved)setDraft(d.before.map((a,i)=>i===d.index?[Math.max(0,Math.min(hoop.width,p[0])),Math.max(0,Math.min(hoop.height,p[1]))]:a));return;}
@@ -865,8 +869,9 @@ function StudioEditor() {
               {showImage&&project.artwork&&!thread&&<image href={project.artwork.src} x={project.artwork.x} y={project.artwork.y} width={project.artwork.width} height={project.artwork.height} preserveAspectRatio="none" opacity={imageOpacity} pointerEvents="none"/>}
               <>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" pointerEvents="none" opacity={showTravel?.35:1}/>)}
                 {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="var(--travel-jump)" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="var(--travel-line)" strokeWidth={2/canvasScale} strokeLinecap="round"/>
-                  <path d={stitchPaths.trims.map(([x,y])=>{const a=3.5/canvasScale;return `M${x-a} ${y-a}L${x+a} ${y+a}M${x-a} ${y+a}L${x+a} ${y-a}`;}).join('')} stroke="var(--danger)" strokeWidth={1.8/canvasScale} strokeLinecap="round"/></g>}</>
-              {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
+</g>}</>
+              {visible&&<StitchOverlays commands={visible.commands} count={visibleSewn} selection={selection} scale={canvasScale} view={viewSettings}/>}
+              {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||!!o.layoutOnly&&!selection.includes(o.id)||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
               {focus&&<IssueMarker focus={focus} canvasScale={canvasScale}/>}
               {tool==='select'&&!editing&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
               {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
@@ -915,6 +920,7 @@ function StudioEditor() {
         {items.some(o=>o.locked)&&<div className="lock-notice" role="status"><Icon name="lock" size={15}/><span>{allLocked?t(multi?'Locked objects: settings are read-only.':'Locked object: settings are read-only.'):t('Locked objects in the selection are not changed.')}</span><button type="button" disabled={hasDraft} onClick={()=>lockSelection(items.filter(o=>o.locked).map(o=>o.id))}>{t('Unlock')}</button></div>}
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
+        <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected}/>
         <ShapeTools project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
         {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
@@ -947,7 +953,7 @@ function StudioEditor() {
           <input className="playback" type="range" aria-label={t("Stitch playback")} min="0" max="1" step=".001" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false);}}/>
           <span className="stitch-counter">{formatNumber(count)} / {formatNumber(compiled.stats.stitches)}</span>
           <label className="playback-speed" title={t('Playback speed')}><span className="visually-hidden">{t('Playback speed')}</span><select value={speed} onChange={e=>setViewSettings(v=>({...v,playbackSpeed:Number(e.target.value)}))}>{playbackSpeeds.map(n=><option key={n} value={n}>{formatNumber(n)}×</option>)}</select></label>
-          <button className="travel-toggle" aria-pressed={showTravel} title={t("Travel view: show jumps, thread cuts and connecting stitches")} onClick={()=>setShowTravel(v=>!v)}><Icon name="route" size={16}/><span>{t("Travel")}</span></button>
+          <OverlayControls value={viewSettings} onChange={patch=>setViewSettings(v=>({...v,...patch}))}/>
         </div>}
         {apiState==='offline'&&!compiled&&<span className="sim-hint" role="status">{t("Engine offline · showing shapes")}</span>}
         {thread&&<span className="sim-hint" title={t("Thread is drawn about 0.4 mm wide at true scale. Real fabric stretches, so test-stitch on matching scrap first.")}>{t("Simulation on")} {t(fabric.label).toLocaleLowerCase(lang)} {t("· fabric pull and puckering aren’t shown")}</span>}
@@ -985,6 +991,7 @@ function StudioEditor() {
       </>}
       {panelTab==='artwork'&&<section className="panel-section">
         <button className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>{t("Import file")}</strong></button>
+        <PixelCrossButton project={project} disabled={hasDraft} onChange={commit}/>
         {!project.artwork&&<p className="section-copy">{t("PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.")}</p>}
         {project.artwork&&<div className="artwork-settings">
           <div className="asset-name">{project.artwork.name}</div>
@@ -1010,7 +1017,7 @@ function StudioEditor() {
       </section>}
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
-        {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}
+        {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use the overlay controls in Setup or playback to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}
         <SewingTime project={project} compiled={compileFresh?compiled:null}/><WorksheetButton project={project} compiled={compileFresh?compiled:null} units={viewSettings.units} disabled={hasDraft}/>
         {!!size.width&&<label>{t("Design width · mm")}<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
         {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>{t("Design exceeds hoop")}</div>}

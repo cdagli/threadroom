@@ -72,8 +72,8 @@ export function snapBounds(b:Rect,others:Rect[],threshold:number,grid:number|nul
 
 // The internal clipboard is a validated, independent project snapshot, with only complete groups.
 export function copySelection(p:Project,ids:readonly string[]):Project{
-  const groups=p.groups?.filter(g=>p.objects.filter(o=>o.group===g.id).every(o=>ids.includes(o.id))),whole=new Set(groups?.map(g=>g.id));
-  return JSON.parse(JSON.stringify({...p,artwork:undefined,groups,objects:p.objects.filter(o=>ids.includes(o.id)).map(o=>({...o,group:o.group&&whole.has(o.group)?o.group:undefined}))})) as Project;
+  const groups=p.groups?.filter(g=>p.objects.filter(o=>o.group===g.id).every(o=>ids.includes(o.id)))?.map(({pathBinding,...g})=>(void pathBinding,g)),whole=new Set(groups?.map(g=>g.id));
+  return JSON.parse(JSON.stringify({...p,artwork:undefined,groups,objects:p.objects.filter(o=>ids.includes(o.id)).map(o=>({...o,layoutOnly:undefined,group:o.group&&whole.has(o.group)?o.group:undefined}))})) as Project;
 }
 export function readClipboard(raw:string|null):Project|null{try{const p:unknown=JSON.parse(raw??'null');return validProject(p)?normalizeGroups(p):null;}catch{return null;}}
 export function pasteSelection(p:Project,clip:Project,offset:number,id:()=>string):{project:Project;ids:string[]}|null{

@@ -232,3 +232,34 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   are skipped (or the operation is refused); two-rail satin Blocks are excluded. The object context menu has Cut holes, Flatten overlaps,
   Union/Subtract/Intersect, Offset… (opens the Shape tools distance) and Knife, enabled as the section's buttons. Node and Python
   tests (compiled fills with Cut holes holes and flattened overlaps). Desktop browser checks pending.
+
+
+## Ember backlog 15, 18, 19, 24, 26 — implemented 2026-10-22
+
+- 15: pure trace ordering/simplification helpers; dominant area first, hue colour
+  groups, dark details last and nearest centroids within a colour. Bear benchmark
+  records travel 741.5 → 571.4 mm, trims 51 → 52, colour changes unchanged at 3;
+  centroid routing does not promise fewer intra-fill trims. See the gap document.
+- 18: independent jumps/trims/ties/selected penetration toggles in Setup and
+  playback; persisted view schema migrates old settings. Batched SVG paths use
+  compiler lock metadata and the visible playback prefix.
+- 19: display-unit measurement, secondary inches, clockwise degrees; Shift
+  snaps to 15° without changing distance.
+- 24: group-owned path bindings retain prototypes, instance IDs and settings;
+  commit/drag hooks re-layout atomically with undo. Fill/count/fixed-gap preview,
+  tangent rotation, reverse, offset, centre alignment, hide/edit guide and unlink.
+  Guide removal or broken membership detaches; clipboard copies are ordinary
+  groups. Hoop/complexity validation rejects layouts without changing the design.
+- 26: image/reference pixel modal, nearest-colour quantisation, optional Brother
+  matching, canvas preview with paint/erase, cell-edge merging with holes and one
+  native cross fill per colour. Tests verify occupied cells through the Python
+  engine and PES decoding. Explicit zero-distance PEC jumps retain cuts when
+  adjacent colours meet at the same needle position.
+
+Verification: typecheck, Python/Node tests, production build, typed en/tr and formal
+Turkish tests, and contrast audit. No browser used for this batch; human checks:
+trace the bear and inspect sew order; toggle overlays separately during scrub and
+reload; measure/snap in mm/cm/in; map multiple motifs to a curved guide, edit it,
+change settings, undo/reload/unlink; import/paint a pixel grid, match threads and
+export PES in both languages. Path layouts use numeric controls, without Ember’s
+additional draggable start/end/mid layout handles.

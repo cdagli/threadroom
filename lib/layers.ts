@@ -25,6 +25,7 @@ export type LayerRow={key:string;type:'object'|'group';index:number;end:number;n
 export function layerRows(project:Project,collapsed:Set<string>):LayerRow[]{
   const rows:LayerRow[]=[];
   project.objects.forEach((o,index)=>{
+    if(o.layoutOnly)return;
     const group=o.group===undefined?undefined:project.groups?.find(g=>g.id===o.group);
     if(group&&project.objects[index-1]?.group!==group.id){
       let end=index+1;while(project.objects[end]?.group===group.id)end++;
@@ -41,7 +42,7 @@ export function layerTarget(row:LayerRow,after:boolean,wholeGroup=false){
 
 // Locks: locked objects stay selectable from Layers but are skipped by canvas hits, Select all and edits.
 export const unlockedIds=(p:Project,ids:readonly string[])=>ids.filter(id=>p.objects.some(o=>o.id===id&&!o.locked));
-export const selectableIds=(p:Project)=>p.objects.filter(o=>!o.locked&&!o.hidden).map(o=>o.id);
+export const selectableIds=(p:Project)=>p.objects.filter(o=>!o.locked&&!o.hidden&&!o.layoutOnly).map(o=>o.id);
 const withLock=(o:StitchObject,locked:boolean):StitchObject=>{if(!!o.locked===locked)return o;const next={...o};delete next.locked;return locked?{...next,locked}:next;};
 export function toggleLock(p:Project,ids:readonly string[]):Project{
   const chosen=p.objects.filter(o=>ids.includes(o.id));if(!chosen.length)return p;
@@ -61,6 +62,7 @@ export function objectStitches(commands:Command[]){
 export function colourRuns(p:Project,compiled:Pick<Compiled,'commands'>|null):ColourRun[]{
   const runs:ColourRun[]=[],counts=compiled?objectStitches(compiled.commands):null;
   p.objects.forEach((o,index)=>{
+    if(o.layoutOnly)return;
     const last=runs.at(-1),stitches=counts?counts.get(o.id)??0:null;
     if(last&&runKey(p.objects[last.end-1])===runKey(o)){last.ids.push(o.id);last.end++;if(last.stitches!==null)last.stitches+=stitches!;}
     else runs.push({key:`run:${o.id}`,color:o.color,...(o.thread&&{thread:o.thread}),ids:[o.id],index,end:index+1,stitches});

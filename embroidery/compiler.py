@@ -1516,6 +1516,7 @@ def compile_project(project):
 
     # Every needle move as written (0.1 mm units): (x, y, object index, role) for the design check.
     trace, owner = [], 0
+    tie_phase = None
 
     def move(command, point, role="run"):
         nonlocal total, previous
@@ -1527,7 +1528,7 @@ def compile_project(project):
             raise ValueError("This prototype supports up to 100,000 stitch commands. Reduce the size or increase spacing.")
         qx, qy = round((x-width/2)*10), round((y-height/2)*10)
         pattern.add_stitch_absolute(command, qx, qy)
-        trace.append((qx/10+width/2, qy/10+height/2, owner, role if command == STITCH else "jump"))
+        trace.append((qx/10+width/2, qy/10+height/2, owner, role if command == STITCH else "jump", tie_phase if role == "lock" else None))
         previous = point
 
     avoid_short = False
@@ -1540,10 +1541,12 @@ def compile_project(project):
             for p in interpolate(previous, point, limit):
                 move(STITCH, p, role)
 
-    def lock(points, kind, size):
+    def lock(points, kind, size, phase):
         """Lock stitches at points[0], where the needle is, heading along the
         path: a tack sews size along it and back twice; a triangle sews an
         arrow size long and wide pointing along it. Ends at points[0]."""
+        nonlocal tie_phase
+        tie_phase = phase
         a, q, run = points[0], points[0], 0
         for u, v in zip(points, points[1:]):
             d = math.dist(u, v)
@@ -1579,7 +1582,7 @@ def compile_project(project):
         avoid_short = separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))
         trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump or (separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))) and index == owner)
         if trim:
-            lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
+            lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"], "off")
             pattern.add_command(TRIM)
             trims += 1
             cuts.append((previous, owner, index, changes))
@@ -1610,8 +1613,12 @@ def compile_project(project):
         if last is None or trim:
             # Land with a stitch: pystitch encodes the first stitch after a trim as
             # trim-jump + penetration. A JUMP here would add a second trim-jump.
+            # PEC ignores a standalone TRIM. A coincident landing still needs an
+            # explicit zero-distance jump so a colour/cross boundary retains its cut.
+            if trim and all(round(a*10) == round(b*10) for a,b in zip(previous, points[0])):
+                move(JUMP, points[0])
             move(STITCH, points[0], "land")
-            lock(points, obj["tieIn"], obj["lockSize"])
+            lock(points, obj["tieIn"], obj["lockSize"], "in")
         for k, (chunk, limit) in enumerate(chunks):
             for i, point in enumerate(chunk):
                 if i:
@@ -1620,7 +1627,7 @@ def compile_project(project):
                     sew_to(point, 3 if k or last is None or trim else trim_jump+.01, "run" if k or last is None or trim else "connect")
         last = (obj, points)
     if last:
-        lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
+        lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"], "off")
         cuts.append((previous, owner, None, False))
     pattern.add_command(TRIM)
     pattern.add_command(END)
@@ -1668,6 +1675,8 @@ def compile_project(project):
         commands.append({"objectIndex": owner, "objectId": str(objects[owner].get("id", owner)), "fromObjectId": str(objects[last_owner].get("id", last_owner)), "x": p[0], "y": p[1], "fromX": last[0], "fromY": last[1], "type": kind, "block": block, "trim": cut and flag == JUMP,
                          "travel": flag == STITCH and (round(last[0], 1), round(last[1], 1), round(p[0], 1), round(p[1], 1)) in connectors})
         if flag == STITCH:
+            if t[3] == "lock":
+                commands[-1]["tie"] = t[4]
             if abs(p[0]-t[0]) < .001 and abs(p[1]-t[1]) < .001:
                 trace_at += 1
             last_owner = owner
