@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
 const python=process.env.THREADROOM_PYTHON||(existsSync('.venv/bin/python')?'.venv/bin/python':'python3');
-for (const [command,args] of [[python,['-m','unittest','discover','-s','tests','-p','test_*.py']], [process.execPath,['--test','tests/i18n.test.mjs','tests/pes-roundtrip.test.mjs','tests/dev-launcher.test.mjs','tests/curves.test.mjs','tests/drawing.test.mjs','tests/spline.test.mjs','tests/stitch-shapes.test.mjs','tests/artwork-color.test.mjs','tests/shapes.test.mjs','tests/groups.test.mjs','tests/layers.test.mjs','tests/text.test.mjs','tests/project.test.mjs','tests/drag.test.mjs','tests/editing.test.mjs','tests/editor-render.test.mjs','tests/check.test.mjs','tests/thread.test.mjs']]]) {
+for (const [command,args] of [[python,['-m','unittest','discover','-s','tests','-p','test_*.py']], [process.execPath,['--test','tests/i18n.test.mjs','tests/pes-roundtrip.test.mjs','tests/dev-launcher.test.mjs','tests/curves.test.mjs','tests/drawing.test.mjs','tests/spline.test.mjs','tests/stitch-shapes.test.mjs','tests/artwork-color.test.mjs','tests/shapes.test.mjs','tests/groups.test.mjs','tests/layers.test.mjs','tests/text.test.mjs','tests/project.test.mjs','tests/drag.test.mjs','tests/editing.test.mjs','tests/editor-render.test.mjs','tests/check.test.mjs','tests/thread.test.mjs','tests/threads.test.mjs','tests/production.test.mjs']]]) {
   const result=spawnSync(command,args,{stdio:'inherit'});if(result.status!==0)process.exit(result.status||1);
 }

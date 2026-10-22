@@ -432,6 +432,35 @@ of them in one undo step. Clicking outside the image keeps the picker active;
 Escape, the eyedropper button, or choosing a tool cancels. Import reference
 artwork first to enable the button.
 
+**Brother threads** in the thread colour section opens a searchable 64-colour PEC
+catalogue, sourced from the installed pystitch `EmbThreadPec` table. Search by
+code, English name or translated name. **Design colours** reuses colours already
+in the project; **Match to Brother** snaps the selection to the nearest thread
+using CIEDE2000 in D65 Lab. The catalogue popover also offers **Match whole design
+to Brother** (including text borders). Each action is one undo step. Catalogue choices retain their code
+and name in project JSON and PES v6 thread entries; custom colour input, palette
+swatches and the image eyedropper clear that assignment. PEC codes 1–64 are the
+source table's codes, and may differ from retail spool labels. Consecutive objects
+with the same RGB share one export block; any Brother assignment in that block
+supplies its catalogue label. `scripts/generate-threads.py` regenerates both data
+tables with `.venv/bin/python`, without adding a runtime dependency.
+
+**Worksheet** in the project menu or Info opens a printable production sheet once
+the current stitches are ready. It includes the design name and thumbnail, size,
+hoop, fabric and stabilizer/topping advice, export stitch/change/trim counts,
+ordered thread blocks with codes, names, object names, stitch counts and step
+previews, and the design-check summary. Hidden objects remain in this production
+list. Print on A4 (default) or Letter using the browser's print/PDF dialog.
+The worksheet uses a snapshot of the same decoded export as PES generation;
+it is disabled while edits are waiting for stitches.
+
+**Setup → Sewing speed** saves a planning speed of 100–1000 stitches/minute
+(default **650**, PR1X maximum **1000**). Info and the worksheet estimate time as
+`stitches / speed + colour changes × 30 seconds + trims × 3 seconds`, rounded up
+to whole minutes. The 30-second manual thread change and 3-second trim allowances
+are planning constants in `lib/production.ts`, not measured machine timings.
+Hooping, bobbin changes, acceleration, thread breaks and operator pauses are excluded.
+
 - **Open shape / Closed shape / Blocks:** left-click plots a corner (straight
   lines meet sharply); right-click, or double-click, plots a curve point (the path
   bends smoothly through it). Points land on release; moving at least 0.5 mm
@@ -584,7 +613,10 @@ one undo step per drag, thread shading and fabric-look mapping, batch
 breaks for crossing stitches,
 curve-resolution-independent satin density, short stitches on tight arcs,
 staggered satin splitting with pull compensation, stitch lengths, hoop checks,
-malformed input, request limits, and independent PES decoding. Tests use the
+malformed input, request limits, and independent PES decoding. Brother catalogue
+and CIEDE2000 tests use published reference pairs in both TypeScript and Python;
+PES read-back tests cover catalogue metadata and a legacy-byte hash. Worksheet
+checks cover time allowances, speed bounds and sew-order block counts. Tests use the
 virtual environment if present and regenerate their own small fixtures.
 
 The live local editor was checked in a browser at desktop and mobile sizes,

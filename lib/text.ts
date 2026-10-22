@@ -1,4 +1,5 @@
 import {createT,type Translator} from './i18n';
+import {validThread,type Thread} from './threads';
 import type {Point} from './project';
 import {simplifyPath} from './curves';
 
@@ -7,7 +8,7 @@ import {simplifyPath} from './curves';
 export type TextAlign='left'|'center'|'right';
 export type TextLayout='straight'|'arc'|'wave'|'path';
 export type FontRef={source:'catalog'|'upload';id:string;family:string;weight:number;italic:boolean;subsets:string[]};
-export type TextBorder={kind:'running'|'bean'|'satin';color:string;width:number};
+export type TextBorder={thread?:Thread;kind:'running'|'bean'|'satin';color:string;width:number};
 export type TextSpec={
   content:string; font:FontRef;
   size:number;       // capital letter height, mm
@@ -175,7 +176,7 @@ export function validText(value:unknown):value is TextSpec {
   if(!finite(t.size,textLimits.size)||!finite(t.tracking,textLimits.tracking)||!finite(t.lineHeight,textLimits.lineHeight)||!finite(t.bend,textLimits.bend)||!finite(t.waveHeight,textLimits.waveHeight)||!finite(t.waveLength,textLimits.waveLength)||!finite(t.offset,[0,100])||!finite(t.rotation,[-360,360]))return false;
   if(!['left','center','right'].includes(t.align)||!['straight','arc','wave','path'].includes(t.layout)||typeof t.reverse!=='boolean'||typeof t.below!=='boolean'||!point(t.origin))return false;
   if(t.path!==undefined&&(!Array.isArray(t.path)||t.path.length<2||t.path.length>4000||!t.path.every(point)))return false;
-  if(t.border!==undefined&&(!['running','bean','satin'].includes(t.border.kind)||!/^#[0-9a-f]{6}$/i.test(t.border.color)||!finite(t.border.width,textLimits.borderWidth)))return false;
+  if(t.border!==undefined&&(!t.border||t.border.thread!==undefined&&!validThread(t.border.thread,t.border.color)||!['running','bean','satin'].includes(t.border.kind)||!/^#[0-9a-f]{6}$/i.test(t.border.color)||!finite(t.border.width,textLimits.borderWidth)))return false;
   return true;
 }
 

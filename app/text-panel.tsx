@@ -158,9 +158,9 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
     </div>}
     {spec.layout!=='path'&&<Range label={t("Rotation")} value={Math.round(spec.rotation)} min={-180} max={180} format={n=>`${formatNumber(n)}°`} onChange={rotation=>onChange({rotation},'rotation')}/>}
     {fill&&<div className="border-options">
-      <label>{t("Border")}<select value={spec.border?.kind||'none'} onChange={e=>onChange({border:e.target.value==='none'?undefined:{color:spec.border?.color||'#664538',width:spec.border?.width||1,kind:e.target.value as NonNullable<TextSpec['border']>['kind']}})}><option value="none">{t("None")}</option><option value="running">{t("Running outline")}</option><option value="bean">{t("Bean outline")}</option><option value="satin">{t("Satin border")}</option></select></label>
+      <label>{t("Border")}<select value={spec.border?.kind||'none'} onChange={e=>onChange({border:e.target.value==='none'?undefined:{thread:spec.border?.thread,color:spec.border?.color||'#664538',width:spec.border?.width||1,kind:e.target.value as NonNullable<TextSpec['border']>['kind']}})}><option value="none">{t("None")}</option><option value="running">{t("Running outline")}</option><option value="bean">{t("Bean outline")}</option><option value="satin">{t("Satin border")}</option></select></label>
       {spec.border&&<div className="setting-grid">
-        <label>{t("Colour")}<div className="colour-picker"><input type="color" aria-label={t("Border colour")} value={spec.border.color} onChange={e=>onChange({border:{...spec.border!,color:e.target.value}},'borderColor')}/><span>{spec.border.color.toUpperCase()}</span></div></label>
+        <label>{t("Colour")}<div className="colour-picker"><input type="color" aria-label={t("Border colour")} value={spec.border.color} onChange={e=>onChange({border:{...spec.border!,color:e.target.value,thread:undefined}},'borderColor')}/><span>{spec.border.color.toUpperCase()}</span></div></label>
         {spec.border.kind==='satin'&&<label>{t("Width · mm")}<input type="number" min={textLimits.borderWidth[0]} max={textLimits.borderWidth[1]} step=".1" value={spec.border.width} onChange={e=>{const n=number(e.target.value,textLimits.borderWidth);if(n!==null)onChange({border:{...spec.border!,width:n}},'borderWidth');}}/></label>}
       </div>}
     </div>}

@@ -1,3 +1,4 @@
+import {validThread,type Thread} from './threads';
 import {createT,type Translator,type Key} from './i18n';
 import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} from './fill-patterns';
 import {validText, type TextSpec} from './text';
@@ -12,7 +13,7 @@ export type Locks = {tieIn: Lock; tieOff: Lock; lockSize: number};
 // Fabric-driven values are optional: unset values follow the project's fabric profile.
 export type StitchObject = {
   id: string; name: string; color: string; kind: Kind; rings: Point[][];
-  hidden?: boolean; group?: string;
+  hidden?: boolean; group?: string; thread?: Thread;
   length: number; angle: number; satinWidth: number;
   fillLength?: number; handStitch?: 0|1|2|3|4|5; gradient?: FillGradient;
   fillUnderlays?: FillUnderlay[];
@@ -35,6 +36,7 @@ export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
   fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; artwork?: Artwork;
   groups?: {id: string; name: string}[];
+  sewingSpeed?: number; // stitches/minute; unset = 650, PR1X maximum 1000
 };
 // trim: a jump that starts with a thread cut; travel: an untrimmed connecting stitch between runs.
 export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; objectIndex?: number; objectId?: string; fromObjectId?: string; trim?: boolean; travel?: boolean};
@@ -43,7 +45,7 @@ export type Severity = 'fail' | 'check';
 export type RawWarning = {code: string; objectId: string | null; bounds: [number, number, number, number]; severity: Severity; values: Record<string, number>; fromId?: string};
 export type Compiled = {
   warnings?: RawWarning[];
-  pes: string; filename: string; commands: Command[]; threads: {color: string; name: string}[];
+  pes: string; filename: string; commands: Command[]; threads: {color: string; name: string; thread?: Thread}[];
   stats: {stitches: number; jumps: number; jumpLength: number; trims: number; colorChanges: number; width: number; height: number; maxStitch: number; bytes: number; durationMs: number};
   engine: string; pesVersion: string;
 };
@@ -206,6 +208,7 @@ export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
   if (p.version !== 1 || p.machine !== 'brother-pr1x' || !hoops[p.hoop] || !Object.hasOwn(fabrics,p.fabric) || typeof p.name !== 'string') return false;
+  if(p.sewingSpeed!==undefined&&!inRange(p.sewingSpeed,100,1000))return false;
   if (!Array.isArray(p.objects) || p.objects.length > 80) return false;
   if(p.groups!==undefined&&(!Array.isArray(p.groups)||p.groups.length>80||Array.from(p.groups).some(g=>!g||typeof g.id!=='string'||typeof g.name!=='string'||g.name.length>40)||new Set(p.groups.map(g=>g.id)).size!==p.groups.length))return false;
   const groups=new Set(p.groups?.map(g=>g.id));
@@ -215,6 +218,7 @@ export function validProject(value: unknown): value is Project {
   for (const o of p.objects) {
     if(o?.rotation!==undefined&&(typeof o.rotation!=='number'||!Number.isFinite(o.rotation)||Math.abs(o.rotation)>360))return false;
     if (!o || typeof o.id !== 'string' || typeof o.name !== 'string' || !Object.hasOwn(kindNames,o.kind) || !/^#[0-9a-f]{6}$/i.test(o.color) || !Array.isArray(o.rings) || (!o.rings.length && !o.text)) return false;
+    if(o.thread!==undefined&&!validThread(o.thread,o.color))return false;
     if(o.hidden!==undefined&&typeof o.hidden!=='boolean'||o.group!==undefined&&(typeof o.group!=='string'||!groups.has(o.group)))return false;
     if (o.text !== undefined && (!validText(o.text) || o.curve)) return false;
     for (const r of o.rings) {

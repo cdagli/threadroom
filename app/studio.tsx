@@ -24,6 +24,9 @@ import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, s
 import StitchSelector from './stitch-selector';
 import TextPanel from './text-panel';
 import ThreadView from './thread-view';
+import ThreadPicker from './thread-picker';
+import {SewingSpeed,SewingTime,WorksheetButton} from './worksheet';
+import {recolorObject} from '@/lib/threads';
 import LayersPanel from './layers-panel';
 import {IssueMarker, EndHandles, DraftOverlay, ShapeOverlay, MeasureOverlay, NeedleMarker} from './canvas-overlays';
 import {CanvasObject} from './canvas-object';
@@ -347,7 +350,7 @@ function StudioEditor() {
   function removeGuide(){if(!guide)return;commit({...project,objects:project.objects.filter(o=>o.id!==guide.id)});setGuide(null);}
   function drawTextPath(){if(!item?.text)return;const id=item.id;chooseTool('open');setPathTarget(id);}
   function updateObject(patch:Partial<StitchObject>){if(!item)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
-    let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
+    let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};if(patch.color!==undefined&&!patch.thread)delete next.thread;for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
   function restoreSelection(p:Project){setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length?kept:p.objects[0]?[p.objects[0].id]:[];});}
   function undo(){endDrag();setActivePoint(null);if(draftRef.current.length){if(canUndoDraft)popDraft();return;}if(!history.length)return;const before=history[history.length-1];setFuture(f=>[current.current,...f]);setHistory(history.slice(0,-1));current.current=before;setProject(before);restoreSelection(before);invalidate();setDraft([]);}
@@ -439,7 +442,6 @@ function StudioEditor() {
   function ungroupSelection(){commit(ungroupObjects(project,selection));}
   function hideObjects(ids:string[]){const hidden=!project.objects.filter(o=>ids.includes(o.id)).every(o=>o.hidden);commit({...project,objects:project.objects.map(o=>ids.includes(o.id)?{...o,hidden}:o)});}
   function renameObject(id:string,name:string,group:boolean){commit(group?{...project,groups:project.groups?.map(g=>g.id===id?{...g,name:name.slice(0,40)}:g)}:{...project,objects:project.objects.map(o=>o.id===id?{...o,name:name.slice(0,40)}:o)});}
-  function colourSelection(color:string){commit({...project,objects:project.objects.map(o=>selection.includes(o.id)?{...o,color}:o)});}
   function toggleColourPick(){
     if(colourPickRef.current){cancelColourPick();return;}
     const art=current.current.artwork;if(!art||!selection.length||hasDraft)return;
@@ -455,7 +457,7 @@ function StudioEditor() {
       if(colourPickRef.current!==session||current.current.artwork!==art)return;
       const color=sampleArtwork(pixels,art,p);if(!color){setPickHint(t("No visible image pixels here. Try another point."));return;}
       const before=current.current;cancelColourPick();
-      commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?{...o,color}:o)},t("Thread colour picked: {v0}",{v0:color.toUpperCase()}));
+      commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?recolorObject(o,color):o)},t("Thread colour picked: {v0}",{v0:color.toUpperCase()}));
     }catch(e){if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));}
   }
   function reorderSelection(where:'top'|'up'|'down'|'bottom'){
@@ -760,6 +762,7 @@ function StudioEditor() {
       <hr/>
       <button role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Save project")}</button>
       <button role="menuitem" disabled={hasDraft||!project.objects.length} onClick={()=>{closePanel('project-menu');download(new Blob([exportSVG(project)],{type:'image/svg+xml'}),'threadroom-artwork.svg');}}><Icon name="download" size={16}/>{t("Export editable SVG")}</button>
+      <WorksheetButton menu project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
       <hr/>
       <div role="group" aria-label={t('Language')}>{(['tr','en'] as const).map(value=><button key={value} role="menuitemradio" aria-checked={lang===value} onClick={()=>{setLang(value);closePanel('project-menu');}}>{t(value==='tr'?'Türkçe':'English')}{lang===value?' ✓':''}</button>)}</div>
     </div>
@@ -836,14 +839,14 @@ function StudioEditor() {
         {!settingsCollapsed&&<div className="overlay-body">
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
-        {multi?<fieldset disabled={hasDraft} className="panel-section settings"><label>{t("Thread colour")}<div className="colour-picker"><input type="color" aria-label={t("Thread colour")} value={item.color} onChange={e=>colourSelection(e.target.value)}/>{eyedropper}<span>{items.every(o=>o.color===item.color)?item.color.toUpperCase():t("Mixed colours")}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={t("Use thread {v0}",{v0:c})} style={{background:c}} onClick={()=>colourSelection(c)}/>)}</div></label><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
+        {multi?<fieldset disabled={hasDraft} className="panel-section settings"><ThreadPicker project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
         <fieldset disabled={hasDraft} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}
           <label><span className="field-heading">{t("Object name")}</span><input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
           <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
-          <label>{t("Thread colour")}<div className="colour-picker"><input type="color" aria-label={t("Thread colour")} value={item.color} onChange={e=>updateObject({color:e.target.value})}/>{eyedropper}<span>{item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={t("Use thread {v0}",{v0:c})} style={{background:c}} onClick={()=>updateObject({color:c})}/>)}</div></label>
+          <ThreadPicker project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/>
           {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&<div className="setting-grid"><label><span className="field-heading">{t("Length · mm")}</span><input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input"><span className="field-heading">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm{source('spacing')}</span><input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>}
           {['running','bean','backstitch'].includes(item.kind)&&<label><span className="field-heading">{t("Stitch tolerance · mm")}{item.tolerance!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({tolerance:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:.2})}</span>}</span><input type="number" min=".1" max="1" step=".1" value={item.tolerance??.2} onChange={e=>{const n=Number(e.target.value);if(n>=.1&&n<=1)updateObject({tolerance:n});}}/></label>}
           {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop}/>}
@@ -919,6 +922,7 @@ function StudioEditor() {
         <label>{t("Machine")}<select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">{t("Brother PR1X")}</option></select></label>
         <label>{t("Hoop")}<select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{t(h.label)}</option>)}</select></label>
         <label>{t("Fabric")}<select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{t(f.label)}</option>)}</select></label>
+        <SewingSpeed project={project} onChange={commit}/>
         <p className="fabric-advice">{t("Stabilizer:")} {t(fabric.stabilizer)} {t("· Topping:")} {t(fabric.topping)}</p>
         <div className="setting-grid setup-locks"><label>{t("Tie-in")}<select disabled={hasDraft} value={project.locks.tieIn} onChange={e=>setLocks({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label>{t("Tie-off")}<select disabled={hasDraft} value={project.locks.tieOff} onChange={e=>setLocks({tieOff:e.target.value as Lock})}>{lockOptions}</select></label>
           <label>{t("Lock size · mm")}<input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>{t("Trim jumps longer than · mm")}<input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title={t("Shorter jumps sew as one stitch without a trim")} onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
@@ -926,6 +930,7 @@ function StudioEditor() {
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
         {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}
+        <SewingTime project={project} compiled={compileFresh?compiled:null}/><WorksheetButton project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
         {!!size.width&&<label>{t("Design width · mm")}<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
         {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>{t("Design exceeds hoop")}</div>}
         <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?t("Engine connected"):apiState==='checking'?t("Connecting…"):t("Engine offline")}</div>
