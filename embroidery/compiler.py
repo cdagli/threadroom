@@ -93,7 +93,9 @@ def validate(project):
                     raise ValueError("Invalid path coordinate.")
                 number(point[0], 0, width, "X position")
                 number(point[1], 0, height, "Y position")
-        number(obj.get("spacing"), 0.3, 2, "Stitch spacing")
+        sweep = obj["kind"] == "fill" and obj.get("fillPattern") == "sweepSatin"
+        circular = obj["kind"] == "fill" and obj.get("fillPattern") == "circular"
+        number(obj.get("spacing"), .05 if circular else .2 if sweep else .3, 50 if circular else 1 if sweep else 2, "Stitch spacing")
         number(obj.get("length", 2.5), 0.5, 3, "Stitch length")
         for key, lo, hi in (("fillLength", 1, 6), ("handStitch", 0, 5)):
             if key in obj:
@@ -128,19 +130,31 @@ def validate(project):
                 v = number(value, f["min"], f["max"], f["label"])
                 if abs((v-f["min"])/f["step"]-round((v-f["min"])/f["step"])) > 1e-7:
                     raise ValueError("Invalid fill pattern parameters.")
+        if "crossStyle" in obj and obj["crossStyle"] not in ("cross","upright","double","smyrna","half"):
+            raise ValueError("Unknown cross-stitch style.")
+        for f in FILL_PATTERNS['crossStitchFill']['params']:
+            if f['key'] in obj:
+                v = number(obj[f['key']],f['min'],f['max'],f['label'])
+                if abs((v-f['min'])/f['step']-round((v-f['min'])/f['step']))>1e-7:
+                    raise ValueError("Invalid fill pattern parameters.")
+        for key in ('dense','flipped'):
+            if key in obj and not isinstance(obj[key],bool):
+                raise ValueError("Invalid cross-stitch option.")
         if "tolerance" in obj:
             number(obj["tolerance"], .1, 1, "Stitch tolerance")
         number(obj.get("angle", 0), -180, 180, "Fill angle")
         number(obj.get("satinWidth", 2), 0.5, 10, "Satin width")
         number(obj.get("pullCompensation"), 0, 1, "Pull compensation")
-        if obj["kind"] in WIDE_KINDS:
+        if obj["kind"] in WIDE_KINDS or sweep:
             number(obj.get("splitLength"), 3, 12, "Split length")
             if not isinstance(obj.get("shortStitches"), bool):
                 raise ValueError("Short stitches must be on or off.")
-        if obj.get("underlay") not in UNDERLAYS.get("fill" if obj["kind"] in FILL_KINDS else obj["kind"], ("none",)):
+        if obj.get("underlay") not in UNDERLAYS.get("satin" if sweep else "fill" if obj["kind"] in FILL_KINDS else obj["kind"], ("none",)):
             raise ValueError("Choose an underlay suited to this stitch style.")
-        for key in ("entry", "exit"):
+        for key in ("entry", "exit", "center"):
             point = obj.get(key)
+            if key == "center" and key in obj and point is None:
+                raise ValueError("Invalid path coordinate.")
             if point is not None:
                 if not isinstance(point, list) or len(point) != 2:
                     raise ValueError("Entry and exit points need two coordinates.")
@@ -1195,6 +1209,18 @@ def plan_object(obj, at, target):
     if kind in FILL_KINDS:
         snap = lambda p: p and nearest_on(obj["rings"], p, True)[2]
         entry, exit = snap(entry), snap(exit)
+        if kind == "fill" and obj.get("fillPattern") == "sweepSatin":
+            from .engines import route_satin
+            return route_satin(obj, at, entry, exit or target)
+        if kind == "fill" and obj.get("fillPattern") == "circular":
+            from .engines import route_circular
+            return route_circular(obj, at, entry, exit or target)
+        if (kind == "fill" and obj.get("fillPattern") == "crossStitchFill") or (kind == "cross" and any(k in obj for k in ('crossStyle','crossSize','threadCount','coverage','dense','flipped'))):
+            from .cross import route_cross_styles
+            return route_cross_styles(obj, at, entry, exit or target)
+        if kind == "fill" and obj.get("fillPattern") == "streamlines":
+            from .streamlines import route_streamlines
+            return route_streamlines(obj, at, entry, exit or target)
         if kind == "cross":
             foundation = [[(path, 3)] for path in route_fill(obj, at, entry, None, True)]
             return foundation+route_cross(obj, foundation[-1][-1][0][-1] if foundation else at, None if foundation else entry, exit or target)
@@ -1356,7 +1382,10 @@ def compile_project(project):
         trace.append((qx/10+width/2, qy/10+height/2, owner, role if command == STITCH else "jump"))
         previous = point
 
+    avoid_short = False
     def sew_to(point, limit=3, role="run"):
+        if avoid_short and role != "lock" and previous is not None and (math.dist(previous,point)<.35 or math.dist([round(v*10) for v in previous],[round(v*10) for v in point])<2.9):
+            return
         if previous is None:
             move(JUMP, point)
         elif math.dist(previous, point) > 1e-6:
@@ -1398,7 +1427,9 @@ def compile_project(project):
     color, last, trims, cuts = None, None, 0, []
     for index, obj, chunks, points in runs:
         changes = obj["color"].lower() != color
-        trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump)
+        separate_engine = obj["kind"] == "fill" and FILL_PATTERNS.get(obj.get("fillPattern"), {}).get("mode") == "engine"
+        avoid_short = separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))
+        trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump or (separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))) and index == owner)
         if trim:
             lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"])
             pattern.add_command(TRIM)

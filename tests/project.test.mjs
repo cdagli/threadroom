@@ -274,7 +274,7 @@ test('Each pattern validates only its own finite, stepped parameters',()=>{
     const valid=params=>validProject(project({...o,fillPattern:p.id,patternParams:params}));
     assert.ok(valid({}),p.id);
     for(const f of p.params){
-      for(const value of [f.min,f.default,f.max]){assert.ok(valid({[f.key]:value}),`${p.id}/${f.key}=${value}`);assert.ok(patternCycle(p.id,4,.2,{[f.key]:value}).rows.length);}
+      for(const value of [f.min,f.default,f.max]){assert.ok(valid({[f.key]:value}),`${p.id}/${f.key}=${value}`);if(p.mode!=='engine')assert.ok(patternCycle(p.id,4,.2,{[f.key]:value}).rows.length);}
       for(const value of [null,true,'3',NaN,Infinity,f.min-f.step,f.max+f.step,f.min+f.step*.5])assert.equal(valid({[f.key]:value}),false,`${p.id}/${f.key}=${value}`);
     }
     for(const key of ['steps','intensity','tightness','cellSize'])if(!p.params.some(f=>f.key===key))assert.equal(valid({[key]:3}),false,p.id);
@@ -295,4 +295,51 @@ test('Preview cycles match the compiler at default and boundary parameters',asyn
   const expected=JSON.parse(result.stdout);
   function close(a,b,path){if(typeof a==='number'){assert.ok(Math.abs(a-b)<1e-7,`${path}: ${a} vs ${b}`);return;}assert.equal(a.length,b.length,path);a.forEach((v,i)=>close(v,b[i],`${path}/${i}`));}
   cases.forEach(([id,L,s,params],i)=>{const {rows,shear}=patternCycle(id,L,s,params);close([rows,shear],expected[i],`${id}/${s}/${JSON.stringify(params)}`);});
+});
+
+test('Non-row settings validate, retain defaults and carry centers through geometry edits',()=>{
+  const {fillCenter,resolve,hasCrossStyle}=load('project'),{moveGeometry}=load('curves');
+  const o={...object('Fill',[square]),fillPattern:'sweepSatin'};
+  const satin=resolve(o,'woven',defaultLocks);
+  assert.deepEqual([satin.spacing,satin.pullCompensation,satin.splitLength,satin.shortStitches,satin.underlay],[.32,.4,7,true,'center']);
+  for(const patch of [{spacing:.2},{spacing:1},{underlay:'center'},{underlay:'edge-zigzag'}])assert.ok(validProject(project({...o,...patch})));
+  for(const patch of [{spacing:.19},{spacing:1.01},{underlay:'tatami'}])assert.equal(validProject(project({...o,...patch})),false);
+  const circular={...o,fillPattern:'circular',center:[45,45]};
+  assert.deepEqual(fillCenter(circular),[45,45]);
+  assert.equal(resolve(circular,'woven',defaultLocks).spacing,.42);
+  for(const spacing of [.05,50])assert.ok(validProject(project({...circular,spacing})));
+  for(const center of [null,[],[45],[NaN,45],[-1,45],[101,45],[45,101]])assert.equal(validProject(project({...circular,center})),false);
+  const moved=moveGeometry(circular,p=>[p[0]+2,p[1]+3]);assert.deepEqual(moved.center,[47,48]);
+  assert.deepEqual(geometryPayload(project(moved)).objects[0].center,moved.center);
+  assert.match(exportSVG(project(moved)),/data-threadroom-center="\[47,48\]"/);
+  for(const crossStyle of ['cross','upright','double','smyrna','half']){
+    const cross={...object('Cross',[square],'cross'),crossStyle,crossSize:3,coverage:50,threadCount:2,dense:false,flipped:false};
+    assert.ok(validProject(project(cross)));assert.ok(hasCrossStyle(cross));
+    const payload=geometryPayload(project(cross)).objects[0];
+    for(const key of ['crossStyle','crossSize','coverage','threadCount','dense','flipped'])assert.equal(payload[key],cross[key]);
+  }
+  for(const patch of [{crossStyle:'rows'},{crossStyle:null},{crossSize:.5},{crossSize:3.2},{threadCount:1.5},{coverage:101},{dense:1},{flipped:null}])assert.equal(validProject(project({...o,...patch})),false);
+});
+
+test('Non-row panels render translated controls and hide settings the engine ignores',async()=>{
+  const {createRequire}=await import('node:module'),{readFileSync}=await import('node:fs'),ts=(await import('typescript')).default;
+  const requireNode=createRequire(import.meta.url),React=requireNode('react'),{renderToStaticMarkup}=requireNode('react-dom/server');
+  const {resolve}=load('project'),{createT}=load('i18n');
+  const code=ts.transpileModule(readFileSync(new URL('../app/fill-settings.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
+  for(const lang of ['en','tr']){
+    const t=createT(lang),module={exports:{}};
+    const require=id=>id==='./i18n'?{useT:()=>({t})}:id.startsWith('@/lib/')?load(id.slice(6)):requireNode(id);
+    new Function('module','exports','require',code)(module,module.exports,require);
+    const {FillSettings,CrossSettings}=module.exports;
+    const render=fillPattern=>{const item={...object('Fill',[square]),fillPattern};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100}}));};
+    for(const id of ['sweepSatin','circular','crossStitchFill','streamlines']){
+      const html=render(id);assert.ok(!html.includes(t('Gradient mode')));assert.ok(!html.includes(t('Underlays ({v0})',{v0:1})));
+      if(id==='sweepSatin'){assert.ok(html.includes(t('Split above · mm')));assert.ok(html.includes('value="0.32"'));}
+      if(id==='circular'){assert.ok(html.includes(t('Center X · mm')));assert.ok(html.includes(t('Center Y · mm')));assert.ok(!html.includes(t('Stitch angle · °')));}
+      if(id==='crossStitchFill')for(const label of ['Cross style','Cross size · mm','Threads','Coverage · %','Flipped','Dense'])assert.ok(html.includes(t(label)));
+      if(id==='streamlines'){assert.ok(html.includes(t('Separation · mm')));assert.ok(!html.includes(t('Row space · mm')));assert.ok(html.includes('value="4"'));}
+    }
+    const html=renderToStaticMarkup(React.createElement(CrossSettings,{item:object('Cross',[square],'cross'),onChange:()=>{}}));
+    assert.ok(html.includes(t('Legacy rows')));assert.ok(!html.includes(t('Threads')));
+  }
 });

@@ -1,6 +1,30 @@
 // English phrases are stable translation keys; model IDs and saved content are never translated.
 export type Lang='tr'|'en';
 export const en={
+  "Streamlines": "Streamlines",
+  "Separation · mm": "Separation · mm",
+  "This fill is too dense. Increase spacing or reduce the design size.": "This fill is too dense. Increase spacing or reduce the design size.",
+
+  "Cross style": "Cross style",
+  "Legacy rows": "Legacy rows",
+  "Cross": "Cross",
+  "Upright": "Upright",
+  "Double": "Double",
+  "Smyrna": "Smyrna",
+  "Half": "Half",
+  "Flipped": "Flipped",
+  "Dense": "Dense",
+  "Cross size · mm": "Cross size · mm",
+  "Threads": "Threads",
+  "Coverage · %": "Coverage · %",
+  "Unknown cross-stitch style.": "Unknown cross-stitch style.",
+  "Invalid cross-stitch option.": "Invalid cross-stitch option.",
+
+  "Circular fill": "Circular fill",
+  "Center X · mm": "Center X · mm",
+  "Center Y · mm": "Center Y · mm",
+  "Reset center": "Reset center",
+  "Satin fill": "Satin fill",
   "Reset pattern parameters": "Reset pattern parameters",
   "Intensity": "Intensity",
   "Tightness": "Tightness",
@@ -707,6 +731,30 @@ export const en={
 } as const;
 export type Key=keyof typeof en;
 export const tr={
+  "Streamlines": "Akış çizgileri",
+  "Separation · mm": "Çizgi aralığı · mm",
+  "This fill is too dense. Increase spacing or reduce the design size.": "Bu dolgu çok sık. Aralığı artır veya tasarımı küçült.",
+
+  "Cross style": "Kanaviçe türü",
+  "Legacy rows": "Önceki sıra yöntemi",
+  "Cross": "Çarpı",
+  "Upright": "Dik",
+  "Double": "Çift",
+  "Smyrna": "Smirna",
+  "Half": "Yarım",
+  "Flipped": "Ters çevir",
+  "Dense": "Sık",
+  "Cross size · mm": "Kanaviçe boyutu · mm",
+  "Threads": "İplik sayısı",
+  "Coverage · %": "Kaplama · %",
+  "Unknown cross-stitch style.": "Bilinmeyen kanaviçe türü.",
+  "Invalid cross-stitch option.": "Geçersiz kanaviçe seçeneği.",
+
+  "Circular fill": "Dairesel dolgu",
+  "Center X · mm": "Merkez X · mm",
+  "Center Y · mm": "Merkez Y · mm",
+  "Reset center": "Merkezi sıfırla",
+  "Satin fill": "Saten dolgu",
   "Reset pattern parameters": "Desen ayarlarını sıfırla",
   "Intensity": "Şiddet",
   "Tightness": "Sıkılık",
@@ -1432,6 +1480,7 @@ const fillValidationLabels:Record<string,Key>={
   'Gradient end spacing':'Gradient end spacing','Gradient start':'Gradient start','Gradient end':'Gradient end','Gradient center':'Gradient center','Gradient width':'Gradient width',
   'Underlay angle':'Underlay angle','Underlay spacing':'Underlay spacing','Underlay length':'Underlay length','Underlay inset':'Underlay inset',
   'Wave steps':'Wave steps','Wave amplitude':'Wave amplitude','Stitch tolerance':'Stitch tolerance',
+  "Separation · mm":"Separation · mm", "Cross size · mm":"Cross size · mm","Threads":"Threads","Coverage · %":"Coverage · %",
   "Amplitude \u00b7 mm":"Amplitude \u00b7 mm","Intensity":"Intensity","Tightness":"Tightness","Rotations":"Rotations","Step height \u00b7 mm":"Step height \u00b7 mm","Steps per flight":"Steps per flight","Chaos":"Chaos","Pattern rows":"Pattern rows","Cell size \u00b7 mm":"Cell size \u00b7 mm"
 };
 export function errorText(error:unknown,t:Translator,fallback:Key):string {

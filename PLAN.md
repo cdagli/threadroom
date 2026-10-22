@@ -145,9 +145,14 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   Diamonds sm/md/lg, Zig-Zag, Circles sm/md/lg, Heartbeat, Spiral, Staircase, Rainfall,
   Hexweave, Tornado, Wavy Walk, Jitter, Bands, Interlocked, Rails, Twill, Houndstooth,
   Chain and Stars, with validated parameters, translated names and thumbnail picker.
-  Remaining: non-row fills (Satin sweep fill, Streamlines with a flow field, Circular fill
-  around a draggable centre, Cross-stitch styles: cross, upright, double, smyrna, half),
-  Double and Triple rope runs, and two-rail satin Blocks.
+  Non-row fills **done**: single-guide Satin sweep fill with satin settings/underlay,
+  Circular fill with true row spacing and panel centre inputs, Cross-stitch styles
+  (cross, upright, double, smyrna, half; coverage, dense, flipped and repeats), and
+  Streamlines with a deterministic smooth angle field and separation placement.
+  Legacy cross output stays unchanged until a new option is set. New engines have
+  translated picker thumbnails, validation, deterministic PES tests and quiet demo checks.
+  Remaining: draggable Circular centre handle, flow-guide editing, multi-guide satin,
+  full Euler routing, Double and Triple rope runs, and two-rail satin Blocks.
   Exact definitions in `docs/ember-patterns-spec.md`.
 - **Entry/exit handle size** (done: it was Chrome's default focus outline on the handle after a click). The selected object's entry/exit handle sometimes shows as a large dark
   ring with a light fill (reported 2026-10-22). Find the cause (handle radius from a stale canvas scale,

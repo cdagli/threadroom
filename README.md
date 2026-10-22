@@ -137,6 +137,47 @@ fabric profile until edited, with the existing **Fabric / Reset** markers.
   the ordinary 3 mm subdivision. The 12.7 mm machine cap has a 0.15 mm rounding margin.
   Stitch checks allow intentional pattern floats and satin bites up to 12.7 mm;
   ordinary sewn moves and inter-object connectors retain the 7 mm warning threshold.
+- **Satin fill** (`sweepSatin`) splits a shape at scanline splits/merges into
+  single-guide columns; stitches follow the fill angle. It uses satin spacing
+  (default 0.32 mm, 0.2–1), total pull compensation (default 0.4 mm = Ember's
+  0.2 mm per side), staggered **Split above** (default 7 mm, 3–12), short stitches
+  on compressed rails, and satin center/edge/zigzag underlay (default center).
+  Fill gradients and row underlays are ignored. Multiple angle guides are deferred.
+- **Circular fill** (`circular`) clips two interleaved Archimedean spirals around
+  `center: [x,y]`, defaulting to the shape's area centroid (including holes).
+  The panel exposes centre X/Y in hoop millimetres and Reset center; an explicit
+  centre follows object movement/resizing. Row Space inherits the fabric profile
+  (woven: 0.42 mm; range 0.05–50), keeping the demo safe. Ember defaults to
+  0.2 mm, which puts over four thread layers in the demo's overlapping cheeks
+  when interpreted as true spacing; that value remains available explicitly.
+  **Row Space is the true distance between arms**: `b = spacing / π`, deliberately
+  correcting Ember's `b = spacing` quirk, which makes the actual spacing π times
+  the entered value. Stitch length defaults to 4 mm (the shared 1–6 mm control).
+  Clipped pieces route nearest-first, using interior/boundary travel and trimming
+  disconnected parts; this is a simpler router than Ember's Euler graph.
+- **Cross stitch fill** (`crossStitchFill`), also available from the existing
+  Cross stitch style selector: cross, upright, double, Smyrna and half, with
+  Flipped and Dense toggles. Size defaults to 3 mm (1–20, step 0.5), Threads to
+  2 (1–8), Coverage to 50% (1–100). `patternParams` holds `crossSize`, `threadCount`
+  and `coverage` for the fill picker; existing `cross` objects use optional
+  `crossStyle`, `crossSize`, `threadCount`, `coverage`, `dense` and `flipped`.
+  Without those new options, **legacy cross projects keep the previous row method
+  byte for byte**. New styles splice closed cross cycles at shared lattice points;
+  half crosses sew diagonal chains out/back/out (more passes with more threads).
+  Boundary cells use clipped polygon area for coverage, so selected partial crosses
+  may extend outside the drawn outline or into a hole; raise Coverage to require
+  complete cells. Dense adds a half-cell shifted grid. Legs split at 4 mm.
+- **Streamlines** (`streamlines`) uses RK4 integration with 0.1 mm steps and
+  spatial hashing for evenly spaced placement. Separation defaults to 1.5 mm
+  (0.5–20, step 0.5); stitch length defaults to 4 mm (1–6). With no user guides,
+  the deterministic smooth field is `a = fillAngle + 0.35 sin((x-cx)/20) +
+  0.25 sin((y-cy)/20)` in radians, where `(cx,cy)` is the bounding-box centre.
+  This replaces Ember's unknown noise table. Curves are clipped around holes;
+  every curve and boundary is sewn out and back, with safe nearest-first travel
+  rather than Ember's Euler router. Integration stops with an actionable density
+  error above 200,000 steps. User flow-guide editing is deferred.
+  Circular, cross and streamline engines ignore fill underlay and pull compensation.
+  All engines are deterministic and use the 12.7 mm machine cap with rounding margin.
 - **Stitch angle** uses the existing −180…180° field, with a number input and a
   draggable circular dial. Arrow keys adjust the focused dial by 1°. Zero follows
   the x axis; positive angles rotate clockwise on the canvas.
@@ -532,7 +573,8 @@ binding is unavailable; its transport fixtures are excluded from deployment.
 
 This is an experimental compiler, not an Ink/Stitch integration or a production
 auto-digitizer. The first deployable version proves the browser/Python boundary.
-It has straight patterned scanline fills, ordered sparse fill underlays, constant-width
+It has straight patterned scanline fills, single-guide sweep satin, double-spiral circular
+fills, deterministic flow-field streamlines, cross styles, ordered sparse fill underlays, constant-width
 satin foundations, cross-fill grids, and tie stitches. An untrimmed connector
 (shorter than the trim threshold) is a straight stitch even where it crosses a
 hole or sewn stitches; do not set the threshold above a float you would accept.
