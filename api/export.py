@@ -1,9 +1,10 @@
 """Vercel Python Function and the identical local-development HTTP handler."""
 from http.server import BaseHTTPRequestHandler
 import json
-from embroidery.compiler import compile_project
+from embroidery.compiler import compile_project, ObjectPlanCache
 
 MAX_BODY = 2 * 1024 * 1024
+PLAN_CACHE = ObjectPlanCache()
 
 
 class handler(BaseHTTPRequestHandler):
@@ -30,7 +31,7 @@ class handler(BaseHTTPRequestHandler):
                 self.respond(415, {"error": "Send an application/json project."})
                 return
             project = json.loads(self.rfile.read(length))
-            result = compile_project(project)
+            result = compile_project(project, cache=PLAN_CACHE)
             self.respond(200, result)
         except (ValueError, TypeError, KeyError, OverflowError, RecursionError):
             import sys

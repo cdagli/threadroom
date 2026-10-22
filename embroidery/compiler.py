@@ -27,9 +27,11 @@ import math
 import re
 import heapq
 import time
+from bisect import bisect_left, bisect_right
 
 from .threads import valid_thread
 from .patterns import FILL_PATTERNS, pattern_cycle
+from .cache import ObjectPlanCache
 
 from pystitch import (EmbPattern, EmbThread, STITCH, JUMP, TRIM,
                       COLOR_CHANGE, END, COMMAND_MASK, read_pes, write_pes)
@@ -416,9 +418,11 @@ class Region:
         self.y0, self.h = min(ys)-self.PAD, max(.5, (max(ys)-min(ys)+2*self.PAD)/256)
         self.buckets = [[] for _ in range(int((max(ys)+self.PAD-self.y0)/self.h)+1)]
         for a, b in edges:
+            dx, dy = b[0]-a[0], b[1]-a[1]
+            edge = (a[0], a[1], b[1], dx, dy, dx**2+dy**2)
             for i in range(int((min(a[1], b[1])-self.PAD-self.y0)/self.h), int((max(a[1], b[1])+self.PAD-self.y0)/self.h)+1):
                 if 0 <= i < len(self.buckets):
-                    self.buckets[i].append((a, b))
+                    self.buckets[i].append(edge)
 
     def contains(self, point, tolerance=0.001):
         i = int((point[1]-self.y0)/self.h)
@@ -426,20 +430,24 @@ class Region:
             return False
         x, y = point
         winding = 0
-        for a, b in self.buckets[i]:
-            length_sq = (b[0]-a[0])**2 + (b[1]-a[1])**2
-            t = max(0, min(1, ((x-a[0])*(b[0]-a[0])+(y-a[1])*(b[1]-a[1]))/length_sq))
-            if math.hypot(x-a[0]-t*(b[0]-a[0]), y-a[1]-t*(b[1]-a[1])) < tolerance:
+        for ax, ay, by, dx, dy, length_sq in self.buckets[i]:
+            t = max(0, min(1, ((x-ax)*dx+(y-ay)*dy)/length_sq))
+            if math.hypot(x-ax-t*dx, y-ay-t*dy) < tolerance:
                 return True
-            if (a[1] > y) != (b[1] > y) and x < a[0] + (y-a[1]) * (b[0]-a[0]) / (b[1]-a[1]):
-                winding += 1 if b[1] > a[1] else -1
+            if (ay > y) != (by > y) and x < ax + (y-ay) * dx / dy:
+                winding += 1 if by > ay else -1
         return winding != 0 if self.rule == "nonzero" else winding % 2 == 1
 
     def clear(self, point, distance):
         """True when no edge is within distance (at most PAD) of point."""
         i = int((point[1]-self.y0)/self.h)
-        return not 0 <= i < len(self.buckets) or not any(
-            segment_distance(point, a, b) < distance for a, b in self.buckets[i])
+        if 0 <= i < len(self.buckets):
+            x, y = point
+            for ax, ay, _, dx, dy, length_sq in self.buckets[i]:
+                t = max(0, min(1, ((x-ax)*dx+(y-ay)*dy)/length_sq))
+                if math.hypot(x-ax-t*dx, y-ay-t*dy) < distance:
+                    return False
+        return True
 
 
 def segment_distance(p, a, b):
@@ -498,7 +506,18 @@ class Grid:
         self.inside, self.safe, self.deep, self.sewn = bytearray(size), bytearray(size), bytearray(size), bytearray(size)
         m, d = TRAVEL_MARGIN, MIN_UNDERLAY_FILL/2
         q = d/SQRT2
-        covers = lambda spans, x: any(a <= x <= b for a, b in spans)
+        # Rasterise spans once per row, rather than testing every cell against
+        # every span through Python generators. Use the original coordinate
+        # expressions (including x +/- q) to preserve boundary rounding.
+        xs = [self.x0+(i+.5)*c for i in range(self.nx)]
+        shifted = {e: [x+e for x in xs] for e in (-q, q)}
+        def mask(spans, coords=xs):
+            row = bytearray(self.nx)
+            for a, b in spans:
+                lo, hi = bisect_left(coords, a), bisect_right(coords, b)
+                if hi > lo:
+                    row[lo:hi] = b'\x01'*(hi-lo)
+            return int.from_bytes(row, 'little')
         for j in range(self.ny):
             y = self.y0+(j+.5)*c
             row = scan_spans(rotated, y, rule)
@@ -506,13 +525,25 @@ class Grid:
                 continue
             near = [scan_spans(rotated, y+o, rule) for o in (-m, m)]
             far = {o: scan_spans(rotated, y+o, rule) for o in (-d, -q, q, d)}
+            # Keep the legacy ceil/floor inclusion rule for the outer raster.
+            inside_row = bytearray(self.nx)
             for a, b in row:
-                for i in range(max(0, math.ceil((a-self.x0)/c-.5)), min(self.nx-1, math.floor((b-self.x0)/c-.5))+1):
-                    x, k = self.x0+(i+.5)*c, j*self.nx+i
-                    self.inside[k] = 1
-                    self.safe[k] = a+m <= x <= b-m and all(covers(s, x) for s in near)
-                    self.deep[k] = (a+d <= x <= b-d and covers(far[-d], x) and covers(far[d], x)
-                                    and all(covers(far[o], x+e) for o in (-q, q) for e in (-q, q)))
+                lo = max(0, math.ceil((a-self.x0)/c-.5))
+                hi = min(self.nx-1, math.floor((b-self.x0)/c-.5))+1
+                if hi > lo:
+                    inside_row[lo:hi] = b'\x01'*(hi-lo)
+            occupied = int.from_bytes(inside_row, 'little')
+            safe = occupied & mask([(a+m,b-m) for a,b in row])
+            for spans in near:
+                safe &= mask(spans)
+            deep = occupied & mask([(a+d,b-d) for a,b in row]) & mask(far[-d]) & mask(far[d])
+            for o in (-q, q):
+                for e in (-q, q):
+                    deep &= mask(far[o], shifted[e])
+            start = j*self.nx
+            self.inside[start:start+self.nx] = inside_row
+            self.safe[start:start+self.nx] = safe.to_bytes(self.nx, 'little')
+            self.deep[start:start+self.nx] = deep.to_bytes(self.nx, 'little')
         self.label = [-1]*size
         count = 0
         for start in range(size):
@@ -682,10 +713,17 @@ class Rows:
         return [[(l if (side+i) % 2 == 0 else r, y), (r if (side+i) % 2 == 0 else l, y)] for i, (y, l, r) in enumerate(rows)]
 
     def start(self, variant):
-        return rotate([list(self.ordered(variant)[0][0])], self.angle, True)[0]
+        reverse, side = variant
+        y, l, r = self.rows[-1 if reverse else 0]
+        return rotate([[l if side == 0 else r, y]], self.angle, True)[0]
+
+    def row_end(self, variant):
+        reverse, side = variant
+        y, l, r = self.rows[0 if reverse else -1]
+        return (r if (side+len(self.rows)-1) % 2 == 0 else l, y)
 
     def end(self, variant):
-        return rotate([list(self.ordered(variant)[-1][1])], self.angle, True)[0]
+        return rotate([list(self.row_end(variant))], self.angle, True)[0]
 
     def paths(self, variant, length):
         if not self.pattern or self.pattern == "even":
@@ -863,7 +901,7 @@ def route_fill(obj, at, entry, target, underlay_only=False):
     def after(piece, variant):
         """Neighbours that travel can enter where this variant ends: travel may
         not run back along the sewn last row, so their span must reach its end."""
-        x = piece.ordered(variant)[-1][1][0]
+        x = piece.row_end(variant)[0]
         return {other for other, a, b in links[piece][0 if variant[0] else 1] if a-.8 <= x <= b+.8}
     def plan(pieces, last):
         """Sewing order of top sections as (section, variant), needing
@@ -1528,8 +1566,10 @@ def design_check(trace, cuts, objects):
             continue
         sewn[b[2]] = sewn.get(b[2], 0)+1
         d = math.dist(a[:2], b[:2])
-        for p in interpolate(a[:2], b[:2], .5):
-            add(thread, p[0], p[1], b[2], d/max(1, math.ceil(d/.5)))
+        samples = max(1, math.ceil(d/.5))
+        weight, dx, dy = d/samples, b[0]-a[0], b[1]-a[1]
+        for k in range(1, samples+1):
+            add(thread, a[0]+dx*k/samples, a[1]+dy*k/samples, b[2], weight)
         if d < SHORT_STITCH-.01 and b[3] != "lock":
             short.setdefault(b[2], []).append((d, a, b))
         elif d > (SATIN_MAX if b[3] in ("bite", "pattern") else LONG_STITCH):
@@ -1550,13 +1590,15 @@ def design_check(trace, cuts, objects):
                          "severity": "check", "values": {"count": len(found), "longest": round(max(d for d, _, _ in found), 1), "limit": SATIN_MAX if all(b[3] in ("bite", "pattern") for _, a, b in found) else LONG_STITCH}})
     # Density: 2 x 2 mm windows over 1 mm cells, credited to the object with the most penetrations there.
     dense = {}
+    hit_totals = {k: sum(cell.values()) for k, cell in hits.items()}
+    thread_totals = {k: sum(cell.values()) for k, cell in thread.items()}
     for cx, cy in hits:
         for k in ((cx-u, cy-v) for u in range(DENSE_WINDOW) for v in range(DENSE_WINDOW)):
             if k in dense:
                 continue
             window = [(k[0]+u, k[1]+v) for u in range(DENSE_WINDOW) for v in range(DENSE_WINDOW)]
-            n = sum(sum(hits.get(c, {}).values()) for c in window)/DENSE_WINDOW**2
-            layers = sum(sum(thread.get(c, {}).values()) for c in window)/DENSE_WINDOW**2*LAYER_SPACING
+            n = sum(hit_totals.get(c, 0) for c in window)/DENSE_WINDOW**2
+            layers = sum(thread_totals.get(c, 0) for c in window)/DENSE_WINDOW**2*LAYER_SPACING
             level = 2 if n >= DENSE_HITS[1] or layers >= DENSE_LAYERS[1] else 1 if n >= DENSE_HITS[0] or layers >= DENSE_LAYERS[0] else 0
             if level:
                 owners = {}
@@ -1614,7 +1656,7 @@ def design_check(trace, cuts, objects):
     return warnings
 
 
-def compile_project(project):
+def compile_project(project, *, cache=None):
     started = time.perf_counter()
     width, height, trim_jump, objects = validate(project)
     pattern = EmbPattern()
@@ -1677,7 +1719,9 @@ def compile_project(project):
     for index, obj in enumerate(objects):
         target = obj.get("exit") or next_target(obj, objects[index+1] if index+1 < len(objects) else None)
         clamp = obj["kind"] in FILL_KINDS  # compensation may reach past a ring that touches the hoop edge
-        for chunks in plan_object(obj, at, target):
+        planned = (plan_object(obj, at, target) if cache is None else
+                   cache.plan(obj, at, target, (width, height, trim_jump), plan_object))
+        for chunks in planned:
             chunks = [([[min(max(x, 0), width), min(max(y, 0), height)] for x, y in points] if clamp else points, limit) for points, limit in chunks]
             points = [p for chunk, _ in chunks for p in chunk]
             runs.append((index, obj, chunks, points))
@@ -1793,7 +1837,7 @@ def compile_project(project):
             last_owner = owner
         cut = cut and flag != JUMP
         counts["stitches" if flag == STITCH else "jumps"] += 1
-        if flag == JUMP and commands[1:]:
+        if flag == JUMP and len(commands) > 1:
             jump_length += math.dist(last, p)
         if flag == STITCH:
             sewn.extend([last, p])
