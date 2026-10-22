@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import opentype from 'opentype.js';
 import {load} from './load-lib.mjs';
-const {layoutText,defaultText,transformText,validText,mergedOutline}=load('text');
+const {layoutText,defaultText,transformText,validText,mergedOutline,fitTextInHoop}=load('text');
 const {moveGeometry,geometryPayload}=load('curves');
 const {object,validProject,bounds}=load('project');
 const font=name=>opentype.parse(readFileSync(new URL(`./fixtures/${name}`,import.meta.url)).buffer);
@@ -114,3 +114,15 @@ test('Text borders follow the merged outline of overlapping letters, keeping hol
   assert.equal(mergedOutline(layoutText(spec({content:'O'}),[latin]).rings).length,2,'an O keeps its inner hole outline');
 });
 
+
+test('A placed text that would leave the hoop shrinks and moves inside it',()=>{
+  const hoop={width:100,height:100},wide=spec({content:'Metninizi yazın',size:12,origin:[60,90]});
+  const fitted=fitTextInHoop(wide,box(layoutText(wide,[latin,ext]).rings),hoop);
+  const b=box(layoutText(fitted,[latin,ext]).rings);
+  assert.ok(fitted.size<12&&fitted.size>=3,fitted.size);
+  assert.ok(b.x>=1.9&&b.x+b.width<=98.1&&b.y>=1.9&&b.y+b.height<=98.1,JSON.stringify(b));
+  const small=spec({size:8,origin:[50,50]});
+  assert.equal(fitTextInHoop(small,box(layoutText(small,[latin]).rings),hoop),null);
+  const edge=spec({size:8,origin:[3,50]}),moved=fitTextInHoop(edge,box(layoutText(edge,[latin]).rings),hoop);
+  assert.equal(moved.size,8);assert.ok(box(layoutText(moved,[latin]).rings).x>=1.99);
+});

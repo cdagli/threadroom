@@ -13,7 +13,7 @@ import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
-import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
@@ -31,7 +31,7 @@ import {SVGImportChoice,ExportImageButton} from './io-controls';
 import {DensityHeat,DensityLegend,StitchDiagnostics,useDensity} from './density-view';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
-import {defaultText, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
+import {defaultText, fitTextInHoop, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
 import {layoutSatinText,convertSatinText} from '@/lib/satin-lettering';
 import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
@@ -136,9 +136,9 @@ function StudioEditor() {
     {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
     {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
     {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure length and angle. Shift: snap to 15°.')},
-    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
-    {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
-    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Click left and right rail points in turn; satin is sewn between the rails.",{v0:pathHint})},
+    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0}. Or click the first point.",{v0:pathHint})},
+    {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0}. Or click the first point.",{v0:pathHint})},
+    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0}. Click left and right rail points in turn; satin is sewn between the rails.",{v0:pathHint})},
     {id:'freehand',icon:'pen',label:t("Freehand"),key:'4',title:t("Drawing Freehand"),hint:t("Click and drag to draw, release to complete.")},
     {id:'points',icon:'points',label:t("Points"),key:'P',title:t("Placing Points"),hint:t("Click to place stitch points, then Done.")},
     {id:'text',icon:'text',label:t("Text"),key:'T',title:t("Adding Text"),hint:t("Click the hoop to place text.")},
@@ -362,10 +362,16 @@ function StudioEditor() {
     const next=layoutObject(o);if(next===o)return;
     current.current=syncPathBindings({...p,objects:p.objects.map(x=>x.id===id?next:x)},p);setProject(current.current);invalidate();setSaved(false);
   }
-  function loadTextFonts(id:string,spec:TextSpec){
+  // A newly placed text that would leave the hoop shrinks and moves inside it once its font is laid out.
+  function fitPlacedText(id:string){
+    const p=current.current,o=p.objects.find(x=>x.id===id);if(!o?.text)return;
+    const text=fitTextInHoop(o.text,bounds([o]),hoops[p.hoop]);if(!text)return;
+    current.current={...p,objects:p.objects.map(x=>x.id===id?{...o,text}:x)};relayout(id);
+  }
+  function loadTextFonts(id:string,spec:TextSpec,fit=false){
     if(spec.satin)return;
     setFontLoading(n=>n+1);
-    ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
+    ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);if(fit)fitPlacedText(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
   }
   function updateText(patch:Partial<TextSpec>,merge?:string){
     if(!item?.text||item.locked)return;
@@ -378,7 +384,7 @@ function StudioEditor() {
   function placeText(p:Point){
     const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
-    loadTextFonts(o.id,text);setSettingsCollapsed(false);
+    loadTextFonts(o.id,text,true);setSettingsCollapsed(false);
     requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});
   }
   function focusText(){setSettingsCollapsed(false);requestAnimationFrame(()=>{textArea.current?.focus();textArea.current?.select();});}
