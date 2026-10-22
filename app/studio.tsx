@@ -1116,7 +1116,7 @@ function StudioEditor() {
       </section>}
       {panelTab==='setup'&&<section className="panel-section">
         <ViewControls value={viewSettings} onChange={patch=>setViewSettings(v=>({...v,...patch}))}/>
-        <button className="text-button" onClick={()=>setShortcutHelp(true)}>{t('Keyboard shortcuts')} (?)</button>
+        <button className="text-button setup-shortcuts" onClick={()=>setShortcutHelp(true)}>{t('Keyboard shortcuts')} (?)</button>
         <label>{t("Machine")}<select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">{t("Brother PR1X")}</option></select></label>
         <label>{t("Hoop")}<select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{t(h.label)}</option>)}</select></label>
         <label>{t("Fabric")}<select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{t(f.label)}</option>)}</select></label>

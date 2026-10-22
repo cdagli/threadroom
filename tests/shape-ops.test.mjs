@@ -92,6 +92,8 @@ test('Knife splits closed shapes and open paths along the line, keeping settings
   assert.ok(Math.abs(area(left)+area(right)-400)<.7);assert.ok(Math.abs(area(left)-area(right))<1e-6);
   assert.deepEqual(r.project.objects.slice(2).map(o=>o.kind),['bean','bean']);assert.deepEqual(r.project.objects[2].rings[0].at(-1),[30,50]);
   assert.match(S.knifeShapes(project(a),null,[30,10],[30,30]).error,/starting and ending outside/);
+  // A line between the separate parts of one object crosses neither, so nothing is split.
+  assert.match(S.knifeShapes(project(named('P',[sq(10,10,10),sq(40,10,10)])),['P'],[30,0],[30,40]).error,/starting and ending outside/);
   assert.ok(S.knifeShapes(project(a),['A'],[50,10],[50,70]).error);
   // A ring cut twice: both halves keep a part of the hole.
   const donut=named('D',[sq(20,20,40),sq(30,30,20)]),halves=ok(S.knifeShapes(project(donut),['D'],[40,10],[40,70])).project.objects;
