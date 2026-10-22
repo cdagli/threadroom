@@ -325,14 +325,14 @@ Geometry is mm, and fill angle is −180..180 (slider −90..90, default 35).
 | Satin underlay list (center / contour / zigzag, insets) | Single enum `center / edge / zigzag / edge-zigzag` | Partly | Keep enum; optional list later |
 | Fill pattern (36) | Rows divided evenly from each row's own start (`Rows.paths` → `interpolate`). No inter-row stagger | **Missing** | See step 3 |
 | Stitch Angle 0–359 + dial | `angle` −180..180, UI −90..90 slider | Equivalent for straight rows (mod 180) | Optional dial. Widen UI to −180..180 only once patterns make direction matter |
-| Edit angles (multi-guide sweep) | none | **Missing** | Large. Defer |
+| Edit angles (multi-guide sweep) | `angleGuides` (≤ 8), sweep in `embroidery/sweep.py` | **Done** (own field blend) | none |
 | Row Space | `spacing` 0.3–2, fabric default 0.38–0.5 | Equivalent (range differs) | none (keep fabric) |
 | Stitch Length (fill) | Shared `length` 0.5–3 (also used by running) | Partly | Add `fillLength?` (1–6, default 3.5?). Decide (see 4.4) |
 | Pull compensation | `pullCompensation` 0–1, applied **half per side** (`extend_spans`) | Equivalent but different semantics | Ember value p equals Threadroom 2p. Document; no change |
 | Hand Stitch 0–5 | none | **Missing** | `handStitch?` 0–5. Compiler offset perpendicular to rows, seeded by object id |
 | Underpath | Travel is always hidden inside the part (`travel` via `Grid.reach`), else trim | Equivalent to "on" | Optional `underpath:false` → route travel along the edge. Low value |
 | Gradient ramp / plateau | none | **Missing** (paid in Ember) | `gradient?` and non-uniform `y` stepping in `fill_sections` |
-| Density Control (row shortening) | n/a (no sweep fills) | N/A until Edit angles exists | none |
+| Density Control (row shortening) | `rowShortening`, `densityTrigger` (0.1–1) | **Done** | none |
 | Fill underlays: list of {angle, row, length, inset} | Enum `none / edge / tatami / edge-tatami`. Tatami = angle+90, spacing 2, inset 0.4 (`EDGE_INSET`), length = `length`. Edge = inset walk. Underlay is skipped in parts without "deep" cells | Partly | See step 4 |
 | Underlay order | Per part: edge, then tatami, then top | Equivalent | Keep list order, which is more predictable than Ember's reordering |
 | tieOn / tieOff / trimAfter | `tieIn` / `tieOff` locks (none / tack / triangle, size). Ties only around trims. Trims decided by `trimJump` | Equivalent or richer | `trimAfter` (force a trim after an object) is **missing**. Optional bool |

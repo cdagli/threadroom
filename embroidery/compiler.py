@@ -40,7 +40,7 @@ CONNECT_TOLERANCE = 0.1
 FILL_KINDS = ("fill", "cross")
 WIDE_KINDS = ("satin", "zigzag", "e-stitch")
 ROPE_KINDS = ("double-rope", "triple-rope")
-KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual", *ROPE_KINDS, "satin-block")
+KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual", *ROPE_KINDS, "satin-block", "redwork")
 SATIN_MAX = 12.7  # PR1X / PES single stitch limit
 # Short stitches: shorten alternate inner bites by SHORT_INSET of the width where the
 # inner rail is compressed below SHORT_RATIO of the centre line and its needle hits
@@ -159,6 +159,21 @@ def validate(project):
         number(obj.get("angle", 0), -180, 180, "Fill angle")
         number(obj.get("satinWidth", 2), 0.5, 10, "Satin width")
         number(obj.get("pullCompensation"), 0, 1, "Pull compensation")
+        if "angleGuides" in obj:
+            guides = obj["angleGuides"]
+            if not isinstance(guides, list) or len(guides) > 8:
+                raise ValueError("Use at most eight angle guides.")
+            for g in guides:
+                if not isinstance(g, dict) or any(not isinstance(g.get(k), list) or len(g[k]) != 2 for k in ("a", "b")):
+                    raise ValueError("Invalid angle guide.")
+                for v in (*g["a"], *g["b"]):
+                    number(v, -1000, 1000, "Angle guide position")
+                if math.dist(g["a"], g["b"]) < .1:
+                    raise ValueError("An angle guide needs two distinct ends.")
+        if "rowShortening" in obj and not isinstance(obj["rowShortening"], bool):
+            raise ValueError("Row shortening must be on or off.")
+        if "densityTrigger" in obj:
+            number(obj["densityTrigger"], .1, 1, "Density trigger")
         if "ropeWidth" in obj:
             number(obj["ropeWidth"], .2, 2, "Rope width")
         if "eFlipped" in obj and not isinstance(obj["eFlipped"], bool):
@@ -377,7 +392,7 @@ class Region:
     PAD = 1.0
 
     def __init__(self, rings, rule):
-        self.rule = rule
+        self.rule, self.rings = rule, rings
         edges = [(a, b) for ring in rings for a, b in zip(ring, ring[1:]+ring[:1]) if a != b]
         ys = [p[1] for r in rings for p in r]
         self.y0, self.h = min(ys)-self.PAD, max(.5, (max(ys)-min(ys)+2*self.PAD)/256)
@@ -1357,6 +1372,13 @@ def plan_object(obj, at, target):
     if kind in FILL_KINDS:
         snap = lambda p: p and nearest_on(obj["rings"], p, True)[2]
         entry, exit = snap(entry), snap(exit)
+        if kind == "fill" and obj.get("angleGuides") and obj.get("fillPattern") not in ("streamlines", "circular", "crossStitchFill"):
+            # One guide sets the angle; two or more bend the rows (embroidery/sweep.py).
+            from . import sweep
+            guides = sweep.usable(obj)
+            if len(guides) > 1:
+                return sweep.route(obj, guides, at, entry, exit or target)
+            obj = {**obj, "angle": round(sweep.guide_angle(guides[0]), 1)}  # as the editor stores it
         if kind == "fill" and obj.get("fillPattern") == "sweepSatin":
             from .engines import route_satin
             return route_satin(obj, at, entry, exit or target)
@@ -1382,6 +1404,9 @@ def plan_object(obj, at, target):
             # the machine cap, with room for PES's 0.1 mm coordinate rounding.
             return [[(path, min(SATIN_MAX-.15, max(limit, max(math.dist(a,b) for a,b in zip(path,path[1:]))+.01)))] for path in paths]
         return [[(path, limit)] for path in paths]
+    if kind == "redwork":
+        from .redwork import plan
+        return plan(obj, at, entry, exit or target)
     return route_lines(obj, at, entry, exit, exit or target)
 
 

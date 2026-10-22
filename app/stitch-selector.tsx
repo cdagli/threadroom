@@ -6,6 +6,7 @@ import {type StitchGroup} from '@/lib/curves';
 
 const samples: Record<Kind,string> = {
   running:'M3 14h7m3 0h7m3 0h7m3 0h8',
+  redwork:'M3 12h34M3 16h34M37 12v4M3 12v4',
   bean:'M3 12h9m2 0h10m2 0h10m-33 4h9m2 0h10m2 0h10',
   backstitch:'M3 13h36M5 10h8m-2 6h8m-2-6h8m-2 6h8m-2-6h8',
   satin:'M3 22 5 6 7 22 9 6 11 22 13 6 15 22 17 6 19 22 21 6 23 22 25 6 27 22 29 6 31 22 33 6 35 22 37 6 39 22',

@@ -2,6 +2,7 @@ import {createT,TranslationError,type Translator} from './i18n';
 import {fabrics, isFillKind, isRopeKind, profileDefault, resolve, ropeDefaults, type Kind, type Point, type Project, type Rails, type Resolved, type StitchObject} from './project';
 import {splineBeziers,sampleCubic} from './spline';
 import {mergedOutline, transformText} from './text';
+import {transformGuides} from './angle-guides';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
 // The compiler receives flattened millimetre geometry; projects retain anchors.
@@ -87,12 +88,13 @@ export type StitchGroup={label:string;kinds:Kind[]};
 export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGroup[] {
   const line:Kind[]=['running','bean','backstitch','double-rope','triple-rope','satin','zigzag','e-stitch','underlay'];
   if(o.rails)return [{label:t("Blocks"),kinds:['satin-block']}];
+  if(o.kind==='redwork')return [{label:t("Redwork"),kinds:['redwork']}];
   return isClosedShape(o)?[{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}]:[{label:t("Line"),kinds:[...line,'manual']}];
 }
 // Text is relaid out by the editor; manual curves become their anchor stitches.
 // Blocks keep their rails and kind; a rope run starts at Ember's 1.5 mm stitch length.
 export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
-  if(kind===o.kind||o.rails||kind==='satin-block')return o;
+  if(kind===o.kind||o.rails||kind==='satin-block'||kind==='redwork'||o.kind==='redwork')return o;
   const next=switchKind(o,kind);
   return next!==o&&isRopeKind(kind)&&!isRopeKind(o.kind)?{...next,length:ropeDefaults.length}:next;
 }
@@ -181,7 +183,8 @@ export function removeGeometryPoint(o:StitchObject,ring:number,index:number):Sti
 
 // Entry/exit points and text specs move as ring -1, so dragging one anchor leaves them in place.
 export function moveGeometry(o:StitchObject, move:(p:Point,ring:number,index:number)=>Point):StitchObject {
-  const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)}),...(o.center&&{center:move(o.center,-1,-1)})};
+  const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)}),...(o.center&&{center:move(o.center,-1,-1)}),
+    ...transformGuides(o,p=>move(p,-1,-1)),...(o.sources&&{sources:o.sources.map(s=>moveGeometry(s,p=>move(p,-1,-1)))})};
   if(o.rails)return {...withRails(o,{...o.rails,points:o.rails.points.map((rail,ri)=>rail.map((p,i)=>move(p,ri,i))) as [Point[],Point[]]}),...ends};
   if(o.text)return {...o,...ends,text:transformText(o.text,p=>move(p,-1,-1)),rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
   if(o.curve){
@@ -266,6 +269,8 @@ export function samplePath(points:Point[], length:number,t:Translator=createT('e
   return result;
 }
 
+// Redwork sources only matter to Break apart; the compiler sews the merged rings.
+const withoutSources=(o:StitchObject)=>{if(!o.sources)return o;const {sources,...rest}=o;void sources;return rest;};
 export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'|'locks'|'objects'>&{objects:Resolved[]} {
   const {artwork,fabric,locks,...rest}=project;void artwork;
   // Smooth display tessellation is finer than running stitches. Sample along
@@ -276,7 +281,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'fabric'
   const tolerant=(o:StitchObject)=>o.tolerance!==undefined&&['running','bean','backstitch'].includes(o.kind);
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
-  return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
+  return {...rest,objects:rest.objects.filter(o=>o.rings.length).map(o=>ends(resolve(withoutSources(o),fabric,locks))).flatMap(o=>{
     if(o.rails)return [{...o,rings:[blockCentre(o.rails)],railPaths:railSamples(o.rails)}];
     if(!o.text){const rings=o.curve?[curveRing(o.curve,!isFillKind(o.kind))]:o.rings;return [o.curve&&line(o.kind)&&!tolerant(o)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
