@@ -18,3 +18,9 @@ export function frameQueue(request:(run:()=>void)=>number,cancel:(id:number)=>vo
   const flush=()=>{if(frame!==null)cancel(frame);frame=null;const run=pending;pending=null;run?.();};
   return {push(run:()=>void){pending=run;if(frame===null)frame=request(flush);},flush,cancel(){if(frame!==null)cancel(frame);frame=null;pending=null;}};
 }
+
+// OS key-repeat can start after a long delay; a held arrow still belongs to its first press.
+export function keyBurst(gap=400){
+  let previous:{key:string;time:number}|null=null;
+  return {step(key:string,time:number,repeat=false){const merge=previous?.key===key&&(repeat||time-previous.time<gap);previous={key,time};return merge;},clear(){previous=null;}};
+}

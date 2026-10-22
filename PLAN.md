@@ -122,6 +122,12 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
 - Runs last, once the UI strings from the other phases are stable.
 
 ## Queued after Phase 7
+- **Editing tools from Ember (done)**. Selection box with eight scale handles and rotation;
+  Shift proportions/15° rotation, Alt centre scaling, numeric X/Y/W/H/rotation, flips,
+  quarter-turn, align/distribute, browser clipboard and duplication, coalesced arrow nudges.
+  Editable affine text, entry/exit transforms and hoop guards; persisted view units, fine grid,
+  object snapping/guides, rulers, live coordinates, shared jump overlay and localized shortcut help.
+  Pure geometry, clipboard, text regeneration and preference tests. Desktop browser checks pending.
 - **Single design-check pill** (done). Merge the issue-count badge and the "likely to fail" pill into one pill
   (red with the likely-to-fail count when any fail, amber for warnings only, green when ready).
 - **Editor performance** (done). Moving or editing one object currently re-renders everything. Memoised canvas

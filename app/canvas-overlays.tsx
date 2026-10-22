@@ -4,6 +4,7 @@ import {memo} from 'react';
 import {pathData,type Point,type Command} from '@/lib/project';
 import {routeEnds} from '@/lib/curves';
 import type {Warning} from '@/lib/check';
+import {unitValue,type Units} from '@/lib/view-settings';
 
 export const IssueMarker=memo(function IssueMarker({focus,canvasScale}:{focus:Warning;canvasScale:number}){
   const [x0,y0,x1,y1]=focus.bounds,pad=1+4/canvasScale,width=Math.max(x1-x0+2*pad,28/canvasScale),height=Math.max(y1-y0+2*pad,28/canvasScale),x=(x0+x1)/2-width/2,y=(y0+y1)/2-height/2,rx=Math.min(width,height,40/canvasScale)/2;
@@ -24,9 +25,9 @@ export const DraftOverlay=memo(function DraftOverlay({draft,displayDraft,closeab
 export const ShapeOverlay=memo(function ShapeOverlay({shapePreview,shapeDraft,canvasScale}:{shapePreview:Point[];shapeDraft:{start:Point;end:Point};canvasScale:number}){
   return <g pointerEvents="none"><path d={pathData([shapePreview],true)} fill="var(--draft-fill)" stroke="var(--accent)" strokeWidth={1.5/canvasScale}/><path d={`M${shapeDraft.start[0]} ${shapeDraft.start[1]}L${shapeDraft.end[0]} ${shapeDraft.end[1]}`} stroke="var(--danger)" strokeWidth={1.2/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><circle cx={shapeDraft.start[0]} cy={shapeDraft.start[1]} r={3/canvasScale} fill="var(--danger)"/></g>;
 });
-export const MeasureOverlay=memo(function MeasureOverlay({measure,canvasScale}:{measure:{a:Point;b:Point};canvasScale:number}){
-  const {formatMm}=useT();
-  const {a,b}=measure,d=Math.hypot(b[0]-a[0],b[1]-a[1]),f=11/canvasScale;return <g className="measure" pointerEvents="none"><path d={`M${a[0]} ${a[1]}L${b[0]} ${b[1]}`} stroke="var(--surface-raised)" strokeWidth={4/canvasScale} strokeLinecap="round"/><path d={`M${a[0]} ${a[1]}L${b[0]} ${b[1]}`} stroke="var(--measure-line)" strokeWidth={1.5/canvasScale}/>{[a,b].map((q,i)=><circle key={i} cx={q[0]} cy={q[1]} r={3/canvasScale} fill="var(--measure-line)" stroke="var(--surface-raised)" strokeWidth={1/canvasScale}/>)}<text x={(a[0]+b[0])/2} y={(a[1]+b[1])/2-8/canvasScale} fontSize={f} textAnchor="middle" fill="var(--measure-line)" stroke="var(--surface-raised)" strokeWidth={3/canvasScale} paintOrder="stroke" fontWeight="600">{formatMm(d)}</text></g>;
+export const MeasureOverlay=memo(function MeasureOverlay({measure,canvasScale,units='mm'}:{measure:{a:Point;b:Point};canvasScale:number;units?:Units}){
+  const {formatNumber}=useT();
+  const {a,b}=measure,d=Math.hypot(b[0]-a[0],b[1]-a[1]),f=11/canvasScale;return <g className="measure" pointerEvents="none"><path d={`M${a[0]} ${a[1]}L${b[0]} ${b[1]}`} stroke="var(--surface-raised)" strokeWidth={4/canvasScale} strokeLinecap="round"/><path d={`M${a[0]} ${a[1]}L${b[0]} ${b[1]}`} stroke="var(--measure-line)" strokeWidth={1.5/canvasScale}/>{[a,b].map((q,i)=><circle key={i} cx={q[0]} cy={q[1]} r={3/canvasScale} fill="var(--measure-line)" stroke="var(--surface-raised)" strokeWidth={1/canvasScale}/>)}<text x={(a[0]+b[0])/2} y={(a[1]+b[1])/2-8/canvasScale} fontSize={f} textAnchor="middle" fill="var(--measure-line)" stroke="var(--surface-raised)" strokeWidth={3/canvasScale} paintOrder="stroke" fontWeight="600">{formatNumber(unitValue(d,units),units==='in'?3:1)} {units}</text></g>;
 });
 export const NeedleMarker=memo(function NeedleMarker({needle,canvasScale}:{needle:Command;canvasScale:number}){
   const {t}=useT();

@@ -16,6 +16,13 @@ test('Each drag yields exactly one undo step, even when pointer-up is lost',()=>
 });
 
 const {frameQueue}=load('drag');
+const {keyBurst}=load('drag');
+test('Nudge bursts coalesce taps and a long held key, splitting after a pause or selection change',()=>{
+  const b=keyBurst();assert.equal(b.step('a',0),false);assert.equal(b.step('a',200),true);
+  assert.equal(b.step('a',1800,true),true);assert.equal(b.step('a',1850,true),true);
+  assert.equal(b.step('a',2400),false);assert.equal(b.step('b',2450,true),false);
+  b.clear();assert.equal(b.step('b',2500),false);
+});
 function scheduler(){let id=0;const frames=new Map();return {frames,request:fn=>{frames.set(++id,fn);return id;},cancel:n=>frames.delete(n),tick(){const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn());}};}
 test('Moves coalesce per animation frame and the final pending move flushes into one undo step',()=>{
   const s=scheduler(),q=frameQueue(s.request,s.cancel),h=dragHistory(),a={n:0};let current=a,updates=0;

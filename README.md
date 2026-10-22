@@ -291,14 +291,14 @@ the toolbar at the bottom. While an object is selected its settings (and, for
 text, the text panel) float at the left; the arrow collapses them to a header and
 the bin deletes the object. The side panel's rail opens **Layers** (the object
 list with previews, selection, visibility, reordering and groups), **Artwork**,
-**Setup** (machine, hoop, fabric, ties and trims) and **Info** (size, stitch
+**Setup** (view settings, machine, hoop, fabric, ties and trims) and **Info** (size, stitch
 counts, design width, engine status); the last rail button hides the panel.
 
 Toolbar, left to right (shortcut in brackets), as in Ember:
 
 | Tool | | |
 |---|---|---|
-| Select (S or V) | Pan (H, or hold Space) | Measure (M): drag to read a distance in mm; cleared when you change tools |
+| Select (S or V) | Pan (H, or hold Space) | Measure (M): drag to read a distance in the display units; cleared when you change tools |
 | Open shape (1) | Closed shape (2) | Blocks (3): an open shape sewn as a satin column |
 | Freehand (4) | Points (P) | Text (T) |
 | Shapes (R) | Play | Realistic view |
@@ -318,6 +318,49 @@ and dragging a selected row moves all selected rows. Footer buttons move the
 selection to the top, up, down or bottom, or delete it. With several objects
 selected, the left overlay offers a shared thread colour, Group/Ungroup and
 Delete.
+
+The selection has a transform box with eight scale handles and a round rotation
+handle. Drag a corner with **Shift** to keep proportions; **Alt** scales from the
+centre. Hold **Shift** while rotating for 15° steps. The left overlay has numeric
+X/Y, width/height (always entered in mm) and rotation fields, horizontal/vertical
+flip and 90° rotation buttons. Several selected objects also offer six alignment
+actions and equal-gap horizontal/vertical distribution. Transforms move entry/exit
+points with the shapes and preserve editable curves and text, including stretched
+or mirrored text. Each gesture makes one undo step; Escape or pointer cancellation
+restores its starting state. Objects inside the hoop cannot be transformed outside.
+
+**Setup → View settings** remembers display units (mm, cm or inches), grid spacing,
+fine-grid subdivisions, grid visibility, grid/object snapping, rulers and jump
+visibility in this browser. Dimensions, rulers, measurements and the live cursor
+readout use the display units; numeric editing and stitch inputs remain in mm.
+Grid snapping uses the subdivision spacing. Object snapping uses visible objects’
+bounding-box edges and centres within 6 screen pixels and shows a thin guide while
+moving or scaling. **Show jumps** and playback’s **Travel** control share the same
+overlay preference; it also works with the playback bar closed. View preferences
+do not change the saved design or its undo history.
+
+Press **?** or the rail’s **?** button for localized shortcut help. Editing shortcuts
+work when focus is outside text inputs and native controls:
+
+| Shortcut | Action |
+|---|---|
+| Ctrl/⌘ C / X / V | Copy / cut / paste selection |
+| Ctrl/⌘ D | Duplicate selection |
+| Arrow keys / Shift + arrows | Nudge 0.1 mm / 1 mm; repeated presses coalesce into one undo step per burst |
+| Shift H / Shift V | Flip horizontally / vertically |
+| Ctrl/⌘ Z / Ctrl/⌘ Shift Z | Undo / redo |
+| Ctrl/⌘ G / Ctrl/⌘ Shift G | Group / ungroup |
+| Delete / Backspace | Delete selection or active point; remove the last draft point |
+| Enter / Escape | Finish / cancel drawing or leave point editing |
+
+The internal clipboard keeps stitch settings and survives reloads in this browser
+using localStorage; it is separate from the system clipboard. Paste selects the new
+objects and offsets them by 3 mm (successive pastes add another 3 mm). Duplicate uses
+a fresh 3 mm offset without replacing copied content. Copying a complete group
+creates a new group on paste; copying only some members pastes them ungrouped.
+Pastes that would move inside-hoop objects outside, exceed 80 objects, or exceed
+project validation limits are rejected. If storage is unavailable, the clipboard
+and view settings still work for the current session.
 
 **Group** (Ctrl/⌘ G) gathers the selection into one contiguous block;
 **Ungroup** (Ctrl/⌘ Shift G) releases selected members. Groups have one level:

@@ -1,10 +1,13 @@
 'use client';
 import {useT} from './i18n';
+import {TransformBox,SelectionTools,ViewControls,CanvasRulers,ShortcutHelp} from './editing-controls';
+import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
+import {defaultView,readViewSettings,unitValue,type ViewSettings} from '@/lib/view-settings';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
 import {FillSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
-import {dragHistory, frameQueue} from '@/lib/drag';
+import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
 import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, isLockSetting, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {curvePoints, curveRing, setCorner, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
@@ -15,7 +18,7 @@ import {artworkPixels, sampleArtwork} from '@/lib/artwork-color';
 import {parse} from '@/lib/pes-parser';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
-import {defaultText, layoutText, type TextSpec} from '@/lib/text';
+import {defaultText, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
 import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
 import StitchSelector from './stitch-selector';
@@ -100,7 +103,7 @@ function StudioEditor() {
   const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
     {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
     {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
-    {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t("Drag to measure a distance in millimetres.")},
+    {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure a distance.')},
     {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
     {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Sews as a satin column.",{v0:pathHint})},
@@ -155,7 +158,13 @@ function StudioEditor() {
   const canFinish=draft.length>=(closedDraft?3:2);
   const hasDraft=draft.length>0;
   const [colours,setColours]=useState(5), [ignoreBg,setIgnoreBg]=useState(true);
-  const [showImage,setShowImage]=useState(true), [showTravel,setShowTravel]=useState(false), [look,setLook]=useState<'lines'|'thread'>('lines');
+  const [showImage,setShowImage]=useState(true),[look,setLook]=useState<'lines'|'thread'>('lines');
+  const [viewSettings,setViewSettings]=useState<ViewSettings>(defaultView),[shortcutHelp,setShortcutHelp]=useState(false),[cursor,setCursor]=useState<Point|null>(null),[snapGuides,setSnapGuides]=useState<SnapGuide[]>([]);
+  const showTravel=viewSettings.showJumps;
+  function setShowTravel(next:boolean|((v:boolean)=>boolean)){setViewSettings(v=>({...v,showJumps:typeof next==='function'?next(v.showJumps):next}));}
+  const displayLength=(mm:number)=>`${formatNumber(unitValue(mm,viewSettings.units),viewSettings.units==='in'?3:1)} ${viewSettings.units}`;
+  const clipboard=useRef<Project|null>(null),pasteCount=useRef(0),nudgeBurst=useRef(keyBurst());
+  const transformDrag=useRef<{before:Project;ids:string[];box:ReturnType<typeof selectionBounds>;start:Point;angle:number;handle:ScaleHandle|'rotate'}|null>(null);
   useEffect(()=>{setMessage('');setError('');setPickHint('');},[lang]);
   const [designIssues,setDesignIssues]=useState<Warning[]>([]),[checkError,setCheckError]=useState(''),[focusKey,setFocusKey]=useState<string|null>(null);
   const [editPoints,setEditPoints]=useState(false);
@@ -186,6 +195,8 @@ function StudioEditor() {
   const pinch=useRef<{view:Viewport;anchor:Point;center:Point;distance:number}|null>(null);
   const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected), resolved=item&&resolve(item,project.fabric,project.locks), fabric=fabrics[project.fabric];
   const items=selection.flatMap(id=>project.objects.filter(o=>o.id===id)),multi=items.length>1;
+  const selectionBox=useMemo(()=>selectionBounds(project,selection),[project.objects,selection.join('|')]);
+  const selectionRotation=items[0]?.rotation??items[0]?.text?.rotation??0;
   const size=useMemo(()=>designBounds(project.objects),[project.objects]);
   const viewWidth=hoop.width*1.18/zoom, viewHeight=hoop.height*1.18/zoom;
   const viewX=hoop.width/2-viewWidth/2+pan[0], viewY=hoop.height/2-viewHeight/2+pan[1];
@@ -219,7 +230,7 @@ function StudioEditor() {
     applyViewport(zoomViewport(view,anchor,view.zoom*factor,hoop));
   }
   wheelHandler.current=(e:WheelEvent)=>{
-    e.preventDefault();if(drag.current||draftDrag.current||drawing||panDrag.current)return;
+    e.preventDefault();if(drag.current||transformDrag.current||draftDrag.current||drawing||panDrag.current)return;
     const delta=e.deltaMode===1?16:e.deltaMode===2?canvasSize.height:1;
     if(e.shiftKey||e.altKey||(!e.ctrlKey&&!e.metaKey&&Math.abs(e.deltaX)>Math.abs(e.deltaY)*.5)){
       const scale=viewportScale(viewport.current,svg.current!.getBoundingClientRect(),hoop);
@@ -234,6 +245,7 @@ function StudioEditor() {
   },[]);
   useEffect(()=>{
     let initialT=t;try{if(localStorage.getItem('threadroom-lang')==='en')initialT=createT('en');}catch{/* Storage is optional. */}
+    try{setViewSettings(readViewSettings(localStorage.getItem('threadroom-view-v1')));clipboard.current=readClipboard(localStorage.getItem('threadroom-clipboard-v1'));}catch{/* Storage is optional. */}
     let p:Project=demo(initialT);
     try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
     p=normalizeGroups(p);current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);
@@ -244,6 +256,7 @@ function StudioEditor() {
     const timer=setTimeout(()=>{try{localStorage.setItem('threadroom-project-v1',JSON.stringify(project));setSaved(true);}catch{setSaved(false);}},500);
     return()=>clearTimeout(timer);
   },[project,ready]);
+  useEffect(()=>{if(ready)try{localStorage.setItem('threadroom-view-v1',JSON.stringify(viewSettings));}catch{/* Storage is optional. */}},[viewSettings,ready]);
   // Design check: geometry checks shortly after each change; stitch checks from a background compile.
   useEffect(()=>{if(!ready)return;const timer=setTimeout(()=>setDesignIssues(checkProject(project)),250);return()=>clearTimeout(timer);},[project,ready]);
   const cannotSew=designIssues.some(w=>w.code==='outside-hoop')||!project.objects.some(o=>o.rings.length);
@@ -328,7 +341,7 @@ function StudioEditor() {
     const source=current.current.objects.find(o=>o.id===id&&!o.hidden);if(!source||!item?.text)return;
     const path=source.curve?curveRing(source.curve):source.rings[0];
     const closed=!source.curve&&isFillKind(source.kind)||!!source.curve?.closed;
-    updateText({layout:'path',path:closed?[...path,path[0]]:path.map(p=>[...p] as Point)});
+    updateText({layout:'path',path:(closed?[...path,path[0]]:path).map(p=>textSourcePoint(item.text!,p))});
     setGuide({text:item.id,id,name:source.name});
   }
   function removeGuide(){if(!guide)return;commit({...project,objects:project.objects.filter(o=>o.id!==guide.id)});setGuide(null);}
@@ -361,7 +374,7 @@ function StudioEditor() {
     if(outsideHoop(rings,hoop)){setError(t("Curve exceeds the hoop. Drag its points inward, then finish."));return false;}
     const target=pathTarget&&project.objects.find(o=>o.id===pathTarget);
     if(target&&target.text){
-      const next=layoutObject({...target,text:{...target.text,layout:'path',path:rings[0]}});
+      const next=layoutObject({...target,text:{...target.text,layout:'path',path:rings[0].map(p=>textSourcePoint(target.text!,p))}});
       commit({...project,objects:project.objects.map(o=>o.id===target.id?next:o)});setGuide(null);cancelDrawing();setTool('select');setSelected(target.id);return true;
     }
     const next=existing?{...existing,rings,...(closed?{kind,name:t("Closed shape"),fillPattern:'tatami' as const}:{})}:object(closed&&!fit?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
@@ -384,6 +397,42 @@ function StudioEditor() {
   function toggleCorner(index:number){
     if(!item?.curve)return;const corner=!(item.curve.corners?.[index]??false);
     if(savePointChange(setCorner(item,index,corner)))setMessage(corner?t("Point is now a corner."):t("Point is now a curve point."));
+  }
+  function editSelection(m:Matrix,rotation=0,merge?:string){
+    const p=current.current,next=transformSelection(p,selection,m,rotation);if(!next){setError(t('Transform stays inside the hoop.'));return;}if(next!==p)commit(next,'',merge);
+  }
+  function selectionAction(action:'flipH'|'flipV'|'rotate'){
+    const b=selectionBounds(current.current,selection);editSelection(around(centre(b),action==='flipH'?-1:1,action==='flipV'?-1:1,action==='rotate'?90:0),action==='rotate'?90:0);
+  }
+  function selectionField(key:'x'|'y'|'width'|'height'|'rotation',value:number){
+    const b=selectionBounds(current.current,selection);if(key==='rotation'){const delta=value-selectionRotation;editSelection(around(centre(b),1,1,delta),delta);}
+    else if(key==='x'||key==='y')editSelection(translate(key==='x'?value-b.x:0,key==='y'?value-b.y:0));
+    else if(value>0&&b[key]>1e-6)editSelection(around([b.x,b.y],key==='width'?value/b.width:1,key==='height'?value/b.height:1));
+  }
+  function alignSelected(mode:Align){const next=alignSelection(current.current,selection,mode);if(next)commit(next);else setError(t('Transform stays inside the hoop.'));}
+  function copySelected(cut=false){
+    if(!selection.length)return;clipboard.current=copySelection(current.current,selection);pasteCount.current=0;
+    try{localStorage.setItem('threadroom-clipboard-v1',JSON.stringify(clipboard.current));}catch{/* The in-memory clipboard still works. */}
+    if(cut)deleteSelected();else setMessage(t('Copied selection'));
+  }
+  function pasteSelected(duplicate=false){
+    const clip=duplicate?copySelection(current.current,selection):clipboard.current;if(!clip?.objects.length){setError(t('Clipboard is empty or unavailable.'));return;}
+    const next=pasteSelection(current.current,clip,duplicate?3:3*(pasteCount.current+1),()=>crypto.randomUUID());
+    if(!next){setError(t('Cannot paste: keep the objects inside the hoop and the project within 80 objects.'));return;}
+    if(!duplicate)pasteCount.current++;commit(next.project);setSelection(next.ids);anchor.current=next.ids[0]??null;setTool('select');setEditPoints(false);
+    for(const o of next.project.objects)if(next.ids.includes(o.id)&&o.text)loadTextFonts(o.id,o.text);
+  }
+  function nudge(key:string,shift:boolean,repeat:boolean){
+    const amount=shift?1:.1,now=performance.now(),id=selection.join('|'),merge=nudgeBurst.current.step(id,now,repeat);
+    if(!merge)lastMerge.current=null;else if(lastMerge.current?.key===`nudge:${id}`)lastMerge.current.time=now;
+    editSelection(translate(key==='ArrowLeft'?-amount:key==='ArrowRight'?amount:0,key==='ArrowUp'?-amount:key==='ArrowDown'?amount:0),0,`nudge:${id}`);
+  }
+  function snapBox(box:ReturnType<typeof selectionBounds>,p:Project,ids:string[],point=false){
+    return snapBounds(box,p.objects.filter(o=>!ids.includes(o.id)&&!o.hidden&&o.rings.length).map(o=>objectGeometry(o).bounds),6/canvasScale,viewSettings.snapGrid?viewSettings.gridSize/viewSettings.subdivisions:null,viewSettings.snapObjects,point);
+  }
+  function cancelTransform(){
+    moveQueue.current?.cancel();const before=dragUndo.current.cancel();transformDrag.current=null;drag.current=null;setSnapGuides([]);
+    if(before){current.current=before;setProject(before);invalidate();setSaved(false);}
   }
   function deleteSelected(){if(!selected)return;commit({...project,objects:project.objects.filter(o=>!selection.includes(o.id))});setSelected(null);}
   function groupSelection(){if(items.length<2)return;commit(groupObjects(project,selection,undefined,t).project);}
@@ -434,7 +483,11 @@ function StudioEditor() {
     const keydown=(e:KeyboardEvent)=>{
       setAngleSnap(e.ctrlKey||e.metaKey);
       if(e.key==='Escape'&&colourPickRef.current){e.preventDefault();cancelColourPick();return;}
+      if(shortcutHelp){if(e.key==='Escape'||e.key==='?'){e.preventDefault();setShortcutHelp(false);requestAnimationFrame(()=>svg.current?.focus());}return;}
       if(typing(e.target)||document.querySelector('[popover]:popover-open'))return;
+      if(e.key==='?'){e.preventDefault();endDrag();setShortcutHelp(true);return;}
+      if(e.key==='Escape'&&(transformDrag.current||drag.current)){e.preventDefault();cancelTransform();return;}
+      if(transformDrag.current||drag.current)return;
       if(e.target instanceof HTMLElement&&e.target.closest('button,a')&&(e.key==='Enter'||e.code==='Space'))return;
       if(e.code==='Space'&&!(e.target instanceof HTMLElement&&e.target.closest('button,a'))){e.preventDefault();setSpacePan(true);return;}
       if(e.key==='Escape'&&focusKey){e.preventDefault();setFocusKey(null);return;}
@@ -442,7 +495,10 @@ function StudioEditor() {
       if(e.key==='Escape'){e.preventDefault();if(hasDraft)cancelDrawing();else if(editing)finishEditing();else{setTool('select');setEditPoints(false);setSelected(null);}return;}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();if(e.shiftKey&&!hasDraft)redo();else undo();return;}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='g'){e.preventDefault();if(!hasDraft){if(e.shiftKey)ungroupSelection();else groupSelection();}return;}
+      if((e.ctrlKey||e.metaKey)&&['c','x','v','d'].includes(e.key.toLowerCase())){if(!hasDraft){e.preventDefault();const key=e.key.toLowerCase();if(key==='c'||key==='x')copySelected(key==='x');else pasteSelected(key==='d');}return;}
       if(e.ctrlKey||e.metaKey||e.altKey)return;
+      if(!hasDraft&&selection.length&&e.key.startsWith('Arrow')){e.preventDefault();nudge(e.key,e.shiftKey,e.repeat);return;}
+      if(!hasDraft&&selection.length&&e.shiftKey&&['h','v'].includes(e.key.toLowerCase())){e.preventDefault();selectionAction(e.key.toLowerCase()==='h'?'flipH':'flipV');return;}
       if(e.key==='+'||e.key==='='){e.preventDefault();zoomBy(1.2);return;}
       if(e.key==='-'||e.key==='_'){e.preventDefault();zoomBy(1/1.2);return;}
       if(e.key==='Enter'&&hasDraft){e.preventDefault();finish();return;}
@@ -451,7 +507,7 @@ function StudioEditor() {
       const key=e.key.toLowerCase(),next=tools.find(t=>t.key.toLowerCase()===key||t.alt?.toLowerCase()===key);if(next){e.preventDefault();chooseTool(next.id);}
     };
     const keyup=(e:KeyboardEvent)=>{setAngleSnap(e.ctrlKey||e.metaKey);if(e.code==='Space')setSpacePan(false);};
-    const blur=()=>{setSpacePan(false);setAngleSnap(false);};
+    const blur=()=>{setSpacePan(false);setAngleSnap(false);nudgeBurst.current.clear();lastMerge.current=null;endDrag();};
     window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',keydown);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
   });
@@ -459,7 +515,7 @@ function StudioEditor() {
   // (if capture failed) or, as a last resort, the next pointer-down.
   function capture(e:ReactPointerEvent<SVGSVGElement>){try{e.currentTarget.setPointerCapture(e.pointerId);}catch{/* Window pointer-up still ends the drag. */}}
   function startDrag(d:Omit<NonNullable<typeof drag.current>,'before'>,e:ReactPointerEvent<SVGSVGElement>){endDrag();drag.current={...d,before:current.current};dragUndo.current.begin(current.current);capture(e);}
-  function endDrag(){moveQueue.current?.flush();drag.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
+  function endDrag(){moveQueue.current?.flush();drag.current=null;transformDrag.current=null;setSnapGuides(g=>g.length?[]:g);lastMerge.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
   endDragRef.current=endDrag;
   function dragTo(next:Project){next=normalizeGroups(next);dragUndo.current.update(next);current.current=next;setProject(next);invalidate();setSaved(false);}
   function pointerDown(e:ReactPointerEvent<SVGSVGElement>){
@@ -478,6 +534,8 @@ function StudioEditor() {
       if(touchNavigation.current)return;
     }
     endDrag();pressedAnchor.current=null;if(e.button>2)return;
+    const handle=(e.target as SVGElement).closest('[data-transform]')?.getAttribute('data-transform') as ScaleHandle|'rotate'|undefined;
+    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...selection],box:selectionBounds(current.current,selection),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
     const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
     if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan};capture(e);return;}
@@ -522,8 +580,8 @@ function StudioEditor() {
   function scaleForCanvas(){return viewportScale(viewport.current,svg.current!.getBoundingClientRect(),hoop);}
   function pointerMove(event:ReactPointerEvent<SVGSVGElement>){
     if(draftPress.current&&movedForDrawing(draftPress.current.start,point(event)))draftPress.current.moved=true;
-    const e={pointerType:event.pointerType,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,ctrlKey:event.ctrlKey,metaKey:event.metaKey,currentTarget:event.currentTarget} as ReactPointerEvent<SVGSVGElement>;
-    if(event.pointerType==='touch'||drawing||panDrag.current||!drag.current&&!measuring.current&&!shapeDraft&&!draftDrag.current){applyPointerMove(e);return;}
+    const e={pointerType:event.pointerType,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,ctrlKey:event.ctrlKey,metaKey:event.metaKey,shiftKey:event.shiftKey,altKey:event.altKey,currentTarget:event.currentTarget} as ReactPointerEvent<SVGSVGElement>;
+    if(event.pointerType==='touch'||drawing||panDrag.current){applyPointerMove(e);return;}
     moveQueue.current!.push(()=>applyPointerMove(e));
   }
   function applyPointerMove(e:ReactPointerEvent<SVGSVGElement>){
@@ -535,7 +593,14 @@ function StudioEditor() {
         if(points.length===2&&start){const center:Point=[(points[0][0]+points[1][0])/2,(points[0][1]+points[1][1])/2],distance=Math.hypot(points[0][0]-points[1][0],points[0][1]-points[1][1]);const next=zoomViewport(start.view,start.anchor,start.view.zoom*distance/start.distance,hoop);applyViewport(panViewport(next,[center[0]-start.center[0],center[1]-start.center[1]],viewportScale(next,e.currentTarget.getBoundingClientRect(),hoop)));}return;
       }
     }
-    const p=point(e);
+    const p=point(e);setCursor(p);
+    const transform=transformDrag.current;
+    if(transform){
+      let m:Matrix,rotation=0,guides:SnapGuide[]=[];
+      if(transform.handle==='rotate'){rotation=rotationGesture(transform.box,transform.start,p,e.shiftKey,transform.angle);m=around(centre(transform.box),1,1,rotation);}
+      else{const h=handlePoint(transform.box,transform.handle),q:Point=[h[0]+p[0]-transform.start[0],h[1]+p[1]-transform.start[1]],snap=snapBox({x:q[0],y:q[1],width:0,height:0},transform.before,transform.ids,true);guides=snap.guides;m=scaleGesture(transform.box,transform.handle,[q[0]+snap.delta[0],q[1]+snap.delta[1]],e.shiftKey,e.altKey);}
+      const next=transformSelection(transform.before,transform.ids,m,rotation);if(next){if(next!==current.current)dragTo(next);const b=selectionBounds(next,transform.ids);setSnapGuides(guides.filter(g=>{const a=g.axis==='x'?[b.x,b.x+b.width/2,b.x+b.width]:[b.y,b.y+b.height/2,b.y+b.height];return a.some(v=>Math.abs(v-g.value)<1e-4);}));}return;
+    }
     setAngleSnap(e.ctrlKey||e.metaKey);
     if(pathTool(tool)||tool==='points'||(editing&&pointMode==='add'))setHover(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height?p:null);
     if(measuring.current){setMeasure(m=>m&&{...m,b:p});return;}
@@ -545,13 +610,15 @@ function StudioEditor() {
     if(drawing){if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>!d.length||Math.hypot(p[0]-d[d.length-1][0],p[1]-d[d.length-1][1])>1e-6?[...d,p]:d);}
     const d=drag.current;
     if(d){
-      const q=d.point&&(e.ctrlKey||e.metaKey)?lockAxis(d.start,p):p,dx=q[0]-d.start[0],dy=q[1]-d.start[1];
+      const q=d.point&&(e.ctrlKey||e.metaKey)?lockAxis(d.start,p):p;let dx=q[0]-d.start[0],dy=q[1]-d.start[1];
       if(!d.moved&&Math.hypot(dx,dy)*canvasScale<(d.point?3:.5))return;
       d.moved=true;
       if(d.end){const next=withEnd(d.source,d.end,p);dragTo({...d.before,objects:d.before.objects.map(o=>o.id===d.id?next:o)});return;}
-      const ids=d.point?[d.id]:d.ids??[d.id],objects=d.before.objects.map(o=>ids.includes(o.id)?moveGeometry(o,([x,y],ri,i)=>d.point&&(d.point[0]!==ri||d.point[1]!==i)?[x,y]:[x+dx,y+dy]):o);
+      const ids=d.point?[d.id]:d.ids??[d.id];
+      if(!d.point){const b=selectionBounds(d.before,ids),snap=snapBox({...b,x:b.x+dx,y:b.y+dy},d.before,ids);dx+=snap.delta[0];dy+=snap.delta[1];setSnapGuides(snap.guides);}
+      const objects=d.before.objects.map(o=>ids.includes(o.id)?moveGeometry(o,([x,y],ri,i)=>d.point&&(d.point[0]!==ri||d.point[1]!==i)?[x,y]:[x+dx,y+dy]):o);
       // Objects already outside the hoop (e.g. text that grew) can be dragged back in.
-      if(objects.some((o,i)=>ids.includes(o.id)&&outsideHoop(o.rings,hoop)&&!outsideHoop(d.before.objects[i].rings,hoop)))return;
+      if(objects.some((o,i)=>ids.includes(o.id)&&outsideHoop(o.rings,hoop)&&!outsideHoop(d.before.objects[i].rings,hoop))){setSnapGuides([]);return;}
       dragTo({...d.before,objects});
     }
   }
@@ -576,7 +643,7 @@ function StudioEditor() {
     endDrag();
     if(drawing){setDrawing(false);const p=point(e);if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>[...d,p]);if(draftRef.current.length>=2)finish(draftRef.current);else cancelDrawing();}
   }
-  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
+  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
   function chooseTool(next:Tool){cancelColourPick();if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
   function fit(){applyViewport({zoom:1,pan:[0,0]});}
   function fitArtwork(width=project.artwork?.width||hoop.width,height=project.artwork?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
@@ -638,7 +705,7 @@ function StudioEditor() {
     }catch(e){setError(errorText(e,t,'The Python API is unavailable. Start with npm run dev, or check the Vercel Python Function logs.'));return false;}finally{setBusy(false);}
   }
   async function play(){
-    if(timeline){setTimeline(false);setShowTravel(false);stopPlayback();return;}
+    if(timeline){setTimeline(false);stopPlayback();return;}
     const request=++playRequest.current;setTimeline(true);if(await generate()&&request===playRequest.current){setProgress(0);setPlaying(true);}
   }
   function toggleRealistic(){setLook(l=>l==='lines'?'thread':'lines');}
@@ -706,30 +773,35 @@ function StudioEditor() {
     <section className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
         {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} artwork={showImage?project.artwork:undefined} imageOpacity={imageOpacity}/>}
-        <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current)endDrag();}} onPointerLeave={()=>setHover(null)} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
+        <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(editing&&item?.curve&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
             const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object');if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
-              <defs><pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
+              <defs><pattern id="fine-grid" width={viewSettings.gridSize/viewSettings.subdivisions} height={viewSettings.gridSize/viewSettings.subdivisions} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize/viewSettings.subdivisions} 0 L 0 0 0 ${viewSettings.gridSize/viewSettings.subdivisions}`} fill="none" stroke="var(--grid)" strokeWidth={.5/canvasScale}/></pattern><pattern id="grid" width={viewSettings.gridSize} height={viewSettings.gridSize} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize} 0 L 0 0 0 ${viewSettings.gridSize}`} fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
               {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="var(--bg-workspace)"/>
               <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="var(--hoop-rim)" filter="url(#hoop-shadow)"/>
               <rect x="0" y="0" width={hoop.width} height={hoop.height} rx="3" fill="var(--fabric)" stroke="var(--hoop-border)" strokeWidth=".35"/>
               <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#cloth)" pointerEvents="none"/>
-              <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>
               <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="var(--centre-cross)" strokeWidth=".15" pointerEvents="none"/></>}
+              {viewSettings.showGrid&&viewSettings.subdivisions>1&&viewSettings.gridSize/viewSettings.subdivisions*canvasScale>=6&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#fine-grid)" opacity=".5" pointerEvents="none"/>}
+              {viewSettings.showGrid&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>}
               {showImage&&project.artwork&&!thread&&<image href={project.artwork.src} x={project.artwork.x} y={project.artwork.y} width={project.artwork.width} height={project.artwork.height} preserveAspectRatio="none" opacity={imageOpacity} pointerEvents="none"/>}
               <>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" pointerEvents="none" opacity={showTravel?.35:1}/>)}
                 {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="var(--travel-jump)" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="var(--travel-line)" strokeWidth={2/canvasScale} strokeLinecap="round"/>
                   <path d={stitchPaths.trims.map(([x,y])=>{const a=3.5/canvasScale;return `M${x-a} ${y-a}L${x+a} ${y+a}M${x-a} ${y+a}L${x+a} ${y-a}`;}).join('')} stroke="var(--danger)" strokeWidth={1.8/canvasScale} strokeLinecap="round"/></g>}</>
               {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
               {focus&&<IssueMarker focus={focus} canvasScale={canvasScale}/>}
+              {tool==='select'&&!editing&&!hasDraft&&items.length>0&&items.some(o=>!o.hidden)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
+              {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
               {ends&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
               {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'} closeHover={closeHover} color={item?.color||palette[3]} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} corners={corners} canvasScale={canvasScale}/>}
               {shapePreview&&shapeDraft&&<ShapeOverlay shapePreview={shapePreview} shapeDraft={shapeDraft} canvasScale={canvasScale}/>}
-              {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale}/>}
+              {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale} units={viewSettings.units}/>}
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
         </svg>
+        {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
+        {cursor&&<output className="cursor-position" aria-label={t('Cursor position')}>X {displayLength(cursor[0])} · Y {displayLength(cursor[1])}</output>}
         {!project.objects.length&&!project.artwork&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
       </div>
       <header className="project-chip">
@@ -753,7 +825,7 @@ function StudioEditor() {
           {tool==='select'&&item?.text&&<button className="edit-points-button" onClick={focusText}>{t("Edit text")}</button>}
         </div>}
       </div>}
-      {timeline&&showTravel&&compiled&&<div className="travel-legend" role="note" aria-label={t("Travel view legend")}><span title={t("The needle lifts and the hoop moves without sewing")}><i className="legend-jump"/>{t("Jump ·")} {formatNumber(stitchPaths.jumpCount)}</span><span title={t("A sewn stitch joining two pieces without cutting the thread")}><i className="legend-travel"/>{t("Travel stitch ·")} {formatNumber(stitchPaths.travelCount)}</span><span title={t("The machine cuts the thread here before a jump")}><i className="legend-trim">✕</i>{t("Trim (thread cut) ·")} {formatNumber(stitchPaths.trims.length)}</span></div>}
+      {showTravel&&compiled&&<div className="travel-legend" role="note" aria-label={t("Travel view legend")}><span title={t("The needle lifts and the hoop moves without sewing")}><i className="legend-jump"/>{t("Jump ·")} {formatNumber(stitchPaths.jumpCount)}</span><span title={t("A sewn stitch joining two pieces without cutting the thread")}><i className="legend-travel"/>{t("Travel stitch ·")} {formatNumber(stitchPaths.travelCount)}</span><span title={t("The machine cuts the thread here before a jump")}><i className="legend-trim">✕</i>{t("Trim (thread cut) ·")} {formatNumber(stitchPaths.trims.length)}</span></div>}
       {focus&&focusCopy&&<div className={`issue-callout ${focus.severity}`} role="status" aria-live="polite">
         <div className="issue-callout-head"><i className={`severity-dot ${focus.severity}`}/><strong>{focusCopy.title}</strong><small>{t(severityNames[focus.severity])} · {objectName(focus.objectId)}</small><button className="icon-button" aria-label={t("Close issue")} onClick={()=>setFocusKey(null)}><Icon name="close" size={14}/></button></div>
         <p>{focusCopy.why}</p><p><b>{t("Fix:")}</b> {focusCopy.fix}</p>
@@ -762,6 +834,8 @@ function StudioEditor() {
       {item&&<aside className={`settings-overlay ${settingsCollapsed?'collapsed':''}`} aria-label={multi?t("Selection settings"):item.text?t("Text settings"):t("Object settings")}>
         <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?t('objects.other',{count:items.length}):item.name}>{multi?t('objects.other',{count:items.length}):item.name}</h2><button className="icon-button" aria-label={t("Delete selected object")} title={t("Delete (Delete key)")} disabled={hasDraft} onClick={deleteSelected}><Icon name="trash" size={16}/></button><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} title={settingsCollapsed?t("Expand settings"):t("Collapse settings")} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
         {!settingsCollapsed&&<div className="overlay-body">
+        <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
+        <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
         {multi?<fieldset disabled={hasDraft} className="panel-section settings"><label>{t("Thread colour")}<div className="colour-picker"><input type="color" aria-label={t("Thread colour")} value={item.color} onChange={e=>colourSelection(e.target.value)}/>{eyedropper}<span>{items.every(o=>o.color===item.color)?item.color.toUpperCase():t("Mixed colours")}</span>{palette.slice(0,4).map(c=><button key={c} aria-label={t("Use thread {v0}",{v0:c})} style={{background:c}} onClick={()=>colourSelection(c)}/>)}</div></label><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft} className="text-fieldset"><TextPanel spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
@@ -811,6 +885,7 @@ function StudioEditor() {
     <nav className="panel-rail" role="tablist" aria-label={t("Panels")} aria-orientation="vertical">
       {tabs.map(t=><button key={t.id} role="tab" id={`tab-${t.id}`} aria-controls="side-panel" aria-selected={panelOpen&&panelTab===t.id} aria-label={t.label} title={t.label} onClick={()=>openTab(t.id)}><Icon name={t.icon}/></button>)}
       <span className="rail-divider"/>
+      <button aria-label={t('Keyboard shortcuts')} title={t('Keyboard shortcuts')+' (?)'} onClick={()=>setShortcutHelp(true)}>?</button>
       <button aria-label={panelOpen?t("Hide panel"):t("Show panel")} title={panelOpen?t("Hide panel"):t("Show panel")} aria-expanded={panelOpen} aria-controls="side-panel" onClick={()=>setPanelOpen(o=>!o)}><Icon name="panel"/></button>
     </nav>
     <aside id="side-panel" className="side-panel" role="tabpanel" aria-labelledby={`tab-${panelTab}`} hidden={!panelOpen}>
@@ -839,6 +914,8 @@ function StudioEditor() {
         </div>}
       </section>}
       {panelTab==='setup'&&<section className="panel-section">
+        <ViewControls value={viewSettings} onChange={patch=>setViewSettings(v=>({...v,...patch}))}/>
+        <button className="text-button" onClick={()=>setShortcutHelp(true)}>{t('Keyboard shortcuts')} (?)</button>
         <label>{t("Machine")}<select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">{t("Brother PR1X")}</option></select></label>
         <label>{t("Hoop")}<select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{t(h.label)}</option>)}</select></label>
         <label>{t("Fabric")}<select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{t(f.label)}</option>)}</select></label>
@@ -847,12 +924,13 @@ function StudioEditor() {
           <label>{t("Lock size · mm")}<input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>{t("Trim jumps longer than · mm")}<input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title={t("Shorter jumps sew as one stitch without a trim")} onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
       </section>}
       {panelTab==='info'&&<section className="panel-section design-summary">
-        <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{t(hoop.label)}</strong></div><div><span>{t("Design size")}</span><strong>{formatNumber((compiled?.stats.width||size.width),1)} × {formatNumber((compiled?.stats.height||size.height),1)}<small> mm</small></strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
-        {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStats',{jumps:compiled.stats.jumps,length:compiled.stats.jumpLength,trims:compiled.stats.trims})}</p>}
+        <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
+        {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}
         {!!size.width&&<label>{t("Design width · mm")}<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
         {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>{t("Design exceeds hoop")}</div>}
         <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?t("Engine connected"):apiState==='checking'?t("Connecting…"):t("Engine offline")}</div>
       </section>}
     </aside>
+    {shortcutHelp&&<ShortcutHelp tools={tools} onClose={()=>{setShortcutHelp(false);requestAnimationFrame(()=>svg.current?.focus());}}/>}
   </main>;
 }

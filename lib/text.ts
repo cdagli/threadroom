@@ -19,6 +19,7 @@ export type TextSpec={
   path?:Point[]; offset:number; reverse:boolean; below:boolean; // follow a path
   origin:Point; rotation:number; // centre and angle for straight, arc and wave
   border?:TextBorder;
+  affine?:[number,number,number,number,number,number]; // post-layout transform for stretch, shear and reflection
 };
 
 type Command={type:string;x?:number;y?:number;x1?:number;y1?:number;x2?:number;y2?:number};
@@ -127,6 +128,7 @@ export function layoutText(spec:TextSpec,fonts:FontLike[],closed=false):TextResu
           const {p,t}=pose(shift+g.x+gx*g.scale,baseline),dy=gy*g.scale;
           let x=p[0]-t[1]*dy,y=p[1]+t[0]*dy;
           if(!onPath){const rx=x*cos-y*sin,ry=x*sin+y*cos;x=rx+spec.origin[0];y=ry+spec.origin[1];}
+          if(spec.affine){const [a,b,c,d,e,f]=spec.affine,px=x;x=a*px+c*y+e;y=b*px+d*y+f;}
           return [Math.round(x*1000)/1000,Math.round(y*1000)/1000] as Point;
         });
         ring=simplifyPath([...ring,ring[0]],.02).slice(0,-1);
@@ -141,6 +143,13 @@ export function layoutText(spec:TextSpec,fonts:FontLike[],closed=false):TextResu
 
 // Moves, scales or rotates the editable settings to match a geometry change.
 export function transformText(spec:TextSpec,move:(p:Point)=>Point):TextSpec {
+  const z=move([0,0]),x=move([1,0]),y=move([0,1]),a=x[0]-z[0],b=x[1]-z[1],c=y[0]-z[0],d=y[1]-z[1];
+  // Similarities retain the familiar size/rotation settings. General affine changes are composed
+  // after layout so a later content/font edit preserves the exact stretched or mirrored outlines.
+  if(spec.affine||Math.abs(a*c+b*d)>1e-8||Math.abs(a*a+b*b-c*c-d*d)>1e-8||a*d-b*c<0){
+    const m=spec.affine??[1,0,0,1,0,0],affine:NonNullable<TextSpec['affine']>=[a*m[0]+c*m[1],b*m[0]+d*m[1],a*m[2]+c*m[3],b*m[2]+d*m[3],a*m[4]+c*m[5]+z[0],b*m[4]+d*m[5]+z[1]];
+    return {...spec,affine};
+  }
   const origin=move(spec.origin),rot=spec.rotation*Math.PI/180;
   const ref=move([spec.origin[0]+Math.cos(rot),spec.origin[1]+Math.sin(rot)]);
   const scale=Math.hypot(ref[0]-origin[0],ref[1]-origin[1]);
@@ -149,11 +158,18 @@ export function transformText(spec:TextSpec,move:(p:Point)=>Point):TextSpec {
     size:Math.abs(scale-1)<1e-9?spec.size:spec.size*scale,path:spec.path?.map(move)};
 }
 
+// New guide paths are drawn in world coordinates; affine text lays out in its source space.
+export function textSourcePoint(spec:TextSpec,p:Point):Point{
+  if(!spec.affine)return [...p];const [a,b,c,d,e,f]=spec.affine,det=a*d-b*c,x=p[0]-e,y=p[1]-f;
+  return [(d*x-c*y)/det,(a*y-b*x)/det];
+}
+
 const finite=(n:unknown,[min,max]:readonly [number,number])=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max;
 const point=(p:unknown)=>Array.isArray(p)&&p.length===2&&p.every(n=>finite(n,[-1000,1000]));
 export function validText(value:unknown):value is TextSpec {
   if(!value||typeof value!=='object')return false;
   const t=value as TextSpec,f=t.font;
+  if(t.affine!==undefined&&(!Array.isArray(t.affine)||t.affine.length!==6||!t.affine.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=10000)||Math.abs(t.affine[0]*t.affine[3]-t.affine[1]*t.affine[2])<1e-8))return false;
   if(typeof t.content!=='string'||t.content.length>textLimits.content)return false;
   if(!f||!['catalog','upload'].includes(f.source)||typeof f.id!=='string'||!/^[a-z0-9-]{1,80}$/.test(f.id)||typeof f.family!=='string'||!finite(f.weight,[100,1000])||typeof f.italic!=='boolean'||!Array.isArray(f.subsets)||f.subsets.some(s=>typeof s!=='string'))return false;
   if(!finite(t.size,textLimits.size)||!finite(t.tracking,textLimits.tracking)||!finite(t.lineHeight,textLimits.lineHeight)||!finite(t.bend,textLimits.bend)||!finite(t.waveHeight,textLimits.waveHeight)||!finite(t.waveLength,textLimits.waveLength)||!finite(t.offset,[0,100])||!finite(t.rotation,[-360,360]))return false;

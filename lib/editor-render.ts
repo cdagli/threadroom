@@ -6,7 +6,7 @@ const geometry=new WeakMap<StitchObject,ReturnType<typeof buildGeometry>>();
 function buildGeometry(o:StitchObject){
   return {path:pathData(o.rings,isFillKind(o.kind)||!!o.curve?.closed),bounds:bounds([o]),
     border:o.text?.border&&isFillKind(o.kind)?pathData(mergedOutline(o.rings),false):'',
-    guide:o.text?.layout==='path'&&o.text.path?pathData([o.text.path],false):''};
+    guide:o.text?.layout==='path'&&o.text.path?pathData([o.text.path.map(([x,y])=>{const m=o.text!.affine;return m?[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]] as Point:[x,y];})],false):''};
 }
 export function objectGeometry(o:StitchObject){let value=geometry.get(o);if(!value){value=buildGeometry(o);geometry.set(o,value);}return value;}
 export function designBounds(objects:StitchObject[]){
