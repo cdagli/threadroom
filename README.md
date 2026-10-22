@@ -396,6 +396,8 @@ Toolbar, left to right (shortcut in brackets), as in Ember:
 | Freehand (4) | Points (P) | Text (T) |
 | Shapes (R) | Play | Realistic view |
 
+Not on the toolbar: Cut holes (O) and Knife (K) from Shape tools, Click to stitch (7) from Artwork.
+
 **Play** shows the timeline and plays the stitch-out from the start in the
 current look; click it again to hide the bar and return to full progress. The
 bar has play/pause, a slider, the stitch counter, a **speed** selector (0.25×, 0.5×,
@@ -523,6 +525,17 @@ hidden images take no canvas clicks, so you can draw over them; select a locked 
 Images are saved in the project (`images[]`: position, size, rotation, opacity, hidden, locked); older
 projects with a single `artwork` load as the first image. **Show reference** hides all of them at once
 for the current session. Images are never sent to the stitch engine.
+
+**Click to stitch** (7, or the button in the Artwork tab; Ember's guided digitizing) works on the
+selected image, else the top visible one. Hover the image to preview the colour area a click would take
+(dashed outline); click to add it as a Tatami fill in the area's average colour, or Shift-click to add a
+running outline of it instead. Each click is one undo step and selects the new object; the tool stays
+active until Done, Escape or another tool. **Colour tolerance** in the tool banner (1–60, default 12, as
+a percentage of the RGB range) sets how far a pixel may differ from the clicked colour. The area is a
+4-connected flood fill on the image's original pixels (not the on-screen opacity) at a working resolution
+of 480 px on the long side; enclosed specks smaller than about 0.15 % of the area are filled, real holes
+stay holes, and the pixel boundary is simplified (Douglas–Peucker, coarser for very ragged areas) before
+it is mapped to millimetres, rotation included. The maths is in `lib/click-to-stitch.ts`.
 
 For thread colour, use the colour input or palette in the object settings. The
 **eyedropper** beside it picks from the reference image: click the image to apply
@@ -787,6 +800,8 @@ before using the output on baby clothing.**
 app/                 Next.js/Astryx interface and SVG editor
 lib/project.ts       Editable, millimetre-based project model
 lib/trace.ts         Browser colour tracing with holes
+lib/images.ts        Reference image list, migration and transforms
+lib/click-to-stitch.ts  Flood fill, boundary tracing and simplification for Click to stitch
 lib/thread.ts        Thread preview shading, fabric textures and Canvas renderer
 lib/pes-parser.js    Independent PES/PEC reader (shared from the existing viewer)
 embroidery/          Headless experimental Python stitch compiler

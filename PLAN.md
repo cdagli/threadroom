@@ -152,6 +152,13 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   canvas selection with move and the shared transform box (scale/rotate; images can't skew or mirror);
   locked/hidden images take no canvas clicks. Drawn bottom-up under the stitches in Lines and Thread.
   `lib/images.ts` with node tests. Desktop browser checks pending.
+- **Click to stitch (done)**. Tool 7 (Artwork-tab button, not on the dock): hover previews and a click
+  adds the clicked colour area of the selected image as a Tatami fill (Shift: running outline) in the area's
+  mean colour. Seeded 4-connected flood fill with a tolerance slider on original pixels downsampled to
+  480 px, speck filling, pixel-corner boundary tracing with holes (right turn at diagonal contacts), closed
+  Douglas–Peucker with a 2000-point budget, px→mm through the image's rotation. `lib/click-to-stitch.ts`
+  with node tests on synthetic RGBA buffers. Ember's drag-select of several regions is not included.
+  Desktop browser checks pending.
 - **Reference image always at the bottom** (done). In Realistic view the image is drawn into the thread canvas
   between the fabric and the threads (not in the SVG above it), so stitches always cover it at any opacity.
 - **All Ember stitch and fill types.** Row and tile patterns **done**: Hearts sm/md/lg,

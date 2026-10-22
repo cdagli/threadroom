@@ -1054,6 +1054,18 @@ export const en={
   "The image can’t be transformed that way.": "The image can’t be transformed that way.",
   "Use at most {v0} reference images. Delete one first.": "Use at most {v0} reference images. Delete one first.",
   "A design holds at most 80 objects. Delete some objects first.": "A design holds at most 80 objects. Delete some objects first.",
+  "Click to stitch": "Click to stitch",
+  "Click a colour area of the reference image to fill it · Shift-click: outline · Esc: stop": "Click a colour area of the reference image to fill it · Shift-click: outline · Esc: stop",
+  "Click to stitch (7): click a colour area to fill it": "Click to stitch (7): click a colour area to fill it",
+  "Colour tolerance": "Colour tolerance",
+  "Fill added": "Fill added",
+  "Outline added": "Outline added",
+  "How far a colour may differ from the clicked one and still join the area": "How far a colour may differ from the clicked one and still join the area",
+  "No colour area here. Try another point or a higher tolerance.": "No colour area here. Try another point or a higher tolerance.",
+  "Region outline {v0}": "Region outline {v0}",
+  "Stitched region {v0}": "Stitched region {v0}",
+  "Show a reference image to use Click to stitch.": "Show a reference image to use Click to stitch.",
+  "This area is too complex. Lower the tolerance or choose a simpler area.": "This area is too complex. Lower the tolerance or choose a simpler area.",
 } as const;
 export type Key=keyof typeof en;
 export const tr={
@@ -2110,6 +2122,18 @@ export const tr={
   "The image can’t be transformed that way.": "Görsel bu şekilde dönüştürülemez.",
   "Use at most {v0} reference images. Delete one first.": "En fazla {v0} referans görseli kullanın. Önce birini silin.",
   "A design holds at most 80 objects. Delete some objects first.": "Bir tasarımda en fazla 80 nesne olabilir. Önce bazı nesneleri silin.",
+  "Click to stitch": "Tıklayarak dik",
+  "Click a colour area of the reference image to fill it · Shift-click: outline · Esc: stop": "Doldurmak için referans görselindeki bir renk alanına tıklayın · Shift ile tıklama: dış hat · Esc: durdur",
+  "Click to stitch (7): click a colour area to fill it": "Tıklayarak dik (7): doldurmak için bir renk alanına tıklayın",
+  "Colour tolerance": "Renk toleransı",
+  "Fill added": "Dolgu eklendi",
+  "Outline added": "Dış hat eklendi",
+  "How far a colour may differ from the clicked one and still join the area": "Bir rengin alana katılmak için tıklanan renkten ne kadar farklı olabileceği",
+  "No colour area here. Try another point or a higher tolerance.": "Burada bir renk alanı yok. Başka bir nokta veya daha yüksek bir tolerans deneyin.",
+  "Region outline {v0}": "Bölge dış hattı {v0}",
+  "Stitched region {v0}": "Dikilen bölge {v0}",
+  "Show a reference image to use Click to stitch.": "Tıklayarak dik aracını kullanmak için bir referans görseli gösterin.",
+  "This area is too complex. Lower the tolerance or choose a simpler area.": "Bu alan çok karmaşık. Toleransı düşürün veya daha basit bir alan seçin.",
 } satisfies Record<Key,string>;
 export const dictionaries={en,tr};
 export type Values=Record<string,string|number>;

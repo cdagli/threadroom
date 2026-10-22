@@ -62,7 +62,7 @@ not applicable.
 | F | Edit the streamline flow field | **no** (see the patterns spec) |
 | P | Map to path | **no** |
 | W | Convert to redwork | **no** |
-| 7 | Click to stitch (one image selected) | **no** |
+| 7 | Click to stitch (one image selected) | yes (selected or top visible image) |
 | 8 | Auto digitize (one image selected) | partial (Auto trace button) |
 
 Single-letter action keys work only in Select mode with a selection, only when the action is available
@@ -115,7 +115,7 @@ are ignored while focus is in an INPUT, a TEXTAREA or an editable element, or wh
 | Break apart redwork | Restores the source outline objects | **Pro** | **no** |
 | Flatten | ≥ 2 unlocked fill objects. For every pair whose outlines overlap by ≥ 1 unit², taken in sew order, the **later** object's outline is added as a hole in the **earlier** one, so the lower fill no longer sews under the upper one. One undo step ("Flatten N holes into shape"; `2723` class `ec`, planner `lJ` in module 43408, which uses polygon-clipping `intersection`). | free | **no** |
 | Split SVG | One SVG image. Converts it into native shapes: fills become fill objects, strokes become outline objects, holes are flattened into the fills, and stroke gaps under 1 mm are joined (`rA(image,{flattenHoles:true, joinStrokeGapMm:1})`). | free | **no** (SVG is rasterised and traced) |
-| Click to stitch (7) | One image. Traces it into candidate regions (raster images via server `/api/vectorize`, SVG directly), then shows them. "Click on a region to convert it to stitches. Drag to select multiple regions at once." Converted regions use the current run/fill template (`rQ`). | **Pro** | partial: Trace outline / Trace line is manual. Auto trace converts everything at once |
+| Click to stitch (7) | One image. Traces it into candidate regions (raster images via server `/api/vectorize`, SVG directly), then shows them. "Click on a region to convert it to stitches. Drag to select multiple regions at once." Converted regions use the current run/fill template (`rQ`). | **Pro** | yes: Click to stitch (7) flood-fills the clicked colour (tolerance slider) with a hover preview; click adds a Tatami fill, Shift-click a running outline. No drag-select of several regions |
 | Auto digitize (8) | One image. Traces it (`rY`) and then: simplifies with RDP ε = clamp(0.0028 × max(w,h), 0.32, 2.5) and a touch pad of clamp(0.003 × max, 1.25, 2.5) (`rV`); filled paths become fills (with the default fill applied) and strokes become outlines; regions are grouped by colour, colour groups sorted by **hue**, and each group is ordered nearest-neighbour from its top-left centroid; the largest region with holes in a non-dominant colour keeps only the holes it needs. All regions are added in one undo step. | **Pro** | partial: Auto trace (80 px grid, colour count, background removal); regions are grouped in colour order without the hue and nearest-neighbour ordering |
 
 ### 1.5 Text (`page` `ib`, `iy`, `iN`, `iC` at ~229k; text panel ~231–235k)
@@ -286,6 +286,9 @@ tests and README.
     before and after.
 
 16. **Click to stitch (pick regions after tracing)** · M · depends on 15
+    **Implemented differently** (no dependency on 15): a click flood-fills the clicked colour of the image
+    (tolerance slider, hover preview) and adds it at once as a fill, Shift-click as an outline. Marquee
+    multi-select of candidate regions is still open.
     *Value:* beginners usually want only part of a picture (no background, no tiny specks). *Scope:* the trace
     produces *candidate* regions drawn as a hover-highlighted overlay. Click toggles a region and drag-marquee
     adds several; Enter converts them with the current stitch template (style chosen in the banner); Escape
