@@ -72,7 +72,7 @@ test('Long knit fill warnings explain the length and fix in the selected languag
   const p={...demo(),fabric:'jersey',objects:[{...object('Dolgu',[[[30,30],[60,30],[60,60],[30,60]]]),fillLength:5.5}]};
   const warning=checkProject(p).find(w=>w.code==='fill-long');assert.ok(warning);
   assert.deepEqual(explain(warning,p,'',createT('tr')),{
-    title:'Örme kumaşta uzun dolgu dikişleri',why:'5,5 mm uzunluğundaki dolgu dikişleri esnek kumaşta takılabilir veya kayabilir.',fix:'Dolgu dikişi uzunluğunu 5 mm veya altına indir.'
+    title:'Örme kumaşta uzun dolgu dikişleri',why:'5,5 mm uzunluğundaki dolgu dikişleri esnek kumaşta takılabilir veya kayabilir.',fix:'Dolgu dikişi uzunluğunu 5 mm veya altına indirin.'
   });
   assert.equal(explain(warning,p,'',createT('en')).why,'Fill stitches of 5.5 mm can snag or shift on stretchy fabric.');
   assert.ok(!checkProject({...p,fabric:'woven'}).some(w=>w.code==='fill-long'));
@@ -89,8 +89,8 @@ test('Fill compiler validation messages retain actionable details in Turkish',()
   assert.equal(errorText('Unknown fill pattern.',translate,fallback),'Bilinmeyen dolgu deseni.');
   assert.equal(errorText('Hand stitch must be an integer.',translate,fallback),'El dikişi değeri tam sayı olmalıdır.');
   assert.equal(errorText('Wave steps must be an integer.',translate,fallback),'Dalga adımı sayısı tam sayı olmalıdır.');
-  assert.equal(errorText('Choose a ramp or plateau gradient.',translate,fallback),'Rampa veya plato gradyanı seç.');
-  assert.equal(errorText('Choose up to three fill underlays.',translate,fallback),'En fazla üç dolgu alt dikişi seç.');
+  assert.equal(errorText('Choose a ramp or plateau gradient.',translate,fallback),'Rampa veya plato gradyanı seçin.');
+  assert.equal(errorText('Choose up to three fill underlays.',translate,fallback),'En fazla üç dolgu alt dikişi seçin.');
   assert.equal(errorText('Invalid fill underlay.',translate,fallback),'Geçersiz dolgu alt dikişi.');
   assert.equal(errorText('Invalid fill pattern parameters.',translate,fallback),'Geçersiz dolgu deseni parametreleri.');
   assert.equal(errorText('Unknown field must be a finite number.',translate,fallback),translate(fallback));
@@ -102,4 +102,11 @@ test('All new parameter validation labels translate compiler errors',()=>{
     const translated=errorText(`${f.label} must be a finite number.`,createT('tr'),'The stitch engine rejected this design.');
     assert.equal(translated,`${createT('tr')(f.label)} sonlu bir sayı olmalıdır.`);
   }
+});
+test('Turkish instructions use the formal register; short button labels stay imperative',()=>{
+  const informal=/(?:^|[\s(])(?:tıkla|sürükle|seç|dene|kullan|artır|küçült|bitir|yükle|ekle|bas)(?:[.;,]|\s·|$)|bilirsin(?!\p{L})|kendin(?!\p{L})|Bağlantını(?!\p{L})/u;
+  const sentences=Object.entries(tr).filter(([,v])=>/[.]$/.test(v.trim())&&v.trim().split(/\s+/).length>=4);
+  assert.deepEqual(sentences.filter(([,v])=>informal.test(v)).map(([k])=>k),[]);
+  assert.equal(tr['This fill is too dense. Increase spacing or reduce the design size.'],'Bu dolgu çok sık. Aralığı artırın veya tasarımı küçültün.');
+  assert.equal(tr['Delete'],'Sil');
 });

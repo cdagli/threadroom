@@ -207,3 +207,6 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   number to type a new position. "Sort by selection order" remains open.
 - **Playback speed (done)**. 0.25×–16× selector in the timeline bar (1× = 450 stitches/s),
   saved with the per-browser view settings.
+- **Merge follow-ups (done)**. Worksheet design and hoop sizes use the View settings display
+  units (shared `formatLength`); Turkish instructions and messages moved to the formal
+  register, with a dictionary test. Sewing time has no lengths, so it is unchanged.

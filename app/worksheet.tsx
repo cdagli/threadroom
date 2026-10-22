@@ -6,6 +6,7 @@ import {fabrics,hoops,type Compiled,type Project} from '@/lib/project';
 import {checkProject,explain,stitchWarnings} from '@/lib/check';
 import {estimatedSeconds,production,sewingSpeed,stitchBounds,threadSequence} from '@/lib/production';
 import {brotherThreads} from '@/lib/threads';
+import {formatLength,type Units} from '@/lib/view-settings';
 
 export function SewingSpeed({project,onChange}:{project:Project;onChange:(p:Project)=>void}){
   const {t}=useT();return <label>{t('Sewing speed · stitches/min')}<input type="number" min={production.minSpeed} max={production.maxSpeed} step="50" value={sewingSpeed(project)} onChange={e=>{const n=Number(e.target.value);if(n>=production.minSpeed&&n<=production.maxSpeed)onChange({...project,sewingSpeed:n});}}/></label>;
@@ -13,12 +14,12 @@ export function SewingSpeed({project,onChange}:{project:Project;onChange:(p:Proj
 export function SewingTime({compiled,project}:{compiled:Compiled|null;project:Project}){
   const {t}=useT();return <p className="section-copy">{t('Estimated sewing time')}: <strong>{compiled?t('≈ {minutes} min',{minutes:Math.ceil(estimatedSeconds(compiled.stats,sewingSpeed(project))/60)}):'—'}</strong></p>;
 }
-export function WorksheetButton({project,compiled,disabled=false,menu=false}:{project:Project;compiled:Compiled|null;disabled?:boolean;menu?:boolean}){
+export function WorksheetButton({project,compiled,units='mm',disabled=false,menu=false}:{project:Project;compiled:Compiled|null;units?:Units;disabled?:boolean;menu?:boolean}){
   const {t}=useT(),[snapshot,setSnapshot]=useState<{project:Project;compiled:Compiled}|null>(null);
-  return <><button type="button" role={menu?'menuitem':undefined} disabled={disabled||!compiled} title={!compiled?t('Worksheet needs up-to-date stitches.'):undefined} onClick={e=>{const pop=e.currentTarget.closest<HTMLElement>('[popover]');pop?.hidePopover();if(compiled)setSnapshot({project,compiled});}}>{t('Worksheet')}</button>{snapshot&&<Worksheet {...snapshot} onClose={()=>setSnapshot(null)}/>}</>;
+  return <><button type="button" role={menu?'menuitem':undefined} disabled={disabled||!compiled} title={!compiled?t('Worksheet needs up-to-date stitches.'):undefined} onClick={e=>{const pop=e.currentTarget.closest<HTMLElement>('[popover]');pop?.hidePopover();if(compiled)setSnapshot({project,compiled});}}>{t('Worksheet')}</button>{snapshot&&<Worksheet {...snapshot} units={units} onClose={()=>setSnapshot(null)}/>}</>;
 }
-function Worksheet({project,compiled,onClose}:{project:Project;compiled:Compiled;onClose:()=>void}){
-  const {t,formatNumber,formatMm}=useT(),dialog=useRef<HTMLDialogElement>(null),title=useId(),[paper,setPaper]=useState<'A4'|'Letter'>('A4');
+function Worksheet({project,compiled,units,onClose}:{project:Project;compiled:Compiled;units:Units;onClose:()=>void}){
+  const {t,formatNumber}=useT(),length=(mm:number)=>formatLength(mm,units,formatNumber),dialog=useRef<HTMLDialogElement>(null),title=useId(),[paper,setPaper]=useState<'A4'|'Letter'>('A4');
   const rows=useMemo(()=>threadSequence(compiled,project),[compiled,project]),view=useMemo(()=>stitchBounds(compiled),[compiled]);
   const issues=useMemo(()=>[...checkProject(project),...stitchWarnings(compiled.warnings,project)],[project,compiled]);
   const fails=issues.filter(i=>i.severity==='fail').length,checks=issues.length-fails,fabric=fabrics[project.fabric];
@@ -29,8 +30,8 @@ function Worksheet({project,compiled,onClose}:{project:Project;compiled:Compiled
     <div className="worksheet-controls"><label>{t('Paper size')}<select value={paper} onChange={e=>setPaper(e.target.value as 'A4'|'Letter')}><option value="A4">{t('A4')}</option><option value="Letter">{t('Letter')}</option></select></label><button type="button" onClick={()=>window.print()}>{t('Print worksheet')}</button><button type="button" onClick={onClose}>{t('Close')}</button></div>
     <article className="worksheet-sheet"><h1 id={title}>{t('Worksheet')} · {project.name}</h1>
       <div className="worksheet-overview"><div className="worksheet-thumbnail">{preview()}</div><dl>
-        <dt>{t('Design size')}</dt><dd>{formatMm(compiled.stats.width)} × {formatMm(compiled.stats.height)}</dd>
-        <dt>{t('Hoop')}</dt><dd>{t(hoops[project.hoop].label)}</dd><dt>{t('Fabric')}</dt><dd>{t(fabric.label)}</dd>
+        <dt>{t('Design size')}</dt><dd>{length(compiled.stats.width)} × {length(compiled.stats.height)}</dd>
+        <dt>{t('Hoop')}</dt><dd>{length(hoops[project.hoop].width)} × {length(hoops[project.hoop].height)}</dd><dt>{t('Fabric')}</dt><dd>{t(fabric.label)}</dd>
         <dt>{t('Stitches')}</dt><dd>{formatNumber(compiled.stats.stitches)}</dd><dt>{t('Thread changes')}</dt><dd>{formatNumber(compiled.stats.colorChanges)}</dd><dt>{t('Trims')}</dt><dd>{formatNumber(compiled.stats.trims)}</dd>
       </dl></div>
       <p>{t('Stabilizer:')} {t(fabric.stabilizer)} {t('· Topping:')} {t(fabric.topping)}</p>

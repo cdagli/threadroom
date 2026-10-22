@@ -7,7 +7,7 @@ const {object,defaultLocks,defaultTrimJump,validProject}=load('project');
 const {around,translate,mapPoint,scaleGesture,rotationGesture,transformSelection,selectionBounds,alignSelection,snapBounds,copySelection,readClipboard,pasteSelection}=load('editing');
 const {curveRing,moveGeometry}=load('curves');
 const {layoutText,defaultText,validText,textSourcePoint}=load('text');
-const {readViewSettings,defaultView,unitValue,playbackSpeeds}=load('view-settings');
+const {readViewSettings,defaultView,unitValue,playbackSpeeds,formatLength}=load('view-settings');
 const rectangle=(x,y,w,h)=>object('Shape',[[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]],'fill','#123456');
 const project=objects=>({version:1,name:'Test',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{...defaultLocks},trimJump:defaultTrimJump,objects});
 const near=(a,b,tolerance=1e-6)=>assert.ok(Math.abs(a-b)<tolerance,`${a} ≈ ${b}`);
@@ -96,4 +96,9 @@ test('Playback speed is remembered only for the offered 0.25×–16× steps',()=
   assert.equal(readViewSettings(JSON.stringify({playbackSpeed:16})).playbackSpeed,16);assert.equal(readViewSettings(JSON.stringify({playbackSpeed:.25})).playbackSpeed,.25);
   for(const bad of [3,0,-1,32,'4',null])assert.equal(readViewSettings(JSON.stringify({playbackSpeed:bad})).playbackSpeed,1);
   assert.equal(readViewSettings(JSON.stringify({units:'cm'})).playbackSpeed,1);
+});
+
+test('Lengths for the worksheet and Info follow the display units and language',()=>{
+  const {formatNumber}=load('i18n'),tr=(n,d)=>formatNumber(n,'tr',d),en=(n,d)=>formatNumber(n,'en',d);
+  assert.equal(formatLength(25,'mm',tr),'25,0 mm');assert.equal(formatLength(25,'cm',tr),'2,5 cm');assert.equal(formatLength(25.4,'in',en),'1.000 in');assert.equal(formatLength(100,'cm',en),'10.0 cm');
 });

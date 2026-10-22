@@ -10,6 +10,10 @@ The editor starts in Turkish. Choose **Türkçe / English** in the project chip�
 the preference is remembered in this browser. Displayed numbers follow the language.
 Existing project names, layer names and text are preserved; new objects use the current language.
 
+Turkish instructions, hints and messages use the formal register ("sürükleyin",
+"seçin"); short button and menu labels keep the usual imperative form ("Sil",
+"Kopyala"). `tests/i18n.test.mjs` guards against informal sentences.
+
 ## What works
 
 - Import PNG/JPG/WebP/SVG reference artwork, size it in millimetres, and trace
@@ -489,7 +493,8 @@ ordered thread blocks with codes, names, object names, stitch counts and step
 previews, and the design-check summary. Hidden objects remain in this production
 list. Print on A4 (default) or Letter using the browser's print/PDF dialog.
 The worksheet uses a snapshot of the same decoded export as PES generation;
-it is disabled while edits are waiting for stitches.
+it is disabled while edits are waiting for stitches. Design and hoop sizes on the sheet use the
+display units from **Setup → View settings**.
 
 **Setup → Sewing speed** saves a planning speed of 100–1000 stitches/minute
 (default **650**, PR1X maximum **1000**). Info and the worksheet estimate time as

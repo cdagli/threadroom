@@ -2,7 +2,7 @@
 import {useT} from './i18n';
 import {TransformBox,SelectionTools,ViewControls,CanvasRulers,ShortcutHelp} from './editing-controls';
 import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
-import {defaultView,playbackRate,playbackSpeeds,readViewSettings,unitValue,type ViewSettings} from '@/lib/view-settings';
+import {defaultView,formatLength,playbackRate,playbackSpeeds,readViewSettings,type ViewSettings} from '@/lib/view-settings';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
 import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
@@ -168,7 +168,7 @@ function StudioEditor() {
   const [viewSettings,setViewSettings]=useState<ViewSettings>(defaultView),[shortcutHelp,setShortcutHelp]=useState(false),[cursor,setCursor]=useState<Point|null>(null),[snapGuides,setSnapGuides]=useState<SnapGuide[]>([]);
   const showTravel=viewSettings.showJumps,speed=viewSettings.playbackSpeed;
   function setShowTravel(next:boolean|((v:boolean)=>boolean)){setViewSettings(v=>({...v,showJumps:typeof next==='function'?next(v.showJumps):next}));}
-  const displayLength=(mm:number)=>`${formatNumber(unitValue(mm,viewSettings.units),viewSettings.units==='in'?3:1)} ${viewSettings.units}`;
+  const displayLength=(mm:number)=>formatLength(mm,viewSettings.units,formatNumber);
   const clipboard=useRef<Project|null>(null),pasteCount=useRef(0),nudgeBurst=useRef(keyBurst());
   const transformDrag=useRef<{before:Project;ids:string[];box:ReturnType<typeof selectionBounds>;start:Point;angle:number;handle:ScaleHandle|'rotate'}|null>(null);
   useEffect(()=>{setMessage('');setError('');setPickHint('');},[lang]);
@@ -792,7 +792,7 @@ function StudioEditor() {
       <hr/>
       <button role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Save project")}</button>
       <button role="menuitem" disabled={hasDraft||!project.objects.length} onClick={()=>{closePanel('project-menu');download(new Blob([exportSVG(project)],{type:'image/svg+xml'}),'threadroom-artwork.svg');}}><Icon name="download" size={16}/>{t("Export editable SVG")}</button>
-      <WorksheetButton menu project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
+      <WorksheetButton menu project={project} compiled={compileFresh?compiled:null} units={viewSettings.units} disabled={hasDraft}/>
       <hr/>
       <div role="group" aria-label={t('Language')}>{(['tr','en'] as const).map(value=><button key={value} role="menuitemradio" aria-checked={lang===value} onClick={()=>{setLang(value);closePanel('project-menu');}}>{t(value==='tr'?'Türkçe':'English')}{lang===value?' ✓':''}</button>)}</div>
     </div>
@@ -963,7 +963,7 @@ function StudioEditor() {
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
         {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}
-        <SewingTime project={project} compiled={compileFresh?compiled:null}/><WorksheetButton project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
+        <SewingTime project={project} compiled={compileFresh?compiled:null}/><WorksheetButton project={project} compiled={compileFresh?compiled:null} units={viewSettings.units} disabled={hasDraft}/>
         {!!size.width&&<label>{t("Design width · mm")}<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
         {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>{t("Design exceeds hoop")}</div>}
         <div className="engine-state"><span className={`status-dot ${apiState==='ready'?'':'muted'}`}/>{apiState==='ready'?t("Engine connected"):apiState==='checking'?t("Connecting…"):t("Engine offline")}</div>
