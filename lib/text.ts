@@ -35,6 +35,17 @@ export function defaultText(font:FontRef,origin:Point,content:string|undefined=u
   return {content:content??t('Your text'),font,size:12,tracking:0,lineHeight:1.6,align:'center',layout:'straight',bend:25,waveHeight:.3,waveLength:5,offset:50,reverse:false,below:false,origin,rotation:0};
 }
 
+// A newly placed text keeps its letter height unless it would leave the hoop: then it shrinks to fit (text is
+// centred on its origin, so its box scales about the origin) and moves inside the margin. null: nothing to change.
+export function fitTextInHoop(spec:TextSpec,box:{x:number;y:number;width:number;height:number},hoop:{width:number;height:number},margin=2):TextSpec|null {
+  if(!(box.width>0&&box.height>0))return null;
+  const s=Math.min(1,(hoop.width-2*margin)/box.width,(hoop.height-2*margin)/box.height);
+  const size=s<1?Math.max(textLimits.size[0],Math.floor(spec.size*s*10)/10):spec.size,k=size/spec.size,[ox,oy]=spec.origin;
+  const shift=(lo:number,len:number,max:number)=>len>max-2*margin?(max-len)/2-lo:lo<margin?margin-lo:lo+len>max-margin?max-margin-lo-len:0;
+  const dx=shift(ox+(box.x-ox)*k,box.width*k,hoop.width),dy=shift(oy+(box.y-oy)*k,box.height*k,hoop.height);
+  return k===1&&!dx&&!dy?null:{...spec,size,origin:[ox+dx,oy+dy]};
+}
+
 function capHeight(font:FontLike) {
   const cap=font.tables.os2?.sCapHeight;
   if(cap&&cap>0)return cap;

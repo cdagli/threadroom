@@ -3,6 +3,7 @@ import {useT} from './i18n';
 import {memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode} from 'react';
 import {colourRuns, layerRows, layerTarget, type ColourRun, type LayerRow} from '@/lib/layers';
 import {brotherThreads} from '@/lib/threads';
+import {satinFonts} from '@/lib/satin-lettering';
 import {objectGeometry} from '@/lib/editor-render';
 import {useStableCallback} from './use-stable-callback';
 import {isFillKind, kindNames, type Compiled, type StitchObject, type Project} from '@/lib/project';
@@ -28,6 +29,9 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
   const list=useRef<HTMLDivElement>(null),drag=useRef<{ids:string[];start:[number,number];active:boolean;index:number;group:string|null;wholeGroup?:string;run?:boolean}|null>(null),skipClick=useRef(false);
   const [collapsed,setCollapsed]=useState(new Set<string>()),[line,setLine]=useState<number|null>(null),[targetGroup,setTargetGroup]=useState<string|null>(null),[renaming,setRenaming]=useState<{id:string;name:string;group:boolean}|null>(null),rename=useRef(renaming);rename.current=renaming;
   const rows=useMemo(()=>layerRows(project,collapsed),[project,collapsed]);
+  // The last selected object's row scrolls into view (new objects land at the end of a long list).
+  const lastSelected=selection.at(-1);
+  useEffect(()=>{if(lastSelected)list.current?.querySelector<HTMLElement>(`[data-layer="object:${CSS.escape(lastSelected)}"]`)?.scrollIntoView({block:'nearest'});},[lastSelected,view]);
   function finishRename(save:boolean){const r=rename.current;rename.current=null;setRenaming(null);if(save&&r)onRename(r.id,r.name.trim()||(r.group?project.groups?.find(g=>g.id===r.id)?.name:project.objects.find(o=>o.id===r.id)?.name)||t("Group"),r.group);}
   function down(e:ReactPointerEvent<HTMLDivElement>,row:LayerRow){
     if(disabled||e.button!==0||(e.target as HTMLElement).closest('button,input'))return;
@@ -90,7 +94,7 @@ const LayerObjectRow=memo(function LayerObjectRow({o,i,selected,grouped,disabled
   const {t,formatNumber}=useT();
   return <div data-layer={`object:${o.id}`} className={`object-row ${selected?'selected':''} ${o.hidden?'hidden-object':''} ${o.locked?'locked-object':''} ${grouped?'group-member':''}`} role="button" tabIndex={disabled?-1:0} aria-label={o.name} aria-pressed={selected} aria-disabled={disabled} onPointerDown={e=>onDown(o.id,e)} onClick={e=>{onClick(o.id,e);}} onKeyDown={e=>{if(e.target!==e.currentTarget)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!disabled)onSelect(o.id,e);}}}>
         {positionInput??<button type="button" className="order" disabled={disabled} aria-label={t('Sew order {v0}: change position',{v0:i+1})} title={t('Click to type a new sew position')} onClick={e=>{e.stopPropagation();onPosition(o.id);}}>{formatNumber(i+1).padStart(2,'0')}</button>}<LayerPreview o={o}/>
-        <span className="layer-name">{renameInput?renameInput:<strong title={o.name} onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(o);}}>{o.name}</strong>}<small>{o.text?t("Text · {v0} · {v1}",{v0:o.text.font.family,v1:t(kindNames[o.kind])}):t(kindNames[o.kind])}</small></span>
+        <span className="layer-name">{renameInput?renameInput:<strong title={o.name} onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(o);}}>{o.name}</strong>}<small>{o.text?t("Text · {v0} · {v1}",{v0:o.text.satin?satinFonts[o.text.satin.font].name:o.text.font.family,v1:t(kindNames[o.kind])}):t(kindNames[o.kind])}</small></span>
         <button className="icon-button layer-lock" disabled={disabled} aria-label={t(o.locked?'unlockNamed':'lockNamed',{name:o.name})} aria-pressed={!!o.locked} title={o.locked?t('Unlock object'):t('Lock object (Ctrl / ⌘ L)')} onClick={e=>{e.stopPropagation();onLock([o.id]);}}><Padlock locked={!!o.locked}/></button>
         <button className="icon-button layer-eye" disabled={disabled} aria-label={t(o.hidden?'showNamed':'hideNamed',{name:o.name})} aria-pressed={!o.hidden} title={o.hidden?t("Show object"):t("Hide object (still exported)")} onClick={e=>{e.stopPropagation();onHide([o.id]);}}><Eye hidden={!!o.hidden}/></button>
       </div>;

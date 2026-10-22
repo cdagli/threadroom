@@ -15,7 +15,7 @@ import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
-import {normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
@@ -32,7 +32,7 @@ import {SVGImportChoice,ExportImageButton} from './io-controls';
 import {DensityHeat,DensityLegend,StitchDiagnostics,useDensity} from './density-view';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
-import {defaultText, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
+import {defaultText, fitTextInHoop, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
 import {layoutSatinText,convertSatinText,ensureSatinFonts,satinFontsLoaded} from '@/lib/satin-lettering';
 import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
@@ -138,9 +138,9 @@ function StudioEditor() {
     {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
     {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
     {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure length and angle. Shift: snap to 15°.')},
-    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
-    {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0} Or click the first point.",{v0:pathHint})},
-    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0} Click left and right rail points in turn; satin is sewn between the rails.",{v0:pathHint})},
+    {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0}. Or click the first point.",{v0:pathHint})},
+    {id:'closed',icon:'closed',label:t("Closed"),key:'2',title:t("Drawing Closed Shape"),hint:t("{v0}. Or click the first point.",{v0:pathHint})},
+    {id:'blocks',icon:'blocks',label:t("Blocks"),key:'3',title:t("Drawing Blocks"),hint:t("{v0}. Click left and right rail points in turn; satin is sewn between the rails.",{v0:pathHint})},
     {id:'freehand',icon:'pen',label:t("Freehand"),key:'4',title:t("Drawing Freehand"),hint:t("Click and drag to draw, release to complete.")},
     {id:'points',icon:'points',label:t("Points"),key:'P',title:t("Placing Points"),hint:t("Click to place stitch points, then Done.")},
     {id:'text',icon:'text',label:t("Text"),key:'T',title:t("Adding Text"),hint:t("Click the hoop to place text.")},
@@ -191,6 +191,8 @@ function StudioEditor() {
   const shapePress=useRef<{client:Point;moved:boolean}|null>(null);
   // Point capture retargets double-clicks to the canvas, so remember which anchor was pressed.
   const pressedAnchor=useRef<number|null>(null);
+  // Pointer capture retargets click/dblclick to the svg, so double-click reads the object under the press.
+  const pressedObject=useRef<string|null>(null);
   const [settingsCollapsed,setSettingsCollapsed]=useState(false),[focusOffset,setFocusOffset]=useState(0);
   const [cutKeep,setCutKeep]=useState(false);
   // A selected reference image (never together with selected objects) is moved and transformed on the canvas.
@@ -372,10 +374,16 @@ function StudioEditor() {
     const next=layoutObject(o);if(next===o)return;
     current.current=syncPathBindings({...p,objects:p.objects.map(x=>x.id===id?next:x)},p);setProject(current.current);invalidate();setSaved(false);
   }
-  function loadTextFonts(id:string,spec:TextSpec){
+  // A newly placed text that would leave the hoop shrinks and moves inside it once its font is laid out.
+  function fitPlacedText(id:string){
+    const p=current.current,o=p.objects.find(x=>x.id===id);if(!o?.text)return;
+    const text=fitTextInHoop(o.text,bounds([o]),hoops[p.hoop]);if(!text)return;
+    current.current={...p,objects:p.objects.map(x=>x.id===id?{...o,text}:x)};relayout(id);
+  }
+  function loadTextFonts(id:string,spec:TextSpec,fit=false){
     if(spec.satin)return;
     setFontLoading(n=>n+1);
-    ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
+    ensureFonts(spec.font,spec.content,t).then(changed=>{if(changed)relayout(id);if(fit)fitPlacedText(id);setFontsReady(n=>n+1);}).catch(e=>setError(errorText(e,t,'The font could not be loaded.'))).finally(()=>setFontLoading(n=>n-1));
   }
   async function updateText(patch:Partial<TextSpec>,merge?:string){
     if(!item?.text||item.locked)return;
@@ -389,7 +397,7 @@ function StudioEditor() {
   function placeText(p:Point){
     const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
-    loadTextFonts(o.id,text);setSettingsCollapsed(false);
+    loadTextFonts(o.id,text,true);setSettingsCollapsed(false);
     textFocus.current=true;requestAnimationFrame(focusTextReady);
   }
   function focusText(){setSettingsCollapsed(false);textFocus.current=true;requestAnimationFrame(focusTextReady);}
@@ -412,7 +420,8 @@ function StudioEditor() {
   function updateObject(patch:Partial<StitchObject>){if(!item||item.locked)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
     let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};if(patch.color!==undefined&&!patch.thread)delete next.thread;for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
-  function restoreSelection(p:Project){if(!selection.length&&p.images?.some(i=>i.id===imageSel))return;setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length?kept:p.objects[0]?[p.objects[0].id]:[];});}
+  // Undo/redo keeps the selected objects that still exist; it never jumps to an unrelated object.
+  function restoreSelection(p:Project){if(!selection.length&&p.images?.some(i=>i.id===imageSel))return;setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length===ids.length?ids:kept;});}
   function undo(){endDrag();setActivePoint(null);if(draftRef.current.length){if(canUndoDraft)popDraft();return;}if(!history.length)return;const before=history[history.length-1];setFuture(f=>[current.current,...f]);setHistory(history.slice(0,-1));current.current=before;setProject(before);restoreSelection(before);invalidate();setDraft([]);}
   function redo(){setActivePoint(null);if(!future.length)return;const previous=current.current;setHistory(h=>[...h,previous]);current.current=future[0];setProject(future[0]);restoreSelection(future[0]);setFuture(future.slice(1));invalidate();}
   // Phones show the side panel as a drawer over the canvas, so it closes when the canvas is needed.
@@ -630,7 +639,7 @@ function StudioEditor() {
       }
       if(touchNavigation.current)return;
     }
-    endDrag();pressedAnchor.current=null;if(e.button>2)return;
+    endDrag();pressedAnchor.current=null;pressedObject.current=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')??null;if(e.button>2)return;
     const handle=(e.target as SVGElement).closest('[data-transform]')?.getAttribute('data-transform') as ScaleHandle|'rotate'|undefined;
     if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!selection.length&&selImage&&!selImage.locked){transformDrag.current={before:current.current,ids:[],box:imageBounds(selImage),start:point(e),angle:selImage.rotation??0,handle,image:selImage.id};dragUndo.current.begin(current.current);capture(e);return;}
     if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
@@ -973,7 +982,7 @@ function StudioEditor() {
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);if(tool==='stitch')hoverStitch(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(editing&&(item?.curve||item?.rails)&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
-            const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object');if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
+            const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')??pressedObject.current;if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
               <defs><pattern id="fine-grid" width={viewSettings.gridSize/viewSettings.subdivisions} height={viewSettings.gridSize/viewSettings.subdivisions} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize/viewSettings.subdivisions} 0 L 0 0 0 ${viewSettings.gridSize/viewSettings.subdivisions}`} fill="none" stroke="var(--grid)" strokeWidth={.5/canvasScale}/></pattern><pattern id="grid" width={viewSettings.gridSize} height={viewSettings.gridSize} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize} 0 L 0 0 0 ${viewSettings.gridSize}`} fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
               {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="var(--bg-workspace)"/>
               <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="var(--hoop-rim)" filter="url(#hoop-shadow)"/>
@@ -1114,7 +1123,7 @@ function StudioEditor() {
       </>}
       {panelTab==='artwork'&&<section className="panel-section">
         <button className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>{t("Import file")}</strong></button>
-        <PixelCrossButton project={project} image={art} disabled={hasDraft} onChange={commit}/>
+        <div className="manual-trace"><PixelCrossButton project={project} image={art} disabled={hasDraft} onChange={commit}/></div>
         {!images.length&&<p className="section-copy">{t("PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.")}</p>}
         {images.length>0&&<ImagesPanel images={images} active={art?.id??null} selected={imageSel} disabled={hasDraft} onSelect={selectImage} onChange={changeImage} onMove={(id,delta)=>commit(moveImage(current.current,id,delta))} onDelete={deleteImage}/>}
         {art&&<div className="artwork-settings">
