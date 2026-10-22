@@ -360,6 +360,17 @@ selection to the top, up, down or bottom, or delete it. With several objects
 selected, the left overlay offers a shared thread colour, Group/Ungroup and
 Delete.
 
+Click a row's sew-order number to type a new position (Enter or blur applies it,
+Escape cancels); the object joins a group when it lands between two of its members
+and leaves its group when moved away from it. The **Objects / Colours** switch at
+the top of Layers (remembered in this browser) shows **colour runs**: consecutive
+objects with the same colour and Brother thread merge into one row with the thread
+swatch, Brother code and name (or the custom hex value), object count, sew-order
+range and, once stitches are up to date, the run’s stitch count (text borders, sewn in
+their own colour, are not included). Click a run to select its objects; drag it to move
+all of them together, in their sew order, to another run boundary. Runs that join
+make fewer thread changes; the design check still flags a colour sewn twice.
+
 The selection has a transform box with eight scale handles and a round rotation
 handle. Drag a corner with **Shift** to keep proportions; **Alt** scales from the
 centre. Hold **Shift** while rotating for 15° steps. The left overlay has numeric

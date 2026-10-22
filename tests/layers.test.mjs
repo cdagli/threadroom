@@ -67,3 +67,27 @@ test('Locks toggle as one change, skip canvas selection and are kept by validati
   const {copySelection,pasteSelection}=load('editing');let n=0;
   const pasted=pasteSelection(locked,copySelection(locked,['a']),1,()=>`copy-${n++}`);assert.equal(pasted.project.objects.at(-1).locked,undefined);
 });
+
+test('Colour runs merge consecutive same-thread objects and sum compiled stitches',()=>{
+  const {colourRuns}=load('layers'),p=project();
+  p.objects[1].color='#AABBCC';p.objects[2].color='#aabbcc';p.objects[3].color='#aabbcc';p.objects[3].thread={brand:'Brother',code:'209',name:'Pink'};
+  const runs=colourRuns(p,null);
+  assert.deepEqual(runs.map(r=>r.ids),[['a'],['b','c'],['d'],['e']]);assert.deepEqual(runs.map(r=>[r.index,r.end]),[[0,1],[1,3],[3,4],[4,5]]);
+  assert.equal(runs[2].thread.code,'209');assert.equal(runs[0].stitches,null);
+  const stitch=id=>({type:'stitch',objectId:id,x:0,y:0,fromX:0,fromY:0,block:0});
+  const counted=colourRuns(p,{commands:[stitch('b'),stitch('b'),stitch('c'),{...stitch('c'),type:'jump'},stitch('c-border'),stitch('e')]});
+  assert.deepEqual(counted.map(r=>r.stitches),[0,3,0,1]);
+  assert.deepEqual(colourRuns({...p,objects:[]},null),[]);
+});
+test('Placing a block keeps groups whole, joins a group it lands inside and leaves a group it moves away from',()=>{
+  const {placeObjects,positionIndex}=load('layers'),p=project(),order=q=>q.objects.map(o=>o.id+(o.group?`:${o.group}`:''));
+  assert.deepEqual(order(placeObjects(p,['b','c'],5)),['a','d:h','e','b:g','c:g']);
+  assert.deepEqual(order(placeObjects(p,['e'],2)),['a','b:g','e:g','c:g','d:h']);
+  assert.deepEqual(order(placeObjects(p,['b'],5)),['a','c:g','d:h','e','b']);
+  assert.deepEqual(order(placeObjects(p,['c'],1)),['a','c:g','b:g','d:h','e']);
+  assert.deepEqual(order(placeObjects(p,['a','e'],3)),['b:g','c:g','a','e','d:h']);
+  assert.equal(placeObjects(p,['a'],0),p);assert.equal(placeObjects(p,['gone'],2),p);
+  assert.deepEqual(order(placeObjects(p,['a'],positionIndex(p,'a',4))),['b:g','c:g','d:h','a','e']);
+  assert.deepEqual(order(placeObjects(p,['e'],positionIndex(p,'e',1))),['e','a','b:g','c:g','d:h']);
+  assert.equal(positionIndex(p,'b',99),5);assert.equal(positionIndex(p,'d',-3),0);assert.equal(placeObjects(p,['c'],positionIndex(p,'c',3)),p);
+});

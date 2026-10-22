@@ -1,4 +1,5 @@
-import type {Command, Project, StitchObject} from './project';
+import {normalizeGroups, withGroup, type Command, type Compiled, type Project, type StitchObject} from './project';
+import type {Thread} from './threads';
 
 export function selectIds(order:string[],ids:string[],id:string,mode:'replace'|'toggle'|'range',anchor:string|null):string[]{
   if(!order.includes(id))return ids;
@@ -47,3 +48,38 @@ export function toggleLock(p:Project,ids:readonly string[]):Project{
   const locked=!chosen.every(o=>o.locked);return {...p,objects:p.objects.map(o=>ids.includes(o.id)?withLock(o,locked):o)};
 }
 export const unlockAll=(p:Project):Project=>p.objects.some(o=>o.locked)?{...p,objects:p.objects.map(o=>withLock(o,false))}:p;
+
+// Colour runs: consecutive objects sewn with the same thread merge into one row (one PES colour block).
+export type ColourRun={key:string;color:string;thread?:Thread;ids:string[];index:number;end:number;stitches:number|null};
+const runKey=(o:StitchObject)=>`${o.color.toLowerCase()}|${o.thread?.code??''}`;
+const stitchCache=new WeakMap<Command[],Map<string,number>>();
+export function objectStitches(commands:Command[]){
+  let counts=stitchCache.get(commands);if(counts)return counts;counts=new Map();
+  for(const c of commands)if(c.type==='stitch'&&c.objectId!==undefined)counts.set(c.objectId,(counts.get(c.objectId)??0)+1);
+  stitchCache.set(commands,counts);return counts;
+}
+export function colourRuns(p:Project,compiled:Pick<Compiled,'commands'>|null):ColourRun[]{
+  const runs:ColourRun[]=[],counts=compiled?objectStitches(compiled.commands):null;
+  p.objects.forEach((o,index)=>{
+    const last=runs.at(-1),stitches=counts?counts.get(o.id)??0:null;
+    if(last&&runKey(p.objects[last.end-1])===runKey(o)){last.ids.push(o.id);last.end++;if(last.stitches!==null)last.stitches+=stitches!;}
+    else runs.push({key:`run:${o.id}`,color:o.color,...(o.thread&&{thread:o.thread}),ids:[o.id],index,end:index+1,stitches});
+  });
+  return runs;
+}
+// Move a block to an original-order index, keeping groups intact: a block dropped inside a group joins
+// it; otherwise members keep their group only when it moves whole or stays next to its other members.
+export function placeObjects(p:Project,ids:readonly string[],index:number):Project{
+  const selected=new Set(ids),block=p.objects.filter(o=>selected.has(o.id));if(!block.length)return p;
+  const rest=p.objects.filter(o=>!selected.has(o.id)),at=p.objects.slice(0,Math.max(0,Math.min(p.objects.length,index))).filter(o=>!selected.has(o.id)).length;
+  const prev=rest[at-1],next=rest[at],inside=prev?.group!==undefined&&prev.group===next?.group?prev.group:undefined;
+  const keep=(g:string)=>p.objects.every(o=>o.group!==g||selected.has(o.id))||prev?.group===g||next?.group===g;
+  const placed=block.map(o=>withGroup(o,inside??(o.group!==undefined&&keep(o.group)?o.group:undefined)));
+  const objects=[...rest.slice(0,at),...placed,...rest.slice(at)];
+  return objects.every((o,i)=>o===p.objects[i])?p:normalizeGroups({...p,objects});
+}
+// Typed sew-order position (1-based, clamped) as a placeObjects index.
+export function positionIndex(p:Project,id:string,position:number){
+  const from=p.objects.findIndex(o=>o.id===id),to=Math.max(0,Math.min(p.objects.length-1,Math.round(position)-1));
+  return to>from?to+1:to;
+}

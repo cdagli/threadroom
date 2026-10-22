@@ -156,7 +156,7 @@ export function pathData(rings: Point[][], closed: boolean) {
   return rings.map(r => r.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ')+(closed?' Z':'')).join(' ');
 }
 
-const withGroup=(o:StitchObject,group?:string):StitchObject=>{
+export const withGroup=(o:StitchObject,group?:string):StitchObject=>{
   if(o.group===group)return o;
   const next={...o};delete next.group;return group===undefined?next:{...next,group};
 };

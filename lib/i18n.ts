@@ -954,6 +954,13 @@ export const en={
   "Canvas actions": "Canvas actions",
   "Right-click / Shift F10": "Right-click / Shift F10",
   "Open the canvas menu": "Open the canvas menu",
+  "Layers view": "Layers view",
+  "Sew order position": "Sew order position",
+  "Sew order {v0}: change position": "Sew order {v0}: change position",
+  "Click to type a new sew position": "Click to type a new sew position",
+  "stitchCount.one": "{count} stitch",
+  "stitchCount.other": "{count} stitches",
+  "Drag to move these objects together in sew order": "Drag to move these objects together in sew order",
 } as const;
 export type Key=keyof typeof en;
 export const tr={
@@ -1910,6 +1917,13 @@ export const tr={
   "Canvas actions": "Tuval işlemleri",
   "Right-click / Shift F10": "Sağ tık / Shift F10",
   "Open the canvas menu": "Tuval menüsünü aç",
+  "Layers view": "Katman görünümü",
+  "Sew order position": "Dikiş sırası konumu",
+  "Sew order {v0}: change position": "Dikiş sırası {v0}: konumu değiştir",
+  "Click to type a new sew position": "Yeni dikiş sırası yazmak için tıklayın",
+  "stitchCount.one": "{count} dikiş",
+  "stitchCount.other": "{count} dikiş",
+  "Drag to move these objects together in sew order": "Bu nesneleri dikiş sırasında birlikte taşımak için sürükleyin",
 } satisfies Record<Key,string>;
 export const dictionaries={en,tr};
 export type Values=Record<string,string|number>;

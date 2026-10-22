@@ -201,3 +201,7 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
 - **Canvas context menu (done)**. Select-tool right-click without drag (right-drag still
   pans, drawing tools keep curve points); object and empty-canvas item lists in
   `lib/context-menu.ts` with keyboard stepping and viewport placement; Shift F10 / Menu key.
+- **Colour runs view (done)**. Layers Objects / Colours switch; consecutive same-thread
+  objects merge into draggable runs (swatch, Brother label, count, compiled stitches)
+  moved as one block by `placeObjects`, which keeps groups whole; click a sew-order
+  number to type a new position. "Sort by selection order" remains open.

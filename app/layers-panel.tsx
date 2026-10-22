@@ -1,17 +1,23 @@
 'use client';
 import {useT} from './i18n';
-import {memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode} from 'react';
-import {layerRows, layerTarget, type LayerRow} from '@/lib/layers';
+import {memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode} from 'react';
+import {colourRuns, layerRows, layerTarget, type ColourRun, type LayerRow} from '@/lib/layers';
+import {brotherThreads} from '@/lib/threads';
 import {objectGeometry} from '@/lib/editor-render';
 import {useStableCallback} from './use-stable-callback';
-import {isFillKind, kindNames, type StitchObject, type Project} from '@/lib/project';
+import {isFillKind, kindNames, type Compiled, type StitchObject, type Project} from '@/lib/project';
 
-type Props={project:Project;selection:string[];disabled:boolean;imported:boolean;onSelect:(id:string,keys:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean})=>void;onSelection:(ids:string[])=>void;onRename:(id:string,name:string,group:boolean)=>void;onHide:(ids:string[])=>void;onLock:(ids:string[])=>void;onMove:(ids:string[],index:number,group:string|null,wholeGroup?:string)=>void;children:ReactNode};
+type Props={project:Project;compiled:Compiled|null;selection:string[];disabled:boolean;imported:boolean;onSelect:(id:string,keys:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean})=>void;onSelection:(ids:string[])=>void;onRename:(id:string,name:string,group:boolean)=>void;onHide:(ids:string[])=>void;onLock:(ids:string[])=>void;onMove:(ids:string[],index:number,group:string|null,wholeGroup?:string)=>void;onPlace:(ids:string[],index:number)=>void;onPosition:(id:string,position:number)=>void;children:ReactNode};
 function Eye({hidden}:{hidden:boolean}){return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7m10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/>{hidden&&<path d="m3 3 18 18"/>}</svg>;}
 function Padlock({locked}:{locked:boolean}){return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d={`M6 11h12v10H6V11m2 0V8a4 4 0 0 1 ${locked?'8 0v3':'7.7-1.5'}`}/></svg>;}
-export default function LayersPanel({project,selection,disabled,imported,onSelect,onSelection,onRename,onHide,onLock,onMove,children}:Props){
-  const {t}=useT();
-  const list=useRef<HTMLDivElement>(null),drag=useRef<{ids:string[];start:[number,number];active:boolean;index:number;group:string|null;wholeGroup?:string}|null>(null),skipClick=useRef(false);
+export default function LayersPanel({project,compiled,selection,disabled,imported,onSelect,onSelection,onRename,onHide,onLock,onMove,onPlace,onPosition,children}:Props){
+  const {t,formatNumber}=useT();
+  // Objects view: one row per object; Colours view: one row per run of consecutive same-thread objects.
+  const [view,setView]=useState<'objects'|'colours'>('objects'),[positioning,setPositioning]=useState<{id:string;value:string}|null>(null),position=useRef(positioning);position.current=positioning;
+  useEffect(()=>{try{if(localStorage.getItem('threadroom-layers-view')==='colours')setView('colours');}catch{/* Storage is optional. */}},[]);
+  function chooseView(next:'objects'|'colours'){setView(next);try{localStorage.setItem('threadroom-layers-view',next);}catch{/* The view still switches. */}}
+  const runs=useMemo(()=>view==='colours'?colourRuns(project,compiled):[],[view,project,compiled]);
+  const list=useRef<HTMLDivElement>(null),drag=useRef<{ids:string[];start:[number,number];active:boolean;index:number;group:string|null;wholeGroup?:string;run?:boolean}|null>(null),skipClick=useRef(false);
   const [collapsed,setCollapsed]=useState(new Set<string>()),[line,setLine]=useState<number|null>(null),[targetGroup,setTargetGroup]=useState<string|null>(null),[renaming,setRenaming]=useState<{id:string;name:string;group:boolean}|null>(null),rename=useRef(renaming);rename.current=renaming;
   const rows=useMemo(()=>layerRows(project,collapsed),[project,collapsed]);
   function finishRename(save:boolean){const r=rename.current;rename.current=null;setRenaming(null);if(save&&r)onRename(r.id,r.name.trim()||(r.group?project.groups?.find(g=>g.id===r.id)?.name:project.objects.find(o=>o.id===r.id)?.name)||t("Group"),r.group);}
@@ -24,6 +30,7 @@ export default function LayersPanel({project,selection,disabled,imported,onSelec
     const d=drag.current,el=list.current;if(!d||!el)return;
     if(!d.active){if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])<5)return;d.active=true;onSelection(d.ids);}
     e.preventDefault();const elements=Array.from(el.querySelectorAll<HTMLElement>('[data-layer]')),element=elements.find(r=>e.clientY<r.getBoundingClientRect().bottom)??elements.at(-1);if(!element)return;
+    if(d.run){const run=runs.find(r=>r.key===element.dataset.layer);if(!run)return;const box=element.getBoundingClientRect(),after=e.clientY>box.top+box.height/2;d.index=after?run.end:run.index;d.group=null;setLine((after?box.bottom:box.top)-el.getBoundingClientRect().top+el.scrollTop);const area=el.getBoundingClientRect();if(e.clientY<area.top+24)el.scrollTop-=10;else if(e.clientY>area.bottom-24)el.scrollTop+=10;return;}
     const row=rows.find(r=>r.key===element.dataset.layer)!;let box=element.getBoundingClientRect(),after=e.clientY>box.top+box.height/2;
     const target=layerTarget(row,after,d.wholeGroup!==undefined),outside=e.clientY>elements.at(-1)!.getBoundingClientRect().bottom+4;d.index=outside?project.objects.length:target.index;d.group=outside?null:target.group;
     // Whole groups cannot nest: show the line at the block boundary moveGroup will use.
@@ -35,8 +42,13 @@ export default function LayersPanel({project,selection,disabled,imported,onSelec
     setTargetGroup(d.group);setLine((after?box.bottom:box.top)-el.getBoundingClientRect().top+el.scrollTop);
     const area=el.getBoundingClientRect();if(e.clientY<area.top+24)el.scrollTop-=10;else if(e.clientY>area.bottom-24)el.scrollTop+=10;
   }
-  function up(e:ReactPointerEvent<HTMLDivElement>,cancel=false){const d=drag.current;drag.current=null;setLine(null);setTargetGroup(null);if(d?.active){skipClick.current=true;if(!cancel)onMove(d.ids,d.index,d.group,d.wholeGroup);}if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}
+  function up(e:ReactPointerEvent<HTMLDivElement>,cancel=false){const d=drag.current;drag.current=null;setLine(null);setTargetGroup(null);if(d?.active){skipClick.current=true;if(!cancel){if(d.run)onPlace(d.ids,d.index);else onMove(d.ids,d.index,d.group,d.wholeGroup);}}if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}
   function nameInput(){return <input aria-label={renaming!.group?t("Group name"):t("Layer name")} maxLength={40} autoFocus value={renaming!.name} onFocus={e=>e.target.select()} onChange={e=>setRenaming({...renaming!,name:e.target.value})} onClick={e=>e.stopPropagation()} onBlur={()=>finishRename(true)} onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();finishRename(true);}if(e.key==='Escape'){e.preventDefault();finishRename(false);}}}/>;}
+  function finishPosition(save:boolean){const p=position.current;position.current=null;setPositioning(null);const n=Number(p?.value);if(save&&p&&p.value.trim()!==''&&Number.isFinite(n))onPosition(p.id,n);}
+  function positionInput(){return <input className="order-input" type="number" aria-label={t('Sew order position')} min={1} max={project.objects.length} step={1} autoFocus value={positioning!.value} onFocus={e=>e.target.select()} onChange={e=>setPositioning({...positioning!,value:e.target.value})} onClick={e=>e.stopPropagation()} onBlur={()=>finishPosition(true)} onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();finishPosition(true);}if(e.key==='Escape'){e.preventDefault();finishPosition(false);}}}/>;}
+  const beginPosition=useStableCallback((id:string)=>{if(!disabled)setPositioning({id,value:String(project.objects.findIndex(o=>o.id===id)+1)});});
+  const runDown=useStableCallback((key:string,e:ReactPointerEvent<HTMLDivElement>)=>{const run=runs.find(r=>r.key===key);if(disabled||!run||e.button!==0)return;skipClick.current=false;drag.current={ids:run.ids,start:[e.clientX,e.clientY],active:false,index:run.index,group:null,run:true};try{e.currentTarget.setPointerCapture(e.pointerId);}catch{/* Pointer-up cancels an inactive drag. */}});
+  const runClick=useStableCallback((key:string)=>{if(skipClick.current){skipClick.current=false;return;}const run=runs.find(r=>r.key===key);if(run&&!disabled)onSelection(run.ids);});
   const rowDown=useStableCallback((id:string,e:ReactPointerEvent<HTMLDivElement>)=>down(e,rows.find(r=>r.object?.id===id)!));
   const rowClick=useStableCallback((id:string,e:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean})=>{if(skipClick.current){skipClick.current=false;return;}if(!disabled)onSelect(id,e);});
   const select=useStableCallback(onSelect),hide=useStableCallback(onHide),lock=useStableCallback(onLock),beginRename=useStableCallback((o:StitchObject)=>setRenaming({id:o.id,name:o.name,group:false}));
@@ -47,14 +59,15 @@ export default function LayersPanel({project,selection,disabled,imported,onSelec
   const renameGroup=useStableCallback((id:string,name:string)=>setRenaming({id,name,group:true}));
   const hideGroup=useStableCallback((id:string)=>onHide(rows.find(r=>r.type==='group'&&r.group===id)!.ids)),lockGroup=useStableCallback((id:string)=>onLock(rows.find(r=>r.type==='group'&&r.group===id)!.ids));
   return <section className="panel-section objects-section">
+    <div className="layers-view" role="radiogroup" aria-label={t('Layers view')}>{(['objects','colours'] as const).map(v=><button key={v} type="button" role="radio" aria-checked={view===v} onClick={()=>chooseView(v)}>{t(v==='objects'?'Objects':'Colours')}</button>)}</div>
     <div ref={list} className={`object-list ${line!==null?'reordering':''}`} aria-label={t("Layers")} onPointerMove={move} onPointerUp={e=>up(e)} onPointerCancel={e=>up(e,true)} onLostPointerCapture={e=>{if(drag.current)up(e,true);}}>
-      {rows.map(row=>{
+      {view==='colours'?runs.map(run=><ColourRunRow key={run.key} run={run} selected={run.ids.every(id=>selection.includes(id))} disabled={disabled} label={formatNumber(run.index+1).padStart(2,'0')+(run.end-run.index>1?`–${formatNumber(run.end).padStart(2,'0')}`:'')} onDown={runDown} onClick={runClick}/>):rows.map(row=>{
         if(row.type==='group'){
           const hidden=row.ids.every(id=>project.objects.find(o=>o.id===id)?.hidden),locked=row.ids.every(id=>project.objects.find(o=>o.id===id)?.locked),selected=row.ids.every(id=>selection.includes(id));
           return <LayerGroupRow key={row.key} group={row.group!} name={row.name} count={row.ids.length} collapsed={!!row.collapsed} hidden={hidden} locked={locked} selected={selected} disabled={disabled} renameInput={renaming?.group&&renaming.id===row.group?nameInput():null} onDown={groupDown} onClick={groupClick} onSelect={selectGroup} onCollapse={collapseGroup} onRename={renameGroup} onHide={hideGroup} onLock={lockGroup}/>;
         }
-        const o=row.object!;return <LayerObjectRow key={o.id} o={o} i={row.index} selected={selection.includes(o.id)} grouped={row.group!==undefined} disabled={disabled} renameInput={renaming?.id===o.id&&!renaming.group?nameInput():null} onDown={rowDown} onClick={rowClick} onSelect={select} onHide={hide} onLock={lock} onRename={beginRename}/>;})}
-      {line!==null&&<div className="layer-insertion" style={{top:line}}><span>{targetGroup===null?t("Outside groups"):project.groups?.find(g=>g.id===targetGroup)?.name}</span></div>}
+        const o=row.object!;return <LayerObjectRow key={o.id} o={o} i={row.index} selected={selection.includes(o.id)} grouped={row.group!==undefined} disabled={disabled} renameInput={renaming?.id===o.id&&!renaming.group?nameInput():null} positionInput={positioning?.id===o.id?positionInput():null} onPosition={beginPosition} onDown={rowDown} onClick={rowClick} onSelect={select} onHide={hide} onLock={lock} onRename={beginRename}/>;})}
+      {line!==null&&<div className="layer-insertion" style={{top:line}}>{view==='objects'&&<span>{targetGroup===null?t("Outside groups"):project.groups?.find(g=>g.id===targetGroup)?.name}</span>}</div>}
     </div>
     {!project.objects.length&&<p className="empty-list">{imported?t("PES preview only"):t("No objects")}</p>}
     {children}
@@ -65,10 +78,10 @@ const LayerPreview=memo(function LayerPreview({o}:{o:StitchObject}){
   const geometry=objectGeometry(o),b=geometry.bounds,pad=Math.max(b.width,b.height,1)*.1;
   return <svg className="layer-preview" width="32" height="32" viewBox={`${b.x-pad} ${b.y-pad} ${Math.max(b.width,1)+2*pad} ${Math.max(b.height,1)+2*pad}`} aria-hidden="true"><path d={geometry.path} fill={isFillKind(o.kind)?o.color:'none'} fillRule={o.text?'nonzero':'evenodd'} stroke={isFillKind(o.kind)?'none':o.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinecap="round"/></svg>;
 });
-const LayerObjectRow=memo(function LayerObjectRow({o,i,selected,grouped,disabled,renameInput,onDown,onClick,onSelect,onHide,onLock,onRename}:{o:StitchObject;i:number;selected:boolean;grouped:boolean;disabled:boolean;renameInput:ReactNode;onDown:(id:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:Props['onSelect'];onSelect:Props['onSelect'];onHide:Props['onHide'];onLock:Props['onLock'];onRename:(o:StitchObject)=>void}){
+const LayerObjectRow=memo(function LayerObjectRow({o,i,selected,grouped,disabled,renameInput,positionInput,onPosition,onDown,onClick,onSelect,onHide,onLock,onRename}:{o:StitchObject;i:number;selected:boolean;grouped:boolean;disabled:boolean;renameInput:ReactNode;positionInput:ReactNode;onPosition:(id:string)=>void;onDown:(id:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:Props['onSelect'];onSelect:Props['onSelect'];onHide:Props['onHide'];onLock:Props['onLock'];onRename:(o:StitchObject)=>void}){
   const {t,formatNumber}=useT();
   return <div data-layer={`object:${o.id}`} className={`object-row ${selected?'selected':''} ${o.hidden?'hidden-object':''} ${o.locked?'locked-object':''} ${grouped?'group-member':''}`} role="button" tabIndex={disabled?-1:0} aria-label={o.name} aria-pressed={selected} aria-disabled={disabled} onPointerDown={e=>onDown(o.id,e)} onClick={e=>{onClick(o.id,e);}} onKeyDown={e=>{if(e.target!==e.currentTarget)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!disabled)onSelect(o.id,e);}}}>
-        <span className="order">{formatNumber(i+1).padStart(2,'0')}</span><LayerPreview o={o}/>
+        {positionInput??<button type="button" className="order" disabled={disabled} aria-label={t('Sew order {v0}: change position',{v0:i+1})} title={t('Click to type a new sew position')} onClick={e=>{e.stopPropagation();onPosition(o.id);}}>{formatNumber(i+1).padStart(2,'0')}</button>}<LayerPreview o={o}/>
         <span className="layer-name">{renameInput?renameInput:<strong title={o.name} onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(o);}}>{o.name}</strong>}<small>{o.text?t("Text · {v0} · {v1}",{v0:o.text.font.family,v1:t(kindNames[o.kind])}):t(kindNames[o.kind])}</small></span>
         <button className="icon-button layer-lock" disabled={disabled} aria-label={t(o.locked?'unlockNamed':'lockNamed',{name:o.name})} aria-pressed={!!o.locked} title={o.locked?t('Unlock object'):t('Lock object (Ctrl / ⌘ L)')} onClick={e=>{e.stopPropagation();onLock([o.id]);}}><Padlock locked={!!o.locked}/></button>
         <button className="icon-button layer-eye" disabled={disabled} aria-label={t(o.hidden?'showNamed':'hideNamed',{name:o.name})} aria-pressed={!o.hidden} title={o.hidden?t("Show object"):t("Hide object (still exported)")} onClick={e=>{e.stopPropagation();onHide([o.id]);}}><Eye hidden={!!o.hidden}/></button>
@@ -83,4 +96,14 @@ const LayerGroupRow=memo(function LayerGroupRow({group,name,count,collapsed,hidd
             <button className="icon-button layer-lock" disabled={disabled} aria-label={t(locked?'unlockNamed':'lockNamed',{name})} aria-pressed={locked} title={locked?t('Unlock group'):t('Lock group')} onClick={e=>{e.stopPropagation();onLock(group);}}><Padlock locked={locked}/></button>
             <button className="icon-button layer-eye" disabled={disabled} aria-label={t(hidden?'showNamed':'hideNamed',{name})} aria-pressed={!hidden} title={hidden?t("Show group"):t("Hide group (still exported)")} onClick={e=>{e.stopPropagation();onHide(group);}}><Eye hidden={hidden}/></button>
           </div>;
+});
+
+const ColourRunRow=memo(function ColourRunRow({run,selected,disabled,label,onDown,onClick}:{run:ColourRun;selected:boolean;disabled:boolean;label:string;onDown:(key:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:(key:string)=>void}){
+  const {t}=useT(),b=run.thread&&brotherThreads.find(b=>b.code===run.thread!.code);
+  const name=b?t('Brother {code} {name}',{code:b.code,name:t(`thread.${b.name}`)}):t('Custom thread · {color}',{color:run.color.toUpperCase()});
+  const detail=[t('objects.other',{count:run.ids.length}),...(run.stitches!==null?[t('stitchCount.other',{count:run.stitches})]:[])].join(' · ');
+  return <div data-layer={run.key} className={`object-row colour-run ${selected?'selected':''}`} role="button" tabIndex={disabled?-1:0} aria-label={`${name}, ${detail}`} aria-pressed={selected} aria-disabled={disabled} title={t('Drag to move these objects together in sew order')} onPointerDown={e=>onDown(run.key,e)} onClick={()=>onClick(run.key)} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onClick(run.key);}}}>
+    <span className="order run-order">{label}</span><span className="thread-swatch run-swatch" style={{background:run.color}}/>
+    <span className="layer-name"><strong title={name}>{name}</strong><small>{detail}</small></span>
+  </div>;
 });

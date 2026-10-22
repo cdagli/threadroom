@@ -35,7 +35,7 @@ import {CanvasObject} from './canvas-object';
 import {PointHandles} from './point-handles';
 import {useStableCallback} from './use-stable-callback';
 import {changedObjectIds, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
-import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds} from '@/lib/layers';
+import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
 type PanelTab = 'layers' | 'artwork' | 'setup' | 'info';
 type Tool = 'select' | 'pan' | 'measure' | 'open' | 'closed' | 'blocks' | 'freehand' | 'points' | 'text' | 'shape';
@@ -925,7 +925,7 @@ function StudioEditor() {
     <aside id="side-panel" className="side-panel" role="tabpanel" aria-labelledby={`tab-${panelTab}`} hidden={!panelOpen}>
       <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<span className="count-badge">{formatNumber(project.objects.length)}</span>}<button className="icon-button" aria-label={t("Hide panel")} onClick={()=>setPanelOpen(false)}><Icon name="close" size={16}/></button></div>
       {panelTab==='layers'&&<>
-        <LayersPanel project={project} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onLock={lockSelection} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))}>
+        <LayersPanel project={project} compiled={compileFresh?compiled:null} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onLock={lockSelection} onPlace={(ids,index)=>commit(placeObjects(project,ids,index))} onPosition={(id,n)=>commit(placeObjects(project,[id],positionIndex(project,id,n)))} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))}>
           <div className="layers-footer" role="group" aria-label={t("Layer actions")}>
             <button disabled={hasDraft||items.length<2} title={t("Group (⌘G)")} aria-label={t("Group selected objects")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={hasDraft||!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} aria-label={t("Ungroup selected objects")} onClick={ungroupSelection}>{t("Ungroup")}</button>
             {(['top','up','down','bottom'] as const).map((where,i)=><button key={where} disabled={hasDraft||!items.length||((where==='top'||where==='up')?selection.includes(project.objects[0]?.id):selection.includes(project.objects.at(-1)?.id??''))} aria-label={t(`move.${where}`)} title={t(`move.${where}`)} onClick={()=>reorderSelection(where)}>{['⇈','↑','↓','⇊'][i]}</button>)}
