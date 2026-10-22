@@ -31,9 +31,9 @@ const textGroup = (kind: Kind) => isFillKind(kind) ? 'fill' : isWideKind(kind) ?
 // Rasterised fill: area, thickness (twice the largest inscribed radius) and parts thinner than
 // limits.fillWidth[0] (cells outside the morphological opening by half that width). Cached per rings.
 type Raster = {area: number; thickness: number; thin: {area: number; bounds: Box} | null};
-const rasterCache = new WeakMap<Point[][], Raster>();
+const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Raster>>>();
 export function raster(rings: Point[][], rule: 'evenodd' | 'nonzero' = 'evenodd'): Raster {
-  const cached = rasterCache.get(rings); if (cached) return cached;
+  const cached = rasterCache.get(rings); if (cached?.[rule]) return cached[rule];
   const [minX, minY, maxX, maxY] = box(rings.flat());
   const cell = Math.max(.06, Math.sqrt((maxX-minX)*(maxY-minY)/150000)), x0 = minX-cell, y0 = minY-cell;
   const W = Math.ceil((maxX-x0)/cell)+2, H = Math.ceil((maxY-y0)/cell)+2, inside = new Uint8Array(W*H);
@@ -76,7 +76,7 @@ export function raster(rings: Point[][], rule: 'evenodd' | 'nonzero' = 'evenodd'
   const thin: Point[] = [];
   for (let k = 0; k < W*H; k++) if (inside[k] && core[k] > r+.5) thin.push([x0+(k%W+.5)*cell, y0+(Math.floor(k/W)+.5)*cell]);
   const result = {area: count*cell*cell, thickness: Math.max(cell, (2*deepest-.5)*cell), thin: thin.length ? {area: thin.length*cell*cell, bounds: box(thin, cell)} : null};
-  rasterCache.set(rings, result);
+  rasterCache.set(rings, {...cached,[rule]:result});
   return result;
 }
 
@@ -112,7 +112,7 @@ export function checkProject(p: Project): Warning[] {
       const min = limits.text[textGroup(o.kind)];
       if (o.text.size < min) add('text-small', o, b, o.text.size < min*2/3 ? 'fail' : 'check', {size: round(o.text.size), limit: min});
     } else if (isFillKind(o.kind)) {
-      const r = raster(o.rings), cross = o.kind === 'cross'&&!hasCrossStyle(o) ? resolve(o, p.fabric, p.locks).spacing : 0;
+      const r = raster(o.rings,o.fillRule??'evenodd'), cross = o.kind === 'cross'&&!hasCrossStyle(o) ? resolve(o, p.fabric, p.locks).spacing : 0;
       const [fail, check] = cross ? [cross, 2*cross] : limits.fillWidth;
       if (r.area < limits.fillArea[1]) add('fill-small', o, b, r.area < limits.fillArea[0] ? 'fail' : 'check', {area: round(r.area), limit: limits.fillArea[1]});
       else if (r.thickness < check) add('fill-narrow', o, b, r.thickness < fail ? 'fail' : 'check', {width: round(r.thickness), limit: check});

@@ -18,6 +18,9 @@ import {ContextMenu} from './context-menu';
 import {traceArtwork} from '@/lib/trace';
 import {artworkPixels, sampleArtwork} from '@/lib/artwork-color';
 import {parse} from '@/lib/pes-parser';
+import {importSVG} from '@/lib/svg-import';
+import {SVGImportChoice,ExportImageButton} from './io-controls';
+import {DensityLayer,StitchDiagnostics} from './density-view';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
 import {defaultText, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
@@ -131,6 +134,7 @@ function StudioEditor() {
   }
   const [history,setHistory]=useState<Project[]>([]), [future,setFuture]=useState<Project[]>([]);
   const [timeline,setTimeline]=useState(false);
+  const [pendingSVG,setPendingSVG]=useState<File|null>(null),[density,setDensity]=useState(false);
   const [compiledSource,setCompiledSource]=useState<Project|null>(null);
   const [compiled,setCompiled]=useState<Compiled|null>(null), [busy,setBusy]=useState(false);
   const [message,setMessage]=useState(''), [error,setError]=useState(''), [apiState,setApiState]=useState<'checking'|'ready'|'offline'>('checking');
@@ -694,11 +698,15 @@ function StudioEditor() {
     const scale=width/size.width,cx=size.x+size.width/2,cy=size.y+size.height/2;
     commit({...project,objects:project.objects.map(o=>moveGeometry(o,([x,y])=>[cx+(x-cx)*scale,cy+(y-cy)*scale]))});
   }
-  async function importFile(f:File){
+  async function importFile(f:File,asShapes?:boolean){
     if(hasDraft){setError(t("Finish or cancel the current path before importing."));return;}
     setError('');setMessage('');setDraft([]);chooseTool('select');
     try{
       if(f.size>8*1024*1024)throw new TranslationError(t,"Choose a file smaller than 8 MB.");
+      if(/\.svg$/i.test(f.name)){
+        if(asShapes===undefined){setPendingSVG(f);return;}
+        if(asShapes){const p=importSVG(await f.text(),f.name,project,t);commit(p);setSelected(p.objects[0]?.id??null);fit();leavePanel();return;}
+      }
       if(/\.json$/i.test(f.name)){
         const p:unknown=JSON.parse(await f.text());if(!validProject(p))throw new TranslationError(t,"This is not a supported Threadroom project.");
         commit(p);setSelected(p.objects[0]?.id||null);fit();leavePanel();return;
@@ -763,7 +771,7 @@ function StudioEditor() {
   const stitchState=imported||!project.objects.length?'none':compileFresh||checkError?'done':apiState==='offline'?'offline':'pending';
   const focus=issues.find(w=>w.key===focusKey)||null,focusIndex=focus?issues.indexOf(focus):-1;
   const focusCopy=focus&&explain(focus,project,checkError,t),focusFix=focus&&fixFor(focus,project,t);
-  function focusIssue(w:Warning){setFocusKey(w.key);if(w.objectId&&project.objects.some(o=>o.id===w.objectId))setSelected(w.objectId);closePanel('check-panel');reveal(w.bounds);}
+  function focusIssue(w:Warning){if(w.code==='dense'||w.code.includes('density'))setDensity(true);setFocusKey(w.key);if(w.objectId&&project.objects.some(o=>o.id===w.objectId))setSelected(w.objectId);closePanel('check-panel');reveal(w.bounds);}
   // Pans (and zooms out if needed) so the problem is on screen; the marker keeps a minimum screen size.
   function reveal([x0,y0,x1,y1]:Box){
     const v=viewport.current,width=hoop.width*1.18/v.zoom,height=hoop.height*1.18/v.zoom,cx=hoop.width/2+v.pan[0],cy=hoop.height/2+v.pan[1];
@@ -792,6 +800,7 @@ function StudioEditor() {
       <hr/>
       <button role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Save project")}</button>
       <button role="menuitem" disabled={hasDraft||!project.objects.length} onClick={()=>{closePanel('project-menu');download(new Blob([exportSVG(project)],{type:'image/svg+xml'}),'threadroom-artwork.svg');}}><Icon name="download" size={16}/>{t("Export editable SVG")}</button>
+      <ExportImageButton project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
       <WorksheetButton menu project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
       <hr/>
       <div role="group" aria-label={t('Language')}>{(['tr','en'] as const).map(value=><button key={value} role="menuitemradio" aria-checked={lang===value} onClick={()=>{setLang(value);closePanel('project-menu');}}>{t(value==='tr'?'Türkçe':'English')}{lang===value?' ✓':''}</button>)}</div>
@@ -833,6 +842,7 @@ function StudioEditor() {
               {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale} units={viewSettings.units}/>}
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
         </svg>
+        {density&&compileFresh&&compiled&&<DensityLayer compiled={compiled} view={threadView} canvasSize={canvasSize} travel={showTravel} onClose={()=>setDensity(false)}/>}
         {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
         {cursor&&<output className="cursor-position" aria-label={t('Cursor position')}>X {displayLength(cursor[0])} · Y {displayLength(cursor[1])}</output>}
         {!project.objects.length&&!project.artwork&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
@@ -899,6 +909,7 @@ function StudioEditor() {
           <input className="playback" type="range" aria-label={t("Stitch playback")} min="0" max="1" step=".001" value={progress} onChange={e=>{setProgress(Number(e.target.value));setPlaying(false);}}/>
           <span className="stitch-counter">{formatNumber(count)} / {formatNumber(compiled.stats.stitches)}</span>
           <label className="playback-speed" title={t('Playback speed')}><span className="visually-hidden">{t('Playback speed')}</span><select value={speed} onChange={e=>setViewSettings(v=>({...v,playbackSpeed:Number(e.target.value)}))}>{playbackSpeeds.map(n=><option key={n} value={n}>{formatNumber(n)}×</option>)}</select></label>
+          <button className="travel-toggle" aria-pressed={density} disabled={!compileFresh} onClick={()=>setDensity(v=>!v)}>{t("Density")}</button>
           <button className="travel-toggle" aria-pressed={showTravel} title={t("Travel view: show jumps, thread cuts and connecting stitches")} onClick={()=>setShowTravel(v=>!v)}><Icon name="route" size={16}/><span>{t("Travel")}</span></button>
         </div>}
         {apiState==='offline'&&!compiled&&<span className="sim-hint" role="status">{t("Engine offline · showing shapes")}</span>}
@@ -963,6 +974,7 @@ function StudioEditor() {
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
         {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use Travel in the Stitches view to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}
+        <StitchDiagnostics compiled={compileFresh?compiled:null}/>
         <SewingTime project={project} compiled={compileFresh?compiled:null}/><WorksheetButton project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
         {!!size.width&&<label>{t("Design width · mm")}<input key={`${size.width.toFixed(2)}-${project.hoop}`} type="number" disabled={hasDraft} min="5" max={hoop.width} step="1" defaultValue={Number(size.width.toFixed(1))} onBlur={e=>{const n=Number(e.target.value);if(Math.abs(n-size.width)>.15)resizeDesign(n);}}/></label>}
         {outside&&<div className="hoop-check warning"><Icon name="region" size={15}/>{t("Design exceeds hoop")}</div>}
@@ -970,6 +982,7 @@ function StudioEditor() {
       </section>}
     </aside>
     {menu&&<ContextMenu {...menu} grid={viewSettings.showGrid} onAction={menuAction} onClose={closeMenu}/>}
+    {pendingSVG&&<SVGImportChoice file={pendingSVG} onClose={()=>setPendingSVG(null)} onChoose={shapes=>{const f=pendingSVG;setPendingSVG(null);void importFile(f,shapes);}}/>}
     {shortcutHelp&&<ShortcutHelp tools={tools} onClose={()=>{setShortcutHelp(false);requestAnimationFrame(()=>svg.current?.focus());}}/>}
   </main>;
 }

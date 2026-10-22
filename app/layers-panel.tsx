@@ -76,7 +76,7 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
 
 const LayerPreview=memo(function LayerPreview({o}:{o:StitchObject}){
   const geometry=objectGeometry(o),b=geometry.bounds,pad=Math.max(b.width,b.height,1)*.1;
-  return <svg className="layer-preview" width="32" height="32" viewBox={`${b.x-pad} ${b.y-pad} ${Math.max(b.width,1)+2*pad} ${Math.max(b.height,1)+2*pad}`} aria-hidden="true"><path d={geometry.path} fill={isFillKind(o.kind)?o.color:'none'} fillRule={o.text?'nonzero':'evenodd'} stroke={isFillKind(o.kind)?'none':o.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinecap="round"/></svg>;
+  return <svg className="layer-preview" width="32" height="32" viewBox={`${b.x-pad} ${b.y-pad} ${Math.max(b.width,1)+2*pad} ${Math.max(b.height,1)+2*pad}`} aria-hidden="true"><path d={geometry.path} fill={isFillKind(o.kind)?o.color:'none'} fillRule={o.text||o.fillRule==='nonzero'?'nonzero':'evenodd'} stroke={isFillKind(o.kind)?'none':o.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinecap="round"/></svg>;
 });
 const LayerObjectRow=memo(function LayerObjectRow({o,i,selected,grouped,disabled,renameInput,positionInput,onPosition,onDown,onClick,onSelect,onHide,onLock,onRename}:{o:StitchObject;i:number;selected:boolean;grouped:boolean;disabled:boolean;renameInput:ReactNode;positionInput:ReactNode;onPosition:(id:string)=>void;onDown:(id:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:Props['onSelect'];onSelect:Props['onSelect'];onHide:Props['onHide'];onLock:Props['onLock'];onRename:(o:StitchObject)=>void}){
   const {t,formatNumber}=useT();

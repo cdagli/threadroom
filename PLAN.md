@@ -207,3 +207,23 @@ Status: implemented. Turkish default, persistent project-menu language switch, t
   number to type a new position. "Sort by selection order" remains open.
 - **Playback speed (done)**. 0.25×–16× selector in the timeline bar (1× = 450 stitches/s),
   saved with the per-browser view settings.
+
+- **Native SVG import / Split SVG (backlog 17, done)**. Import dialog offers native
+  shapes or artwork tracing. DOMParser handles paths/basic shapes, nested transforms,
+  physical dimensions/viewBox, basic CSS and solid paints. Fill rules preserve holes;
+  strokes become running/satin and compatible gaps under 1 mm join. One named group
+  is imported in one undo step. Exact straight paths retain corner curves; arbitrary
+  Béziers/arcs use bounded 0.04 mm flattening. Unsupported rendering features and
+  model-limit violations return translated errors; no imported markup is mounted.
+- **Export image (backlog 20, done)**. Project-menu PNG options share the realistic
+  thread renderer and fabric texture. Full stitch plan, design bounds + 5 mm margin,
+  default 300 dpi, selectable scale, optional transparency and 8,000 px side cap.
+- **Needle-density diagnostics (backlog 25, done)**. Density beside Travel and density
+  warning clicks enable a cached canvas overlay. Disk-count grid in penetrations/mm²,
+  selectable radius (default 1.5 mm), fixed per-design ramp and legend. Info histogram,
+  adjustable short-stitch threshold, short/stationary counts, mean/longest stitches.
+  All diagnostics include ties, omit jumps and require a fresh compiled plan.
+  Native SVG, density and PNG sizing tests join the standard test command.
+  Desktop browser checks pending: both SVG import choices/undo/editing; PNG downloads
+  with fabric/transparency and large resolution; density alignment during pan/zoom,
+  radius changes, timeline playback, fresh recompilation and English/Turkish labels.

@@ -103,7 +103,28 @@ Existing project names, layer names and text are preserved; new objects use the 
   a travel view. Preview existing PES/PEC files using an independent browser parser.
 - Save/load editable JSON projects, autosave locally, undo/redo, and export
   millimetre-sized SVG artwork. SVG retains shapes; JSON retains all editor
-  settings. SVG import is rendered as artwork and traced, not native path import.
+  settings. **SVG import** offers **Import as shapes** or **Import as artwork** for tracing.
+  Native paths, rectangles (including rounded corners), circles, ellipses, polygons,
+  polylines and lines keep solid fill/stroke colours, basic CSS rules and nested
+  transforms. Physical dimensions use mm/cm/in/96-dpi px; missing dimensions fit
+  75% of the hoop. Compound fills preserve even-odd/nonzero holes; strokes become
+  running lines or satin at widths ≥ 1.5 mm, with gaps under 1 mm joined.
+  Imports form one named group. Straight geometry keeps editable corner curves;
+  Béziers and arcs flatten to rings at 0.04 mm tolerance.
+
+**Project → Export image** (backlog 20, done) downloads the full realistic stitch plan
+as a PNG cropped to the design with a 5 mm margin. Choose resolution (default
+300 dpi) and either transparent background or the current fabric texture. Either
+side is capped at 8,000 pixels. The stitch plan must be up to date; hidden objects
+remain part of the exported design, as with PES.
+
+**Density** beside **Travel** (backlog 25, done) overlays penetrations/mm² using
+a colour-blind-safe ramp and legend, with a selectable radius (default 1.5 mm).
+The full compiled stitch plan includes tie and stationary penetrations but excludes
+jumps. A bounded physical grid is cached independently of pan/zoom and playback.
+Clicking a density warning also enables the overlay. **Info** adds a stitch-length
+histogram, adjustable short-stitch threshold (default 0.3 mm), short/stationary
+counts and mean/longest lengths. These are advisory measurements, not fabric limits.
 
 ## Fill and run settings
 
@@ -704,6 +725,13 @@ tested production presets. Freehand and point paths are subdivided
 to keep sewn segments near or below 3 mm (allowing 0.1 mm format rounding);
 wide-column bites follow the split length instead.
 
+Native SVG import (backlog 17, done) supports solid geometry and basic type/class/id
+and descendant CSS selectors. Text, use/symbol instances, images, gradients, masks,
+clipping, filters, nested viewports and slice clipping are rejected; use
+**Import as artwork** to trace these files, or convert them to plain paths first.
+Partial paint opacity is imported as a solid thread colour. The editor's limits
+remain 80 objects, 12,000 points and 10 mm satin width.
+
 The 80-pixel tracing grid is designed for simple illustrations; small details
 and photographs need manual correction. Automatic tracing assigns fill to all
 regions. Regions are grouped in colour order initially; review/change their
@@ -722,6 +750,10 @@ before using the output on baby clothing.**
 app/                 Next.js/Astryx interface and SVG editor
 lib/project.ts       Editable, millimetre-based project model
 lib/trace.ts         Browser colour tracing with holes
+lib/svg-import.ts    Native SVG geometry, styles and physical import
+lib/svg-path.ts      SVG transforms and bounded Bézier/arc flattening
+lib/image-export.ts  Realistic PNG rendering and crop/size limits
+lib/density.ts       Physical needle-density grid and stitch-length statistics
 lib/thread.ts        Thread preview shading, fabric textures and Canvas renderer
 lib/pes-parser.js    Independent PES/PEC reader (shared from the existing viewer)
 embroidery/          Headless experimental Python stitch compiler
