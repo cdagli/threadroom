@@ -218,10 +218,10 @@ test('Run tolerance is optional, validated, exported and keeps the compiler curv
 test('Fill pattern table drives validated payloads, JSON and SVG settings',()=>{
   const {fillPatterns,patternPreview}=load('fill-patterns'),o=object('Fill',[square]);
   for(const p of fillPatterns){
-    const saved=JSON.parse(JSON.stringify(project({...o,fillPattern:p.id,patternParams:{steps:12,amplitude:0}})));
+    const saved=JSON.parse(JSON.stringify(project({...o,fillPattern:p.id,patternParams:Object.fromEntries(p.params.map(f=>[f.key,f.default]))})));
     assert.ok(validProject(saved));assert.equal(geometryPayload(saved).objects[0].fillPattern,p.id);
     assert.match(exportSVG(saved),new RegExp(`data-threadroom-fill-pattern="${p.id}"`));
-    assert.equal(patternPreview(p.id).length,12);
+    assert.ok(patternPreview(p.id).length>=12);
   }
   for(const patch of [{fillPattern:'unknown'},{fillPattern:null},{patternParams:null},{patternParams:[]},{patternParams:{steps:1.2}},{patternParams:{steps:0}},{patternParams:{amplitude:11}},{patternParams:{amplitude:NaN}},{patternParams:{extra:1}}])assert.equal(validProject(project({...o,...patch})),false);
   assert.ok(!('fillPattern' in geometryPayload(project(o)).objects[0]));
@@ -266,4 +266,33 @@ test('Run tolerance keeps text outlines closed and is ignored by manual and unde
     const points=[[20,40],[35,20],[55,30],[65,50]],curve={points,closed:false},rings=[curvePoints(points,false)],plain={...object('Line',rings,kind),curve};
     assert.deepEqual(geometryPayload(project({...plain,tolerance:.2})).objects[0].rings,geometryPayload(project(plain)).objects[0].rings);
   }
+});
+
+test('Each pattern validates only its own finite, stepped parameters',()=>{
+  const {fillPatterns,patternCycle}=load('fill-patterns'),o=object('Fill',[square]);
+  for(const p of fillPatterns){
+    const valid=params=>validProject(project({...o,fillPattern:p.id,patternParams:params}));
+    assert.ok(valid({}),p.id);
+    for(const f of p.params){
+      for(const value of [f.min,f.default,f.max]){assert.ok(valid({[f.key]:value}),`${p.id}/${f.key}=${value}`);assert.ok(patternCycle(p.id,4,.2,{[f.key]:value}).rows.length);}
+      for(const value of [null,true,'3',NaN,Infinity,f.min-f.step,f.max+f.step,f.min+f.step*.5])assert.equal(valid({[f.key]:value}),false,`${p.id}/${f.key}=${value}`);
+    }
+    for(const key of ['steps','intensity','tightness','cellSize'])if(!p.params.some(f=>f.key===key))assert.equal(valid({[key]:3}),false,p.id);
+    const preview=patternPreviewFor(p.id);
+    assert.ok(preview.flat().length,p.id);
+    assert.ok(preview.flat().every(([x,y])=>Number.isFinite(x)&&Number.isFinite(y)&&x>=2&&x<=40&&y>=2&&y<=26),p.id);
+  }
+  function patternPreviewFor(id){return load('fill-patterns').patternPreview(id);}
+});
+
+test('Preview cycles match the compiler at default and boundary parameters',async()=>{
+  const {spawnSync}=await import('node:child_process'),{existsSync}=await import('node:fs');
+  const {fillPatterns,patternCycle}=load('fill-patterns'),cases=[];
+  for(const p of fillPatterns)for(const s of [.2,.3,2])for(const bound of ['default','min','max'])cases.push([p.id,6,s,Object.fromEntries(p.params.map(f=>[f.key,f[bound]]))]);
+  const python=process.env.THREADROOM_PYTHON||(existsSync('.venv/bin/python')?'.venv/bin/python':'python3');
+  const result=spawnSync(python,['-c','import sys,json;from embroidery.patterns import pattern_cycle;print(json.dumps([pattern_cycle(*args) for args in json.load(sys.stdin)]))'],{input:JSON.stringify(cases),encoding:'utf8',maxBuffer:16*1024*1024});
+  assert.equal(result.status,0,result.stderr);
+  const expected=JSON.parse(result.stdout);
+  function close(a,b,path){if(typeof a==='number'){assert.ok(Math.abs(a-b)<1e-7,`${path}: ${a} vs ${b}`);return;}assert.equal(a.length,b.length,path);a.forEach((v,i)=>close(v,b[i],`${path}/${i}`));}
+  cases.forEach(([id,L,s,params],i)=>{const {rows,shear}=patternCycle(id,L,s,params);close([rows,shear],expected[i],`${id}/${s}/${JSON.stringify(params)}`);});
 });

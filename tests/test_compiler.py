@@ -864,18 +864,23 @@ class RunToleranceTests(unittest.TestCase):
 
 
 class FillPatternTests(unittest.TestCase):
-    def test_offsets_cycles_alignment_and_lengths(self):
+    def test_cycles_alignment_skip_last_and_lengths(self):
         rows = [(30+i*.5, 20, 60) for i in range(12)]
         for pattern in C.FILL_PATTERNS:
-            piece = C.Rows(rows, 0, pattern, [40,30], .5, {"steps": 12, "amplitude": 3})
+            piece = C.Rows(rows, 0, pattern, [40,30], .5)
             paths = piece.paths((False, 0), 4)
-            for path in paths:
-                self.assertTrue(all(math.dist(a,b) <= 4+1e-8 for a,b in zip(path,path[1:])), pattern)
-                self.assertEqual(sorted((path[0][0],path[-1][0])), [20,60])
+            self.assertEqual(paths, piece.paths((False, 0), 4), pattern)
+            for i,path in enumerate(paths):
+                self.assertTrue(all(20 <= x <= 60 for x,y in path), pattern)
+                self.assertEqual(path[0][0],20 if i % 2 == 0 else 60)
+                if pattern == "even" or i == len(paths)-1:
+                    self.assertEqual(path[-1][0],60 if i % 2 == 0 else 20)
             if pattern == "tatami":
-                self.assertEqual([p[0] for p in paths[0][2:-2]], [p[0] for p in paths[4][2:-2]])
-            if pattern == "original":
-                self.assertEqual(sorted(p[0] for p in paths[0][2:-2]), sorted(p[0] for p in paths[1][2:-2]))
+                self.assertEqual(paths[0][1:], [[p[0],30] for p in paths[4][1:]])
+        piece = C.Rows(rows[:2],0,"original",[40,30],.5)
+        self.assertEqual(piece.paths((False,0),4)[0][-1],[56,30])
+        piece.skip_last = False
+        self.assertEqual(piece.paths((False,0),4)[0][-1],[60,30])
         self.assertEqual(C.pattern_offset("offset-columns", 6, 4), 6)
         self.assertEqual(C.pattern_offset("waves", 3, 4, {"steps":12,"amplitude":3}), 3)
 
@@ -889,16 +894,91 @@ class FillPatternTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 compile_project(project(**settings))
 
-    def test_parts_share_a_centroid_anchor(self):
-        rings = [[[10,10],[30,10],[30,25],[10,25]],[[60,10],[80,10],[80,25],[60,25]]]
-        anchor = C.fill_centroid(rings, "evenodd")
-        self.assertEqual(anchor, [45,17.5])
-        sections = C.fill_sections(rings, .5, "evenodd", anchor=anchor[1])
-        for rows in sections:
-            piece = C.Rows(rows, 0, "original", anchor, .5)
-            for path in piece.paths((False,0), 4):
-                for x,y in path[2:-2]:
-                    self.assertAlmostEqual((x-anchor[0]) % 4, 0)
+    def test_parts_have_independent_centroids_near_edge_indices_and_holes(self):
+        from unittest.mock import patch
+        rings = [[[10,10],[30,10],[30,25],[10,25]],[[61,11],[81,11],[81,26],[61,26]]]
+        seen, original = [], C.Rows.paths
+        def paths(piece, variant, length):
+            if piece.pattern:
+                seen.append((piece.anchor,dict(piece.lanes),piece.rows))
+            return original(piece,variant,length)
+        with patch.object(C.Rows,"paths",paths):
+            compile_project(project(rings=rings,fillPattern="partitionTwill",angle=0,spacing=.5))
+        self.assertEqual(sorted({tuple(anchor) for anchor,_,_ in seen}),[(20,17.5),(71,18.5)])
+        for anchor,lanes,rows in seen:
+            self.assertEqual(lanes[round(rows[0][0],9)],0)
+            self.assertEqual(list(lanes.values()),list(range(len(lanes))))
+        hole = [[15,14],[25,14],[25,21],[15,21]]
+        seen.clear()
+        with patch.object(C.Rows,"paths",paths):
+            compile_project(project(rings=[rings[0],hole],fillPattern="tatami",angle=0))
+        self.assertEqual(len({tuple(anchor) for anchor,_,_ in seen}),1)
+        self.assertEqual(seen[0][0],[20,17.5])
+
+    def test_exact_cycles_examples_and_shear(self):
+        cycle = lambda id: C.pattern_cycle(id,4,.2)[0]
+        for id,n in {"smallHearts":20,"mediumHearts":40,"largeHearts":60,"smallDiamond":10,"mediumDiamond":30,"largeDiamond":60,"smallCircles":18,"mediumCircles":38,"largeCircles":58,"hexweave":36,"partitionChain":40,"partitionStars":40,"zigzag":40,"heartbeat":21,"spiral":40,"staircase":40,"rainfall":30,"tornado":75,"partitionWaveWalk":21}.items():
+            self.assertEqual(len(cycle(id)),n,id)
+        for id,index,offset,lengths in [("smallHearts",0,.693,[.149,2.316,.149,1.387]),("smallHearts",10,.407,[3.187,.813]),("smallDiamond",1,.8,[.4,1.6]),("smallCircles",1,1.128,[1.744,2.256]),("rainfall",1,1.591,[4.716]),("partitionChain",0,1.715,[.571,3.429,.571,3.429]),("partitionStars",15,0,[.058,7.884,.058])]:
+            o,ls = cycle(id)[index]
+            self.assertAlmostEqual(o,offset,delta=.002,msg=id)
+            self.assertEqual(len(ls),len(lengths),id)
+            for a,b in zip(ls,lengths):
+                self.assertAlmostEqual(a,b,delta=.002,msg=id)
+        self.assertEqual(cycle("partitionBands"),[(0,[4])]*4+[(.5,[4])]*4)
+        self.assertEqual(cycle("partitionInterlocked")[4],(.5,[4/3]*3))
+        self.assertEqual(cycle("partitionRails")[4],(.5,[3.12,.88]))
+        self.assertEqual(cycle("partitionHoundstooth"),[(0,[1,1,2]),(2,[2,1,1])])
+        self.assertAlmostEqual(C.pattern_cycle("partitionTwill",4,.2)[1],.2)
+        rows = [(10+i*.2,0,40) for i in range(6)]
+        piece = C.Rows(rows,0,"partitionTwill",[20,10],.2)
+        for k,path in enumerate(piece.paths((False,0),4)[:5]):
+            base = 20-(k % 4)-.2*k
+            for x,y in path[1:]:
+                self.assertLess(min(abs((x-base) % 4),abs((x-base+1) % 4),abs((x-base) % 4-4),abs((x-base+1) % 4-4)),1e-8)
+        # Ember's falsy-amplitude quirk is intentional.
+        self.assertEqual(C.pattern_cycle("waves",4,.2,{"amplitude":0}),C.pattern_cycle("waves",4,.2))
+
+    def test_square_penetration_fixtures_machine_limit_and_unbroken_tile_floats(self):
+        import hashlib
+        expected = json.loads(Path("tests/fill-pattern-penetrations.json").read_text())
+        for id in C.FILL_PATTERNS:
+            p = project(fillPattern=id,fillLength=4,angle=0,spacing=.4,tieIn="none",tieOff="none")
+            result = compile_project(p)
+            digest = hashlib.sha256(json.dumps(result["commands"],separators=(",",":")).encode()).hexdigest()
+            self.assertEqual(digest,expected[id],id)
+            self.assertLessEqual(result["stats"]["maxStitch"],12.7,id)
+            # Exercise maximum L, maximum pattern params, diagonal quantisation and jitter.
+            params = {f["key"]:f["max"] for f in C.FILL_PATTERNS[id].get("params",[])}
+            result = compile_project(project(fillPattern=id,patternParams=params,fillLength=6,angle=37,spacing=.3,handStitch=5))
+            self.assertLessEqual(result["stats"]["maxStitch"],12.7,id)
+        for id in ("largeHearts","largeDiamond","largeCircles","partitionStars"):
+            r = compile_project(project(fillPattern=id,fillLength=4,angle=0,spacing=.3))
+            self.assertGreater(r["stats"]["maxStitch"],7,id)
+            self.assertNotIn("long-stitches",[w["code"] for w in r["warnings"]],id)
+
+    def test_pattern_specific_parameter_validation(self):
+        for id,p in C.FILL_PATTERNS.items():
+            for f in p.get("params",[]):
+                for value in (f["min"],f["default"],f["max"],float(f["default"])):
+                    C.validate(project(fillPattern=id,patternParams={f["key"]:value}))
+                    C.pattern_cycle(id,4,.2,{f["key"]:value})
+                for value in (None,True,"3",math.nan,math.inf,f["min"]-f["step"],f["max"]+f["step"],f["min"]+f["step"]*.5):
+                    with self.assertRaises(ValueError,msg=(id,f["key"],value)):
+                        C.validate(project(fillPattern=id,patternParams={f["key"]:value}))
+            with self.assertRaises(ValueError,msg=id):
+                C.validate(project(fillPattern=id,patternParams={"wrong":1}))
+        with self.assertRaises(ValueError):
+            C.validate(project(fillPattern="heartbeat",patternParams={"tightness":3}))
+
+    def test_pattern_long_stitch_check_preserves_connector_and_float_safety(self):
+        objects = project(fillPattern="largeHearts")["objects"]
+        for role,length,warn,limit in [("pattern",12,False,0),("pattern",12.8,True,12.7),("bite",12.8,True,12.7),("connect",8,True,7),("run",8,True,7)]:
+            result = C.design_check([(20,20,0,"land"),(20+length,20,0,role)],[],objects)
+            found = [w for w in result if w["code"] == "long-stitches"]
+            self.assertEqual(bool(found),warn,(role,length))
+            if warn:
+                self.assertEqual(found[0]["values"]["limit"],limit)
 
 
 class FillSettingsTests(unittest.TestCase):

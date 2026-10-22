@@ -1,5 +1,5 @@
 import {createT,type Translator,type Key} from './i18n';
-import {fillPatterns, type FillPattern, type PatternParams} from './fill-patterns';
+import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} from './fill-patterns';
 import {validText, type TextSpec} from './text';
 export type Point = [number, number];
 export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual';
@@ -223,7 +223,7 @@ export function validProject(value: unknown): value is Project {
     if(o.gradient!==undefined){const g=o.gradient;if(!g||typeof g!=='object'||!inRange(g.endSpacing,.3,4)||(g.mode==='ramp'? !inRange(g.start,0,1)||!inRange(g.end,0,1):g.mode==='plateau'?!inRange(g.center,0,1)||!inRange(g.width,0,1):true))return false;}
     if(o.fillUnderlays!==undefined&&(!Array.isArray(o.fillUnderlays)||o.fillUnderlays.length>3||Array.from(o.fillUnderlays).some(u=>!u||typeof u!=='object'||!inRange(u.angle,-180,180)||!inRange(u.spacing,1,4)||!inRange(u.length,1,5)||!inRange(u.inset,0,2))))return false;
     if(o.fillPattern!==undefined&&!fillPatterns.some(p=>p.id===o.fillPattern))return false;
-    if(o.patternParams!==undefined&&(!o.patternParams||typeof o.patternParams!=='object'||Array.isArray(o.patternParams)||Object.keys(o.patternParams).some(k=>!['steps','amplitude'].includes(k))||o.patternParams.steps!==undefined&&(!Number.isInteger(o.patternParams.steps)||!(o.patternParams.steps>=1&&o.patternParams.steps<=100))||o.patternParams.amplitude!==undefined&&(typeof o.patternParams.amplitude!=='number'||!(o.patternParams.amplitude>=0&&o.patternParams.amplitude<=10))))return false;
+    if(o.patternParams!==undefined&&!validPatternParams(o.fillPattern,o.patternParams))return false;
     if(o.tolerance!==undefined&&(typeof o.tolerance!=='number'||!(o.tolerance>=.1&&o.tolerance<=1)))return false;
     if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=.3&&o.spacing<=2)))return false;
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
