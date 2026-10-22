@@ -86,3 +86,22 @@ test('Six millimetre Turkish names have a quiet geometry and actual PES design c
 test('Font generator reproduces the checked-in JSON byte for byte',()=>{
   const run=spawnSync(process.env.THREADROOM_PYTHON||'.venv/bin/python',['scripts/generate-satin-fonts.py','--check'],{encoding:'utf8'});assert.equal(run.status,0,run.stderr);
 });
+
+test('Live satin lettering with main features: locks, hiding, transform box, map to path, shape ops, redwork, SVG and design check',()=>{
+  const {shapeOptions,shapeable}=load('shape-ops'),{canConvertToRedwork}=load('redwork'),{mapToPath,defaultPathSettings}=load('map-to-path'),{transformSelection,around}=load('editing'),{objectMenu}=load('context-menu'),{visibleCommands}=load('layers');
+  const o=lettering(spec('simplex','Ab')),line={...object('guide',[[[10,80],[90,80]]],'running'),id:'guide'},p={...project(o),objects:[o,line]};
+  assert.ok(!shapeable(o));assert.deepEqual(Object.values(shapeOptions(p,[o.id])).filter(v=>v===true),[]);assert.ok(!canConvertToRedwork(p,[o.id]));
+  assert.ok(!objectMenu(p,[o.id],false).some(e=>e.action==='editPoints'||e.action==='editAngles'));
+  const blocks=convertSatinText(p,o.id);assert.ok(blocks.objects.filter(b=>b.rails).every(b=>!shapeable(b))&&validProject(blocks));;
+  const moved=transformSelection(p,[o.id],around([50,50],1.5,1,20));assert.ok(moved&&validProject(moved));
+  const t=moved.objects[0];assert.ok(t.text.affine&&t.kind==='satin-block');assert.ok(satinTextShapes(t).objects.every(b=>b.satinWidth===columnWidth(t.text)));
+  const mapped=mapToPath(p,[o.id],'guide',{...defaultPathSettings,mode:'count',count:3},'Row','row'),copies=mapped.objects.filter(c=>c.group==='row');
+  assert.equal(copies.length,3);assert.ok(validProject(mapped));assert.ok(copies.every(c=>c.text?.satin&&c.kind==='satin-block'));
+  const sent=geometryPayload(mapped).objects.filter(c=>c.satinColumns);assert.equal(sent.length,3);assert.equal(new Set(sent.map(c=>c.id)).size,3);
+  assert.ok(sent.every(c=>c.satinColumns.flatMap(k=>k.railPaths.flat()).every(([,y])=>Math.abs(y-80)<6)),'copies sit on the guide');
+  const svg=load('svg-export').exportSVG({...mapped,objects:mapped.objects.map(c=>c.id==='guide'?{...c,layoutOnly:true}:c.id===copies[0].id?{...c,locked:true}:c)});
+  assert.doesNotMatch(svg,/id="guide"/);assert.match(svg,new RegExp(`id="${copies[0].id}-satin-0"[^>]*data-threadroom-locked="true"`));
+  assert.deepEqual(checkProject({...p,objects:[o]}),[]);
+  const commands=[{objectId:o.id,type:'stitch',x:0,y:0},{objectId:'guide',type:'stitch',x:1,y:1}];
+  assert.deepEqual(visibleCommands(commands,[{...o,hidden:true},line]).commands.map(c=>c.objectId),['guide']);
+});
