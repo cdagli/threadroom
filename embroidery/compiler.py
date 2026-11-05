@@ -770,7 +770,21 @@ class Loop:
     end = start
 
     def paths(self, variant, length):
-        return [line_path(self.ring[variant:]+self.ring[:variant+1], length)]
+        # Font and offset outlines carry points every 0.1-0.3 mm; stitching each one
+        # made clusters of tiny stitches. Merge points closer than EDGE_MIN, then
+        # space stitches by length while keeping real corners.
+        ring = self.ring[variant:]+self.ring[:variant+1]
+        kept = [ring[0]]
+        for p in ring[1:-1]:
+            if math.dist(p, kept[-1]) >= EDGE_MIN:
+                kept.append(p)
+        if len(kept) > 1 and math.dist(kept[-1], ring[-1]) < EDGE_MIN:
+            kept.pop()
+        kept.append(ring[-1])
+        return [tolerant_path(kept, length, EDGE_TOLERANCE)]
+
+
+EDGE_MIN, EDGE_TOLERANCE = .4, .1
 
 
 def nearest_on(rings, p, closed):

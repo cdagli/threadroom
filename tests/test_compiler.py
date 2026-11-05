@@ -85,6 +85,15 @@ class CompilerTests(unittest.TestCase):
             inner = [s for s in stitches if inside(s, [ring], "nonzero", tolerance=.3)]
             self.assertTrue(inner, f"no stitches in contour starting at {ring[0]}")
 
+    def test_edge_underlay_on_densely_drawn_outline_has_no_short_stitches(self):
+        # Font outlines and Grow/offset arcs have points every 0.1-0.3 mm; the edge
+        # walk used to stitch each point, giving clusters of tiny stitches.
+        ring = [[50+10*math.cos(2*math.pi*i/600), 50+10*math.sin(2*math.pi*i/600)] for i in range(600)]
+        result = compile_project(project(rings=[ring], underlay="edge", length=2.5))
+        self.assertNotIn("short-stitches", [w["code"] for w in result["warnings"]])
+        edge = [c for c in result["commands"] if c["type"] == "stitch" and not c.get("tie")][:20]
+        self.assertTrue(all(math.dist((c["x"], c["y"]), (c["fromX"], c["fromY"])) > 1 for c in edge[1:]))
+
     def test_hole_is_never_crossed_by_sewn_fill_or_underlay(self):
         rings = [[[25,25],[75,25],[75,75],[25,75]],[[40,40],[60,40],[60,60],[40,60]]]
         for angle in (0, 35, 90):
