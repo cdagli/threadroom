@@ -10,7 +10,7 @@ const spec=(font='simplex',content='Ayşe İpek',patch={})=>({...defaultText(def
 const lettering=text=>({...object('Lettering',layoutSatinText(text).rings,'satin-block'),id:'lettering',text});
 const project=o=>({...demo(),objects:[o]});
 
-test('Every Hershey glyph, including Turkish and punctuation, produces finite paired editable rails',()=>{
+test('Every satin glyph (Hershey and EMS), including Turkish and punctuation, produces finite paired editable rails',()=>{
   const required='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789çğıİöşüÇĞIÖŞÜ.,!?\'"-:;()';
   for(const [font,data] of Object.entries(satinFonts)){
     for(const ch of required)assert.ok(data.glyphs[ch],`${font}: ${ch}`);
@@ -105,4 +105,11 @@ test('Live satin lettering with main features: locks, hiding, transform box, map
   assert.deepEqual(checkProject({...p,objects:[o]}),[]);
   const commands=[{objectId:o.id,type:'stitch',x:0,y:0},{objectId:'guide',type:'stitch',x:1,y:1}];
   assert.deepEqual(visibleCommands(commands,[{...o,hidden:true},line]).commands.map(c=>c.objectId),['guide']);
+});
+
+test('Dots and diacritic marks are one short stroke each, so they sew as a single small column',()=>{
+  const small=s=>{const xs=s.map(p=>p[0]),ys=s.map(p=>p[1]);return Math.max(...xs)-Math.min(...xs)<.14&&Math.max(...ys)-Math.min(...ys)<.14;};
+  for(const [font,data] of Object.entries(satinFonts))
+    for(const [ch,dots] of [['.',1],[':',2],['i',1],['j',1],['İ',1],['ü',2],['Ö',2]])
+      assert.equal(data.glyphs[ch].strokes.filter(small).length,dots,`${font}: ${ch}`);
 });

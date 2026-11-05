@@ -10,8 +10,18 @@ export type Category='s'|'r'|'d'|'h'|'m';
 export const categoryNames:Record<Category, Key>={s:'Sans serif',r:'Serif',d:'Display',h:'Script',m:'Monospace'};
 export type CatalogFont={id:string;family:string;category:Category;weights:number[];italic:boolean;subsets:string[]};
 export type UploadedFont={id:string;family:string;weight:number;italic:boolean};
-// Solid, rounded or bold faces that stay legible as fill stitches.
-export const recommended=['fredoka','nunito','baloo-2','quicksand','comfortaa','varela-round','m-plus-rounded-1c','poppins','montserrat','lilita-one','titan-one','chewy','luckiest-guy','bubblegum-sans','sniglet','grandstander','concert-one','righteous','bebas-neue','pacifico','lobster','dancing-script','satisfy','cookie','yellowtail','kaushan-script','oleo-script','patrick-hand','kalam','caveat','playfair-display','abril-fatface','roboto-slab','arvo'];
+// "Best for stitching": faces whose strokes stay at least 1 mm wide as fill stitches at
+// the default 12 mm letter height, with every Turkish letter. Each entry is the lightest
+// weight that qualifies (under ~2% of the letters thinner than 1 mm by the design check's
+// raster); choosing the font raises a lighter weight to it. Hairline scripts and
+// high-contrast serifs (Dancing Script, Great Vibes, Playfair Display) are not listed.
+export const recommended:Record<string,number>={
+  nunito:700,'baloo-2':400,quicksand:700,comfortaa:700,'varela-round':400,'m-plus-rounded-1c':700,grandstander:400,dynapuff:400,gluten:400,
+  poppins:700,montserrat:700,rubik:400,kanit:400,signika:400,'open-sans':700,roboto:700,inter:700,raleway:700,'josefin-sans':700,barlow:700,dosis:700,oswald:700,'bebas-neue':400,anton:400,'archivo-black':400,'fjalla-one':400,'russo-one':400,'paytone-one':400,
+  'luckiest-guy':400,righteous:400,bungee:400,coiny:400,modak:400,'rammetto-one':400,'sigmar-one':400,rowdies:400,margarine:400,agbalumo:400,'alfa-slab-one':400,
+  pacifico:400,borel:400,sriracha:400,kalam:700,caveat:700,'patrick-hand':400,
+  'roboto-slab':700,'bree-serif':400,
+};
 export const defaultFont:FontRef={source:'catalog',id:'nunito',family:'Nunito',weight:800,italic:false,subsets:['cyrillic','cyrillic-ext','latin','latin-ext','vietnamese']};
 // Scripts that read left to right without shaping. Arabic, Hebrew and Indic text need a shaper.
 const subsetsLoaded=['latin','latin-ext','vietnamese','cyrillic','cyrillic-ext','greek','greek-ext'];
@@ -25,6 +35,7 @@ export function loadCatalog(t:Translator=createT('en')):Promise<CatalogFont[]> {
   return catalog;
 }
 export function refFor(font:CatalogFont,weight:number,italic:boolean):FontRef {
+  weight=Math.max(weight,recommended[font.id]??0);
   const nearest=font.weights.reduce((best,w)=>Math.abs(w-weight)<Math.abs(best-weight)?w:best,font.weights[0]);
   return {source:'catalog',id:font.id,family:font.family,weight:nearest,italic:italic&&font.italic,subsets:font.subsets};
 }

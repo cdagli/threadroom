@@ -2,7 +2,7 @@ import {createT,type Translator} from './i18n';
 import {validThread,type Thread} from './threads';
 import type {Point} from './project';
 import {simplifyPath} from './curves';
-import type {SatinFontId} from './satin-lettering';
+import {satinFontIds,type SatinFontId} from './satin-lettering';
 
 // Text is stored as editable settings plus flattened millimetre outlines.
 // Layout is pure: callers pass already-loaded fonts (see lib/fonts.ts).
@@ -46,12 +46,17 @@ export function fitTextInHoop(spec:TextSpec,box:{x:number;y:number;width:number;
   return k===1&&!dx&&!dy?null:{...spec,size,origin:[ox+dx,oy+dy]};
 }
 
+// Some fonts (e.g. Courgette, Rochester) declare an OS/2 cap height a quarter of their
+// real capitals, which would make text several times the requested size. Use the drawn H
+// only when the declared value is far off; swash capitals may legitimately differ a little.
+const capCache=new WeakMap<FontLike,number>();
 function capHeight(font:FontLike) {
-  const cap=font.tables.os2?.sCapHeight;
-  if(cap&&cap>0)return cap;
+  const known=capCache.get(font);if(known)return known;
+  const cap=font.tables.os2?.sCapHeight,declared=cap&&cap>0?cap:0;
   const commands=font.charToGlyph('H').getPath(0,0,font.unitsPerEm).commands;
-  const top=Math.min(...commands.map(c=>c.y??0));
-  return top<0?-top:font.unitsPerEm*.7;
+  const top=commands.length?-Math.min(...commands.map(c=>c.y??0)):0;
+  const value=top>0&&(!declared||declared<top*.6||declared>top*1.6)?top:declared||font.unitsPerEm*.7;
+  capCache.set(font,value);return value;
 }
 
 // Glyph outlines in font units (y down), flattened at roughly `step` units.
@@ -191,7 +196,7 @@ export function validText(value:unknown):value is TextSpec {
   if(!finite(t.size,textLimits.size)||!finite(t.tracking,textLimits.tracking)||!finite(t.lineHeight,textLimits.lineHeight)||!finite(t.bend,textLimits.bend)||!finite(t.waveHeight,textLimits.waveHeight)||!finite(t.waveLength,textLimits.waveLength)||!finite(t.offset,[0,100])||!finite(t.rotation,[-360,360]))return false;
   if(!['left','center','right'].includes(t.align)||!['straight','arc','wave','path'].includes(t.layout)||typeof t.reverse!=='boolean'||typeof t.below!=='boolean'||!point(t.origin))return false;
   if(t.path!==undefined&&(!Array.isArray(t.path)||t.path.length<2||t.path.length>4000||!t.path.every(point)))return false;
-  if(t.satin!==undefined&&(!t.satin||!['simplex','script'].includes(t.satin.font)||!finite(t.satin.columnWidth,[5,40])))return false;
+  if(t.satin!==undefined&&(!t.satin||!satinFontIds.includes(t.satin.font)||!finite(t.satin.columnWidth,[5,40])))return false;
   if(t.border!==undefined&&(!t.border||t.border.thread!==undefined&&!validThread(t.border.thread,t.border.color)||!['running','bean','satin'].includes(t.border.kind)||!/^#[0-9a-f]{6}$/i.test(t.border.color)||!finite(t.border.width,textLimits.borderWidth)))return false;
   return true;
 }

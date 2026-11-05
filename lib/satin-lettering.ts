@@ -1,17 +1,29 @@
 import {layoutText,type FontLike,type GlyphLike,type TextSpec} from './text';
 import type {Point,Project,Rails,StitchObject} from './project';
 
-export type SatinFontId='simplex'|'script';
+// Single-line fonts offset into satin columns: public-domain Hershey and OFL EMS
+// faces (see THIRD-PARTY-NOTICES.md). Each table is its own chunk, loaded only for satin text.
+const satinSources={
+  simplex:{name:'Hershey Simplex',load:()=>import('./fonts-satin/simplex.json')},
+  readability:{name:'EMS Readability',load:()=>import('./fonts-satin/readability.json')},
+  delight:{name:'EMS Delight',load:()=>import('./fonts-satin/delight.json')},
+  pancakes:{name:'EMS Pancakes',load:()=>import('./fonts-satin/pancakes.json')},
+  tech:{name:'EMS Tech',load:()=>import('./fonts-satin/tech.json')},
+  herculean:{name:'EMS Herculean',load:()=>import('./fonts-satin/herculean.json')},
+  osmotron:{name:'EMS Osmotron',load:()=>import('./fonts-satin/osmotron.json')},
+  script:{name:'Hershey Script',load:()=>import('./fonts-satin/script.json')},
+  allure:{name:'EMS Allure',load:()=>import('./fonts-satin/allure.json')},
+};
+export type SatinFontId=keyof typeof satinSources;
+export const satinFontIds=Object.keys(satinSources) as SatinFontId[];
 export type SatinFont={name:string;glyphs:Record<string,{advance:number;strokes:number[][][]}>};
-// Names are small metadata; Hershey stroke tables load only for satin text.
-export const satinFonts:Record<SatinFontId,SatinFont>={simplex:{name:'Hershey Simplex',glyphs:{}},script:{name:'Hershey Script',glyphs:{}}};
+// Names are small metadata; stroke tables load only for satin text.
+export const satinFonts=Object.fromEntries(satinFontIds.map(id=>[id,{name:satinSources[id].name,glyphs:{}}])) as Record<SatinFontId,SatinFont>;
 let fontData:Promise<void>|null=null;
 export function ensureSatinFonts():Promise<void>{
-  return fontData??=Promise.all([import('./fonts-satin/simplex.json'),import('./fonts-satin/script.json')]).then(([simplex,script])=>{
-    satinFonts.simplex=simplex.default;satinFonts.script=script.default;
-  }).catch(e=>{fontData=null;throw e;});
+  return fontData??=Promise.all(satinFontIds.map(id=>satinSources[id].load().then(m=>{satinFonts[id]=m.default as SatinFont;}))).then(()=>{}).catch(e=>{fontData=null;throw e;});
 }
-export const satinFontsLoaded=()=>Object.keys(satinFonts.simplex.glyphs).length>0;
+export const satinFontsLoaded=()=>satinFontIds.every(id=>Object.keys(satinFonts[id].glyphs).length>0);
 export const satinLetteringDefaults={font:'simplex' as SatinFontId,columnWidth:14};
 export const columnLimits=[5,40] as const;
 // One millimetre is the design check's reliable minimum; cap at the satin width limit.

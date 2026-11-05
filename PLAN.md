@@ -329,7 +329,10 @@ transform box.
 - **Satin block fonts for small lettering (done; backlog 23)**. Bundled public-domain
   Hershey Roman Simplex and Script Simplex, regenerated offline from checksum-verified
   packed Hershey data with advances and em-unit stroke polylines. Turkish characters
-  compose Hershey marks; no Ember data. `lib/satin-lettering.ts` offsets strokes into
+  compose Hershey marks; no Ember data. Seven OFL EMS single-line fonts (Readability,
+  Delight, Pancakes, Tech, Herculean, Osmotron, Allure) were added 2026-11-05 from
+  checksum-verified SVGs in `scripts/ems/`, chosen by column overlap at 6–8 mm.
+  `lib/satin-lettering.ts` offsets strokes into
   paired rails, splits sharp corners and shares the existing text layout for all
   baseline shapes and affine transforms. Live panel style/font/column-width controls;
   ordinary Blocks on conversion, grouped per character within the 80-object budget.

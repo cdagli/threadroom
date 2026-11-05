@@ -810,9 +810,15 @@ def route_fill(obj, at, entry, target, underlay_only=False):
     if patterned:
         # Match the router's connected pieces; holes and overlapping nonzero rings
         # stay with their shell, while disconnected pieces get independent phases.
+        # A contour's first point can sit beside a touching letter, so group
+        # each ring by the component most of its points fall in.
         groups = {}
         for ring in rotated:
-            label = grid.component(ring[0])
+            votes = {}
+            for point in ring[::max(1, len(ring)//24)]:
+                label = grid.component(point)
+                votes[label] = votes.get(label, 0)+1
+            label = max(votes, key=lambda k: (k >= 0, votes[k]))
             groups.setdefault(label, []).append(ring)
         for piece_rings in groups.values():
             anchor = fill_centroid(piece_rings, rule)
@@ -887,13 +893,17 @@ def route_fill(obj, at, entry, target, underlay_only=False):
     def link(pieces):
         """links[p]: sections adjoining p's first row and its last row, as
         (section, its adjoining span), and the set of all its neighbours."""
-        local_lanes = pieces[0].lanes if pieces else None
-        lane = lambda y: local_lanes[round(y,9)] if local_lanes else round((y-base)/spacing)
+        # Each piece keeps its own lane map; a row missing from it (a part
+        # mixing pieces of two groups) falls back to the spacing lattice.
+        def lane(piece, y):
+            if piece.lanes and round(y, 9) in piece.lanes:
+                return piece.lanes[round(y, 9)]
+            return round((y-base)/spacing)
         rows_at = {}
         for piece in pieces:
             for y, l, r in piece.rows:
-                rows_at.setdefault(lane(y), []).append((piece, l, r))
-        touching = lambda piece, row: [(other, a, b) for dk in (-1, 1) for other, a, b in rows_at.get(lane(row[0])+dk, ())
+                rows_at.setdefault(lane(piece, y), []).append((piece, l, r))
+        touching = lambda piece, row: [(other, a, b) for dk in (-1, 1) for other, a, b in rows_at.get(lane(piece, row[0])+dk, ())
                                        if other is not piece and a < row[2] and row[1] < b]
         for piece in pieces:
             first, end = touching(piece, piece.rows[0]), touching(piece, piece.rows[-1])

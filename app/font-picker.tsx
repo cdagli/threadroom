@@ -38,7 +38,7 @@ export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef
   const shown=useMemo(()=>{
     const mine=uploads.map(u=>({id:u.id,family:u.family,category:'d' as Category,weights:[u.weight],italic:u.italic,subsets:[],upload:true}));
     const q=query.trim().toLowerCase();
-    let pool:(CatalogFont&{upload?:boolean})[]=filter==='mine'?mine:filter==='recommended'&&!q?recommended.map(r=>fonts.find(f=>f.id===r)).filter((f):f is CatalogFont=>!!f)
+    let pool:(CatalogFont&{upload?:boolean})[]=filter==='mine'?mine:filter==='recommended'&&!q?Object.keys(recommended).map(r=>fonts.find(f=>f.id===r)).filter((f):f is CatalogFont=>!!f)
       :filter==='all'||filter==='recommended'?[...mine,...fonts]:fonts.filter(f=>f.category===filter);
     if(q)pool=pool.filter(f=>f.family.toLowerCase().includes(q));
     return pool;

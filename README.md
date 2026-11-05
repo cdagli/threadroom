@@ -429,8 +429,13 @@ Choose **Text** (T) and click the hoop. Type in the Text panel; the canvas
 updates as you type, and each field coalesces into one undo step.
 
 - **Fonts:** 1,972 open-licence Google Fonts via Fontsource, searchable, with
-  live previews and a *Best for stitching* shortlist of solid, rounded and bold
-  faces. Font files download on demand from jsDelivr (an internet connection is
+  live previews and a *Best for stitching* shortlist of 47 faces that keep strokes
+  at least 1 mm wide as fill at the default 12 mm height and include every Turkish
+  letter. Choosing one raises a lighter weight to its stitch-safe weight (e.g.
+  Montserrat → Bold). Hairline scripts such as Dancing Script and high-contrast serifs
+  are left off; they stay available under All/Script, and the design check flags fill
+  text with more than 5% of its letters thinner than 1 mm (*Thin strokes in this
+  font*). Font files download on demand from jsDelivr (an internet connection is
   needed for fonts not yet loaded). Characters outside Latin load the matching
   subset (Latin Extended, Cyrillic, Greek, Vietnamese); missing characters are
   listed. **Upload font…** accepts TTF, OTF and WOFF; uploads stay in this
@@ -443,8 +448,12 @@ updates as you type, and each field coalesces into one undo step.
   the text or follows an existing line or shape, with position, reverse and
   below-path options. Letters bend continuously, so joined scripts stay joined.
 - **Satin lettering:** choose **Text style → Satin lettering** for small 4–10 mm text.
-  Bundled **Hershey Simplex** (sans) and **Hershey Script** work offline and include
-  A–Z, a–z, digits, ASCII punctuation, Turkish ç/ğ/ı/İ/ö/ş/ü and capitals.
+  Nine bundled single-line fonts work offline: **Hershey Simplex**, **EMS Readability**,
+  **EMS Delight**, **EMS Pancakes**, **EMS Tech**, **EMS Herculean**, **EMS Osmotron**
+  (print styles) and **Hershey Script**, **EMS Allure** (scripts). Each includes A–Z,
+  a–z, digits, ASCII punctuation, Turkish ç/ğ/ı/İ/ö/ş/ü and capitals; dots sew as one
+  short column. EMS fonts were chosen for low column overlap at 6–8 mm; looped or
+  double-line EMS faces (Capitol, Misty Night, Nixish, Society…) were left out.
   **Column width** defaults to 14% of letter height, limited to 1–10 mm to keep
   narrow columns within the design check's reliable range. Text stays live with
   the same spacing, multiline, alignment, arc, wave and path controls. Both rails
@@ -455,7 +464,7 @@ updates as you type, and each field coalesces into one undo step.
   satin blocks, grouped per character (or retaining an existing group); it refuses
   a conversion that would exceed the design's 80-object limit. Live text keeps one
   object and compiler ownership. SVG exports the resulting satin rails.
-  Source, public-domain acknowledgements and offline generation instructions are in
+  Sources, Hershey acknowledgements, EMS OFL credits and offline generation are in
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). No Ember font data is used.
 - **Stitches:** outline fonts support any stitch style. Fills use the nonzero rule so overlapping script
   letters merge; borders (running, bean or satin) follow the merged outline.
@@ -807,7 +816,7 @@ thread catalogue, font picker and fill thumbnails use `next/dynamic` with a smal
 translated loading state. The launch buttons and tool shortcuts stay available;
 text and Offset focus requests survive their first chunk load. Map-to-path loads
 when expanded and stops calculating previews while collapsed, keeping its settings.
-OpenType parsing and both bundled Hershey/satin JSON tables load on demand. Saved
+OpenType parsing and the bundled satin JSON tables (Hershey and EMS) load on demand. Saved
 satin projects wait for those tables before geometry, checks or export run. Pure
 library consumers call `await ensureSatinFonts()` once before satin layout.
 

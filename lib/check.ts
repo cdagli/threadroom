@@ -18,7 +18,7 @@ export const severityNames: Record<Severity, Key> = {fail: 'Will likely fail', c
 // when Split above is raised past 7 mm.
 // Text: fill letters 6 mm (as the Text panel advises), satin 5 mm, outlines 4 mm; fail at two-thirds.
 // Objects within 3 mm of the sewing field edge are worth checking.
-export const limits = {fillArea: [3, 6], fillWidth: [1, 2], thinArea: 1, satinWidth: 1, satinWide: satinDefaults.splitLength, edge: 3,
+export const limits = {fillArea: [3, 6], fillWidth: [1, 2], thinArea: 1, textThin: .05, satinWidth: 1, satinWide: satinDefaults.splitLength, edge: 3,
   text: {fill: 6, wide: 5, line: 4} as Record<'fill'|'wide'|'line', number>};
 
 const round = (n: number, d = 1) => Math.round(n*10**d)/10**d;
@@ -116,6 +116,11 @@ export function checkProject(p: Project): Warning[] {
     if (o.text) {
       const min = o.text.satin?4:limits.text[textGroup(o.kind)];
       if (o.text.size < min) add('text-small', o, b, o.text.size < min*2/3 ? 'fail' : 'check', {size: round(o.text.size), limit: min});
+      else if (!o.text.satin && o.kind === 'fill') {
+        // Hairline fonts (Dancing Script Regular at 12 mm) sew poorly even at a readable size.
+        const r = raster(o.rings, 'nonzero');
+        if (r.thin && r.thin.area >= limits.thinArea && r.thin.area > r.area*limits.textThin) add('text-thin', o, r.thin.bounds, 'check', {percent: Math.round(r.thin.area/r.area*100), limit: limits.fillWidth[0]});
+      }
     } else if (isFillKind(o.kind)) {
       const r = raster(o.rings,o.fillRule??'evenodd'), cross = o.kind === 'cross'&&!hasCrossStyle(o) ? resolve(o, p.fabric, p.locks).spacing : 0;
       const [fail, check] = cross ? [cross, 2*cross] : limits.fillWidth;
@@ -188,6 +193,7 @@ export function explain(w: Warning, p: Project, message = '', t:Translator=creat
     case 'satin-long': return {title: t("Satin stitches too long"), why: t("Stitches up to {v0} mm long lie loose and snag on fingers and toys.",{v0:v.bite}), fix: t("Split stitches above {v0} mm (Split above in the object settings).",{v0:v.limit})};
     case 'satin-wide': return {title: t("Wide satin"), why: t("Across {v0} mm each stitch is split into pieces, which looks less smooth and is easier to snag.",{v0:v.width}), fix: t("Keep satin under {v0} mm wide; draw wider areas as a fill.",{v0:v.limit})};
     case 'text-small': return {title: t("Text too small"), why: t("{v0} letters under {v1} mm lose their shape; these are {v2} mm tall.",{v0:kind[0].toLocaleUpperCase(t.lang)+kind.slice(1),v1:v.limit,v2:v.size}), fix: o && !isFillKind(o.kind) && !isWideKind(o.kind) ? t("Make the letters at least {v0} mm tall.",{v0:v.limit}) : t("Make the letters at least {v0} mm tall, or use a bean stitch outline.",{v0:v.limit})};
+    case 'text-thin': return {title: t("Thin strokes in this font"), why: t("About {v0}% of these letters is thinner than {v1} mm. Those strokes sew as tiny stitches that pucker or sink into the fabric.",{v0:v.percent,v1:v.limit}), fix: t("Choose a bolder weight or a font from Best for stitching, or make the letters taller.")};
     case 'outside-hoop': return {title: t("Outside the hoop"), why: t("Stitches reach {v0} mm past the {v1} sewing area, so the file can't be made.",{v0:v.by,v1:t(hoops[p.hoop].label)}), fix: t("Move it inside the hoop, or choose a larger hoop in Setup.")};
     case 'near-edge': return {title: t("Very close to the hoop edge"), why: t("Only {v0} mm from the edge, where fabric puckers and any shift pushes stitches out of the sewing area.",{v0:v.margin}), fix: t("Move it at least {v0} mm in from the edge.",{v0:v.limit})};
     case 'colour-order': return {title: t("Same colour sewn twice"), why: t("You'll change thread {v0} times; sewing each colour together needs only {v1}.",{v0:v.changes,v1:v.minimum}), fix: t("Sew this object next to the other objects of the same colour (Sew earlier / Sew later).")};

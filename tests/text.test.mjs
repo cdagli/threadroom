@@ -126,3 +126,11 @@ test('A placed text that would leave the hoop shrinks and moves inside it',()=>{
   const edge=spec({size:8,origin:[3,50]}),moved=fitTextInHoop(edge,box(layoutText(edge,[latin]).rings),hoop);
   assert.equal(moved.size,8);assert.ok(box(layoutText(moved,[latin]).rings).x>=1.99);
 });
+
+test('A font whose declared cap height is far below its capitals is sized by its drawn H',()=>{
+  const os2=latin.tables.os2,broken=Object.create(latin);broken.tables={...latin.tables,os2:{...os2,sCapHeight:Math.round(os2.sCapHeight/4)}};
+  const height=f=>box(layoutText(spec({content:'H',size:10}),[f]).rings).height;
+  assert.ok(Math.abs(height(broken)-height(latin))<height(latin)*.02,`${height(broken)} vs ${height(latin)}`);
+  const swash=Object.create(latin);swash.tables={...latin.tables,os2:{...os2,sCapHeight:Math.round(os2.sCapHeight*1.2)}};
+  assert.ok(height(swash)<height(latin)*.9,'a declared value within range is still trusted');
+});

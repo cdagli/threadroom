@@ -99,3 +99,16 @@ test('Over-limit pattern floats explain sizing rather than offering a trim fix',
   assert.match(explain(w,p).fix,/pattern size/);
   assert.match(explain(w,p,'',createT('tr')).fix,/Desen boyutunu/);
 });
+
+test('Fill text in a hairline font is flagged; bold and satin text are not',async()=>{
+  const opentype=(await import('opentype.js')).default,{layoutText}=load('text');
+  const face=name=>opentype.parse(readFileSync(new URL(`./fixtures/${name}`,import.meta.url)).buffer);
+  const written=(file,ref,extra={})=>{const spec={...defaultText(ref,[50,50],'Merhaba'),size:12,...extra};return {...object('Name',layoutText(spec,[face(file)]).rings,'fill'),text:spec};};
+  const dancing=written('dancing-script-latin-400-normal.ttf',{...font,id:'dancing-script',family:'Dancing Script',weight:400});
+  const warning=codes(project(dancing))['text-thin'];
+  assert.equal(warning?.severity,'check');assert.ok(warning.values.percent>20,String(warning.values.percent));
+  assert.equal(explain(warning,project(dancing)).title,'Thin strokes in this font');
+  assert.match(explain(warning,project(dancing),'',createT('tr')).fix,/Nakışa uygun/);
+  assert.equal(codes(project(written('nunito-latin-700-normal.ttf',font)))['text-thin'],undefined,'Nunito Bold stitches cleanly');
+  assert.equal(codes(project({...dancing,kind:'running'}))['text-thin'],undefined,'outlines are not fills');
+});

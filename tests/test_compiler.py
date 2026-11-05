@@ -71,6 +71,20 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(result["pes"], other["pes"])
         self.assertEqual(result["commands"], other["commands"])
 
+    def test_touching_script_letters_compile_with_every_letter_filled(self):
+        # Dancing Script "Ayşe": a contour's first point sits beside a neighbouring
+        # letter, which used to split one part's rows across two lane maps (KeyError,
+        # shown to users as "invalid geometry or settings").
+        p = json.loads((Path(__file__).parent/"fixtures/dancing-script-text.json").read_text())
+        result = compile_project(p)
+        stitches = [(c["x"], c["y"]) for c in result["commands"] if c["type"] == "stitch"]
+        self.assertGreater(len(stitches), 300)
+        rings = p["objects"][0]["rings"]
+        area = lambda r: abs(sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(r, r[1:]+r[:1])))/2
+        for ring in (r for r in rings if area(r) > 3):
+            inner = [s for s in stitches if inside(s, [ring], "nonzero", tolerance=.3)]
+            self.assertTrue(inner, f"no stitches in contour starting at {ring[0]}")
+
     def test_hole_is_never_crossed_by_sewn_fill_or_underlay(self):
         rings = [[[25,25],[75,25],[75,75],[25,75]],[[40,40],[60,40],[60,60],[40,60]]]
         for angle in (0, 35, 90):
