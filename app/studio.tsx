@@ -1,5 +1,5 @@
 'use client';
-import {Button,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
+import {Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
 import dynamic from 'next/dynamic';
 import {flushSync} from 'react-dom';
 import {Loading} from './panel-loading';
@@ -128,7 +128,7 @@ function StudioEditor() {
   const [draft,saveDraft]=useState<Point[]>([]), [drawing,setDrawing]=useState(false);
   const draftRef=useRef<Point[]>([]);
   function setDraft(next:Point[]|((points:Point[])=>Point[])){const value=typeof next==='function'?next(draftRef.current):next;draftRef.current=value;saveDraft(value);stopPlayback();}
-  // One flag per draft point: true for a corner (left click), false for a smooth curve point.
+  // One flag per draft point: true for a corner, false for a smooth curve point.
   const [corners,saveCorners]=useState<boolean[]>([]),cornersRef=useRef<boolean[]>([]);
   function setCorners(next:boolean[]|((c:boolean[])=>boolean[])){const value=typeof next==='function'?next(cornersRef.current):next;cornersRef.current=value;saveCorners(value);}
   function popDraft(){setDraft(d=>d.slice(0,-1));setCorners(c=>c.slice(0,-1));}
@@ -182,6 +182,7 @@ function StudioEditor() {
   const [pointMode,setPointMode]=useState<'move'|'add'|'remove'>('move'),[activePoint,setActivePoint]=useState<[number,number]|null>(null);
   const [continuation,setContinuation]=useState<{id:string;fromStart:boolean;base:number}|null>(null);
   const [pathTarget,setPathTarget]=useState<string|null>(null),[guide,setGuide]=useState<{text:string;id:string;name:string}|null>(null);
+  const mapPathSelection=useRef<string[]|null>(null),textShapeFocus=useRef(false);
   const [fontLoading,setFontLoading]=useState(0),[fontsReady,setFontsReady]=useState(0);
   const textFocus=useRef(false),textArea=useRef<HTMLTextAreaElement>(null),lastFont=useRef(defaultFont),lastMerge=useRef<{key:string;time:number}|null>(null);
   const [view,setView]=useState<Viewport>({zoom:1,pan:[0,0]}),{zoom,pan}=view;
@@ -208,6 +209,7 @@ function StudioEditor() {
   const touchNavigation=useRef(false);
   const pinch=useRef<{view:Viewport;anchor:Point;center:Point;distance:number}|null>(null);
   const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected), resolved=item&&resolve(item,project.fabric,project.locks), fabric=fabrics[project.fabric];
+  const emptyCanvas=!project.objects.length&&!images.length&&!compiled;
   const items=selection.flatMap(id=>project.objects.filter(o=>o.id===id)),multi=items.length>1,allLocked=items.length>0&&items.every(o=>o.locked);
   // Transforms act on the unlocked part of the selection; a locked-only selection is read-only.
   const movableIds=useMemo(()=>unlockedIds(project,selection),[project.objects,selection.join('|')]);
@@ -244,8 +246,11 @@ function StudioEditor() {
     const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
     const css=getComputedStyle(area),px=(name:string)=>parseFloat(css.getPropertyValue(name));
     const gap=px('--gap'),ruler=viewSettings.rulers?px('--canvas-ruler-size'):0;
-    // Always reserve the full settings width, even with no selection or a collapsed overlay.
-    const insets={top:ruler+2*gap+px('--canvas-top-height'),right:px('--rail')+gap,bottom:2*gap+px('--canvas-dock-height'),left:ruler+2*gap+px('--settings-width')};
+    const empty=!current.current.objects.length&&!(current.current.images?.length);
+    // A fresh canvas has no settings overlay. Give it the whole workspace; keep the
+    // editing reservation for existing designs so selection does not move the hoop.
+    const mobile=narrowScreen();
+    const insets={top:ruler+2*gap+px('--canvas-top-height'),right:px('--rail')+2*gap,bottom:mobile?156:2*gap+px('--canvas-dock-height'),left:ruler+2*gap+(empty||mobile?0:px('--settings-width'))};
     measuredCanvas.current={width:rect.width,height:rect.height,hoop:current.current.hoop};
     setCanvasSize({width:rect.width,height:rect.height});
     applyViewport(fitViewport(rect,hoops[current.current.hoop],insets));
@@ -405,7 +410,14 @@ function StudioEditor() {
     setGuide({text:item.id,id,name:source.name});
   }
   function removeGuide(){if(!guide)return;commit({...project,objects:project.objects.filter(o=>o.id!==guide.id)});setGuide(null);}
-  function drawTextPath(){if(!item?.text)return;const id=item.id;chooseTool('open');setPathTarget(id);}
+  function drawTextPath(){if(!item?.text)return;const id=item.id;chooseTool('open');cancelDrawing();setPathTarget(id);}
+  function useTextPath(id:string){
+    const target=project.objects.find(o=>o.id===id);if(!target?.text||target.locked)return;
+    const next=layoutObject({...target,text:{...target.text,layout:'path'}});
+    commit({...project,objects:project.objects.map(o=>o.id===id?next:o)});setSelected(id);setSettingsCollapsed(false);
+    textShapeFocus.current=true;requestAnimationFrame(focusTextReady);
+  }
+  function drawMapPath(ids:string[]){chooseTool('open');cancelDrawing();mapPathSelection.current=ids;requestAnimationFrame(()=>svg.current?.focus({preventScroll:true}));}
   function updateObject(patch:Partial<StitchObject>){if(!item||item.locked)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
     let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};if(patch.color!==undefined&&!patch.thread)delete next.thread;for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
@@ -421,7 +433,7 @@ function StudioEditor() {
   function point(e:ReactPointerEvent<SVGSVGElement>):Point {
     return clientToWorld(viewport.current,[e.clientX,e.clientY],svg.current!.getBoundingClientRect(),hoop);
   }
-  function cancelDrawing(){moveQueue.current?.cancel();draftDrag.current=null;draftPress.current=null;clickHistory.current={};setPanMode(false);setDraft([]);setCorners([]);setShapeDraft(null);shapePress.current=null;setDrawing(false);setHover(null);setError('');if(continuation){setTool('select');setEditPoints(true);}setContinuation(null);if(pathTarget)setSelected(pathTarget);setPathTarget(null);}
+  function cancelDrawing(){moveQueue.current?.cancel();draftDrag.current=null;draftPress.current=null;clickHistory.current={};mapPathSelection.current=null;setPanMode(false);setDraft([]);setCorners([]);setShapeDraft(null);shapePress.current=null;setDrawing(false);setHover(null);setError('');if(continuation){setTool('select');setEditPoints(true);}setContinuation(null);if(pathTarget)setSelected(pathTarget);setPathTarget(null);}
   function finish(points=draftRef.current,how:'enter'|'first'|'switch'='enter'){
     const fit=tool==='freehand'?fitFreehand(points):null,flags=fit?.corners??cornersRef.current.slice(0,points.length);
     points=fit?.points??points;
@@ -449,7 +461,9 @@ function StudioEditor() {
     if(!existing&&kind==='fill')next.fillPattern='tatami';
     if(curve)next.curve=curve;
     const created=rails?withRails(next,rails):next;
-    commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,created]});setSelected(next.id);setActivePoint(null);cancelDrawing();setEditPoints(false);setTool(tool);return true;
+    const mapSelection=!closed&&mapPathSelection.current;
+    commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,created]});setSelected(next.id);setActivePoint(null);cancelDrawing();setEditPoints(false);setTool(mapSelection?'select':tool);
+    if(mapSelection)setSelection([...mapSelection,next.id]);return true;
   }
   function shapeOf(d:{start:Point;end:Point;square:boolean}){
     if(shapeKind==='rect')return rect(d.start,fitRect(d.start,d.end,hoop,d.square),d.square);
@@ -752,7 +766,7 @@ function StudioEditor() {
       const p=point(e);if(dragged||press.moved||movedForDrawing(press.start,p)||panMode||spacePan)return;
       if(p[0]<0||p[1]<0||p[0]>hoop.width||p[1]>hoop.height)return;
       const points=draftRef.current,onFirst=(tool==='open'||tool==='closed'||tool==='holes')&&points.length>2&&Math.hypot(p[0]-points[0][0],p[1]-points[0][1])*canvasScale<12;
-      const next=draftClick({points,corners:cornersRef.current,...clickHistory.current},{p,button:press.button,time:e.timeStamp,detail:press.detail,scale:canvasScale,ctrl:e.ctrlKey||e.metaKey,onFirst,tool:tool==='holes'?'closed':pathTool(tool)?tool as 'open'|'closed'|'blocks':'points'});
+      const next=draftClick({points,corners:cornersRef.current,...clickHistory.current},{p,button:press.button,time:e.timeStamp,detail:press.detail,scale:canvasScale,ctrl:e.ctrlKey||e.metaKey,onFirst,tool:tool==='holes'?'closed':pathTool(tool)?tool as 'open'|'closed'|'blocks':'points',smoothDefault:!!pathTarget});
       if(next.action==='close'){finish(points,'first');return;}
       if(pathTool(tool)&&next.points.length>200){setError(t("Use at most 200 curve points. Finish this curve to start another."));return;}
       clickHistory.current={lastLeft:next.lastLeft,lastRight:next.lastRight};setDraft(next.points);setCorners(next.corners);return;
@@ -901,7 +915,10 @@ function StudioEditor() {
   }
   function toggleRealistic(){setLook(l=>l==='lines'?'thread':'lines');}
   function exported(){if(fails)setMessage(t('exportProblems.other',{count:fails}));}
-  const focusTextReady=useStableCallback(()=>{if(textFocus.current&&textArea.current){textArea.current.focus();textArea.current.select();textFocus.current=false;}});
+  const focusTextReady=useStableCallback(()=>{
+    if(textFocus.current&&textArea.current){textArea.current.focus();textArea.current.select();textFocus.current=false;}
+    if(textShapeFocus.current){const section=document.querySelector<HTMLDetailsElement>('[data-section="text-shape"]');if(section){section.open=true;section.scrollIntoView({block:'nearest'});textShapeFocus.current=false;}}
+  });
   const resetEnd=useStableCallback((key:'entry'|'exit')=>updateObject({[key]:undefined}));
   const stableAddPoint=useStableCallback(addPoint),stableSavePoint=useStableCallback(savePointChange),stableRemovePoint=useStableCallback(removePoint);
   const sewn=compiled?Math.floor(compiled.commands.length*progress):0;
@@ -1034,7 +1051,12 @@ function StudioEditor() {
         {densityField&&<DensityLegend field={densityField} radius={densityRadius} travel={showTravel} onRadius={setDensityRadius} onClose={()=>setDensity(false)}/>}
         {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} hoop={hoop} selection={selection.length?selectionBounds(project,selection):selImage&&!selImage.hidden?imageBounds(selImage):null} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
         {cursor&&<output className="cursor-position" aria-label={t('Cursor position')}>X {displayLength(cursor[0])} · Y {displayLength(cursor[1])}</output>}
-        {!project.objects.length&&!images.length&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
+        {emptyCanvas&&tool==='select'&&!hasDraft&&!shapeDraft&&!drawing&&!panMode&&<div className="empty-canvas" style={{left:(hoop.width/2-viewX)*canvasScale,top:(hoop.height/2-viewY)*canvasScale,width:Math.min(344,hoop.width*canvasScale-16)}}>
+          <EmptyState icon={<Icon name="needle" size={24}/>} title={t("Your canvas is ready")} description={t("Add an image to trace, or draw your own design.")} hint={t("You can also drop a file here.")}>
+            <Button variant="primary" size="lg" onClick={()=>file.current?.click()}><Icon name="upload" size={16}/>{t("Add artwork")}</Button>
+            <Button variant="secondary" size="lg" onClick={()=>{chooseTool('closed');requestAnimationFrame(()=>svg.current?.focus());}}><Icon name="pen" size={16}/>{t("Start drawing")}</Button>
+          </EmptyState>
+        </div>}
       </div>
       {tool==='select'&&items.length>0&&!hasDraft&&!shapeDraft&&!drawing&&!editing&&!angles&&!colourPick&&!selectionDragging&&!navigating&&!spacePan&&!panMode&&<SelectionBar
         box={selectionBox} view={view} hoop={hoop} canvas={svg} container={stage} rail={rail}
@@ -1065,7 +1087,7 @@ function StudioEditor() {
       </Popover>
       </div>
       {showToolHint&&<div className="tool-banner">
-        <ToolHint title={colourPick?t("Pick thread colour"):angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)!.title} text={colourPick?[t("Click the reference image to pick its colour · Esc to cancel"),pickHint].filter(Boolean).join(' · '):panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)!.hint}/>
+        <ToolHint title={colourPick?t("Pick thread colour"):angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)!.title} text={colourPick?[t("Click the reference image to pick its colour · Esc to cancel"),pickHint].filter(Boolean).join(' · '):panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:t("Left click: smooth · Right/double-click: corner · Ctrl / ⌘: 15° snap · Enter: finish")}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)!.hint}/>
       </div>}
       </div>
       {editing&&pointBox&&!colourPick&&!selectionDragging&&!navigating&&!spacePan&&!panMode&&<SelectionAnchor
@@ -1086,7 +1108,7 @@ function StudioEditor() {
         {selectedIssue&&<div className={`selection-issue ${selectedIssue.severity}`}><Icon name="alert" size={14}/><Button variant="link" className="selection-issue-title" title={explain(selectedIssue,project,checkError,t).title} onClick={()=>focusIssue(selectedIssue)}>{explain(selectedIssue,project,checkError,t).title}</Button>{selectedIssueFix&&<Button variant="link" className="selection-issue-fix" title={selectedIssueFix.title} onClick={()=>applyFix(selectedIssue)}>{t("Fix")}</Button>}</div>}
         {items.some(o=>o.locked)&&<div className="lock-notice" role="status"><Icon name="lock" size={15}/><span>{allLocked?t(multi?'Locked objects: settings are read-only.':'Locked object: settings are read-only.'):t('Locked objects in the selection are not changed.')}</span><Button variant="secondary" type="button" disabled={hasDraft} onClick={()=>lockSelection(items.filter(o=>o.locked).map(o=>o.id))}>{t('Unlock')}</Button></div>}
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} size={`${displayLength(selectionBox.width)} × ${displayLength(selectionBox.height)}`} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
-        <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected}/>
+        <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected} onUseTextPath={useTextPath} onDrawPath={drawMapPath}/>
         <ShapeTools focusOffset={focusOffset} project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
         {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><RedworkAction project={project} selection={selection} onRun={redwork}/></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel onReady={focusTextReady} spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}

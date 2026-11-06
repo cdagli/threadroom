@@ -8,7 +8,7 @@ export function snapAngle(start:Point,p:Point):Point {
   return [start[0]+r*Math.cos(a),start[1]+r*Math.sin(a)];
 }
 export function lockAxis(start:Point,p:Point):Point {return Math.abs(p[0]-start[0])>=Math.abs(p[1]-start[1])?[p[0],start[1]]:[start[0],p[1]];}
-export function draftClick(state:DraftState,event:{p:Point;button:number;time:number;detail:number;scale:number;ctrl:boolean;onFirst:boolean;tool?:DrawingTool}):DraftState&{action:'none'|'close'} {
+export function draftClick(state:DraftState,event:{p:Point;button:number;time:number;detail:number;scale:number;ctrl:boolean;onFirst:boolean;tool?:DrawingTool;smoothDefault?:boolean}):DraftState&{action:'none'|'close'} {
   const {p,button,time,scale}=event,near=(click?:Click)=>!!click&&time-click.time<400&&Math.hypot(p[0]-click.p[0],p[1]-click.p[1])*scale<=16;
   const unchanged={...state,action:'none' as const};
   if(button!==0&&button!==2)return unchanged;
@@ -17,7 +17,7 @@ export function draftClick(state:DraftState,event:{p:Point;button:number;time:nu
   const double=event.tool!=='points'&&button===0&&(event.detail>=2||near(state.lastLeft)),points=double?state.points.slice(0,-1):[...state.points],corners=double?state.corners.slice(0,-1):[...state.corners];
   if(double&&!state.points.length)return unchanged;
   const reference=points[points.length-(event.tool==='blocks'?2:1)];
-  points.push(event.ctrl&&reference?snapAngle(reference,p):[...p]);corners.push(button===0&&!double);
+  points.push(event.ctrl&&reference?snapAngle(reference,p):[...p]);corners.push(event.smoothDefault?button!==0||double:button===0&&!double);
   return {...state,points,corners,...(button===0?{lastLeft:{p:[...p] as Point,time}}:{lastRight:{p:[...p] as Point,time}}),action:'none'};
 }
 export function completeDraft(tool:DrawingTool,points:Point[],corners:boolean[],how:'enter'|'first'|'switch'):{closed:boolean;kind:Kind}|null {

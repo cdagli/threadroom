@@ -437,3 +437,77 @@ performance work. Open items:
 - Most features since the editing tools were verified by tests and builds only; a hands-on browser pass
   is still needed (each merge's "browser checks" notes above list what to try).
 - Restart `npm run dev` so the Python API runs the current compiler (object ids, plan cache).
+
+# Accounts, teams and cloud projects
+
+Goal: users sign in (better-auth, simplest form), save projects to Vercel Blob, and share them through teams.
+
+## Findings that shape the plan
+1. **The app is a static export with no server.** `next.config.ts` sets `output: 'export'`, `vercel.json` has
+   `framework: null`, and the only backend is the Python function `api/export.py`. Auth, a database and
+   access-checked Blob reads need server code, so Phase 0 turns Threadroom into a normal Next.js app on Vercel
+   while keeping the Python export working.
+2. **Projects are one localStorage JSON blob** (autosave in `app/studio.tsx`; "Save project" downloads JSON).
+   Images are embedded as data URLs (`lib/images.ts`), so a project can be several MB. Vercel function request
+   bodies are capped at 4.5 MB, so images must be stored as separate Blob files.
+
+## Architecture
+| Concern | Choice | Why |
+|---|---|---|
+| Auth | better-auth, **email + password only**, no email verification at first | Simplest; no email provider needed |
+| Database | **Neon Postgres** (Vercel Marketplace) + Drizzle, better-auth Drizzle adapter | better-auth needs a DB; teams and permissions are relational |
+| Teams | better-auth **`organization` plugin** (owner/admin/member, invitations) | Teams, members and invites built in |
+| Project files | **Private** Vercel Blob | Designs are readable only after an access check |
+| Ownership | Every project belongs to an organization; each user gets a "Personal" one at sign-up | One ownership model; moving a project to a team changes its `orgId` |
+
+**Data model**
+- better-auth tables: `user`, `session`, `account`, `organization`, `member`, `invitation`.
+- `project`: `id, orgId, name, createdBy, updatedBy, revision, blobPath, thumbPath, sizeBytes, createdAt,
+  updatedAt, deletedAt`.
+
+**Blob layout**
+- `orgs/{orgId}/projects/{projectId}/r{revision}.json`: one file per save (cheap history; keep the last N).
+- `orgs/{orgId}/assets/{sha256}.{ext}`: images, deduplicated by content hash. The project JSON references them
+  in place of the data URL; `validProject` accepts both forms, so old JSON files still import.
+- `.../thumb.png`: small preview made with the existing `exportImage`.
+
+**Request flow**
+- Load: `GET /api/projects/[id]` checks team membership and returns metadata + JSON. Images are served through
+  `/api/assets/...`, which also checks membership.
+- Save: `PUT /api/projects/[id]` with `{project, baseRevision}`. If someone saved in the meantime the server
+  returns 409 and the editor offers "Reload their version / Save as a copy". Real-time co-editing is out of scope.
+- Image uploads: the browser uploads straight to Blob with `handleUpload`, which checks auth before issuing a
+  token (avoids the 4.5 MB limit).
+- Autosave: localStorage stays as an offline draft cache. Cloud save runs ~2 s after edits stop and when the tab
+  is hidden. Save dot states: saved, saving, offline, conflict.
+
+**Routes**
+- `/`: project list for the current team (team switcher, new, rename, duplicate, delete, move to another team).
+- `/p/[id]`: the editor. `Studio` takes `initialProject` and `onSave` props and stays a client component.
+- `/sign-in`, `/sign-up`, `/team` (members, invites, roles), `/invite/[id]`.
+- `proxy.ts` (Next 16's replacement for middleware) only does a quick cookie redirect; real permission checks
+  happen in each route handler.
+
+## Phases
+Each phase ships on its own: typecheck, `npm test`, `npm run build`, en + tr strings, checked at desktop width.
+
+0. **Platform spike.** Remove the static export, switch to the Next.js framework on Vercel, and confirm
+   `api/export.py` still deploys next to the Next routes (fallback: Vercel Services). Update `scripts/dev.mjs`,
+   provision Neon and private Blob, pull env vars. Riskiest step, so it goes first.
+1. **Auth.** better-auth; sign-in and sign-up pages from design-system components; account menu in the project
+   chip; sign out.
+2. **Teams.** Organization plugin; auto-created Personal team; team switcher; members page; invite links; role
+   changes and removal.
+3. **Cloud projects.** Schema and migrations; project API; Blob storage; images moved out of the JSON; project
+   list page.
+4. **Editor integration.** Cloud autosave; conflict handling; new save states; "Import a local project" (from
+   localStorage or a JSON file); open/new in the project menu; WebMCP tools `list_projects` and `save_project`.
+5. **Polish.** Thumbnails; revision history and restore; trash with a 30-day purge cron; email invites (needs an
+   email provider such as Resend).
+
+## Open decisions
+1. Can people still use the editor without signing in? Proposed: yes; local-only mode stays, and sign-in offers
+   to import the local project.
+2. Invites: copyable link for now, or emailed invites from the start (adds Resend, probably email verification)?
+3. Roles: is owner/admin/member enough, or is a read-only viewer role needed?
+4. Who can delete projects: any member, or only admins and owners?

@@ -38,6 +38,7 @@ import {Button, Icon, IconButton, Input, Toolbar} from '@/design-system';
 | `Icon` | Shared 24-unit stroke icons; accepts a named icon or custom `path` |
 | `ToolGroupButton` | Dock tool with a native popover of alternatives |
 | `LoadingState` | Accessible loading indicator with an optional title; respects reduced motion |
+| `EmptyState` | Introductory surface with an icon, title, description, actions and optional hint |
 
 Button variants are `primary`, `secondary`, `ghost`, `soft`, `danger`, and `link`. Use `item` for content-rich choice rows and `swatch` for document dye colours. Sizes are `sm` (28px), `md` (32px), `lg` (40px), and `xl` (44px). Text can wrap when space is limited. Keep all actions in a toolbar at the same size.
 

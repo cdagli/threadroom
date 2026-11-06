@@ -10,6 +10,17 @@ test('Release clicks replace double left clicks and suppress double right clicks
   assert.equal(click(right,[2,1],550,2).points.length,2);assert.equal(click(first,[1,1],550).points.length,2);
   assert.equal(movedForDrawing([0,0],[.6,0]),true);assert.equal(movedForDrawing([0,0],[.5,0]),true);assert.equal(movedForDrawing([0,0],[.49,0]),false);
 });
+test('Text paths default to smooth points; right and double clicks make corners',()=>{
+  const empty={points:[],corners:[]},options={tool:'open',smoothDefault:true};
+  const first=click(empty,[1,1],100,0,options),second=click(first,[10,5],600,0,options);
+  assert.deepEqual(second.corners,[false,false]);
+  const double=click(second,[10,5],700,0,options);
+  assert.deepEqual(double.points,second.points);assert.deepEqual(double.corners,[false,true]);
+  const right=click(second,[20,1],1100,2,options);
+  assert.deepEqual(right.corners,[false,false,true]);
+  assert.deepEqual(click(right,[20,1],1200,2,options).corners,right.corners);
+  assert.deepEqual(click(empty,[1,1],100).corners,[true]);
+});
 test('Angle snapping retains radius; axis lock uses the dominant displacement',()=>{
   const p=snapAngle([0,0],[10*Math.cos(Math.PI/9),10*Math.sin(Math.PI/9)]);
   assert.ok(Math.abs(p[0]-10*Math.cos(Math.PI/12))<1e-10);assert.ok(Math.abs(p[1]-10*Math.sin(Math.PI/12))<1e-10);

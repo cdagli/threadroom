@@ -69,7 +69,7 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
     </div>
     <Button variant="link" type="button" className="text-button convert-text" onClick={onConvert}>{t("Convert to shapes")}</Button>
     </Section>
-    <Section id="text-shape" title={t("Text shape")} forceOpen={spec.layout==='path'&&!spec.path} summaryExtra={shapes.find(s=>s.id===spec.layout)?.label}>
+    <Section id="text-shape" title={t("Text shape")} forceOpen={spec.layout==='path'} summaryExtra={shapes.find(s=>s.id===spec.layout)?.label}>
     <SegmentedControl className="segmented shape-switch" role="group" aria-label={t("Text shape")}>{shapes.map(s=><Button variant="ghost" key={s.id} type="button" aria-pressed={spec.layout===s.id} onClick={()=>{if(s.id==='path'&&!spec.path){onChange({layout:'path'});return;}onChange({layout:s.id});}}><Icon size={16} path={s.icon}/><span>{s.label}</span></Button>)}</SegmentedControl>
     {spec.layout==='arc'&&<Range label={spec.bend>=0?t("Arch up"):t("Arch down")} value={spec.bend} min={-100} max={100} format={n=>Math.abs(n)===100?t("Circle"):`${formatNumber(Math.abs(n))}%`} onChange={bend=>onChange({bend},'bend')}/>}
     {spec.layout==='wave'&&<div className="setting-grid">
