@@ -135,3 +135,13 @@ test('Angle guides survive shape operations unchanged; redwork is never reshaped
   assert.equal(pieces.length,2);assert.ok(pieces.every(o=>o.angleGuides===guides));
   assert.ok(S.offsetShapes(p,['r'],1).error);assert.ok(S.knifeShapes(p,['r'],[20,50],[20,90]).error);
 });
+
+test('Flatten removes the earlier rim at a shared outer edge and retains interior interlock',()=>{
+  const a=named('a',[sq(20,20,20)]),b=named('b',[sq(30,20,10,20)]);
+  const r=ok(S.flattenOverlaps(project(a,b),null,.4)),flat=S.shapeRegion(r.project.objects[0]);
+  assert.equal(r.project.objects[1],b);
+  assert.equal(P.regionArea(P.intersection(flat,P.regionFromRings([sq(39,20,1,20)]))),0,'no rim along the right boundary');
+  const overlap=P.regionArea(P.intersection(flat,S.shapeRegion(b)));
+  assert.ok(Math.abs(overlap-8)<.2,overlap);
+  assert.ok(Math.abs(P.regionArea(P.intersection(flat,P.regionFromRings([sq(30,21,.4,18)])))-7.2)<.01,'interior edge overlaps by 0.4 mm');
+});

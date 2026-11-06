@@ -75,7 +75,10 @@ export function flattenOverlaps(p:Project,ids:readonly string[]|null=null,overla
     const cover=union(...above.map(u=>u.g));
     if(regionArea(difference(lower.g,cover))<minOverlap){replaced.set(lower.o.id,null);return;}
     const inset=union(...above.map(u=>{if(!insets.has(u.o.id))insets.set(u.o.id,offsetRegion(u.g,-overlap));return insets.get(u.o.id)!;}));
-    const rest=difference(lower.g,inset);if(rest.length&&regionArea(intersection(lower.g,inset))>=minOverlap/10)replaced.set(lower.o.id,withRegion(lower.o,rest));
+    // Remove the later fill all the way to the earlier fill's exterior; only interior
+    // edges retain the interlock. This also handles holes and clipped silhouettes.
+    const cutter=union(inset,difference(cover,offsetRegion(lower.g,-overlap)));
+    const rest=difference(lower.g,cutter);if(rest.length&&regionArea(intersection(lower.g,cutter))>=minOverlap/10)replaced.set(lower.o.id,withRegion(lower.o,rest));
   });
   if(!replaced.size)return {error:t("No selected fills overlap.")};
   const objects=p.objects.flatMap(o=>replaced.has(o.id)?replaced.get(o.id)?[replaced.get(o.id)!]:[]:[o]);

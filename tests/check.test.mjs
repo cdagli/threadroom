@@ -112,3 +112,13 @@ test('Fill text in a hairline font is flagged; bold and satin text are not',asyn
   assert.equal(codes(project(written('nunito-latin-700-normal.ttf',font)))['text-thin'],undefined,'Nunito Bold stitches cleanly');
   assert.equal(codes(project({...dancing,kind:'running'}))['text-thin'],undefined,'outlines are not fills');
 });
+
+test('Thin fill parts focus the largest connected sliver instead of spanning the object',()=>{
+  const rings=[[[20,20],[60,20],[60,40],[50.6,40],[50.6,46],[50,46],[50,40],[30.6,40],[30.6,44],[30,44],[30,40],[20,40]]];
+  const p=project(object('Two slivers',rings)),w=codes(p)['fill-thin-part'];
+  assert.ok(w);assert.ok(w.values.parts.length>=2);assert.ok(w.values.parts.length<=8);
+  assert.deepEqual(w.bounds,w.values.parts[0].bounds);
+  assert.ok(w.bounds[0]>49&&w.bounds[2]<52,w.bounds);
+  assert.ok(w.values.area>w.values.parts[0].area);
+  w.values.parts.forEach((part,i)=>{assert.ok(Math.abs(part.area*10-Math.round(part.area*10))<1e-8);if(i)assert.ok(w.values.parts[i-1].area>=part.area);});
+});

@@ -67,3 +67,11 @@ test('Editor controls use the shared design-system boundary',()=>{
   }
   assert.deepEqual(violations,[],'Native controls belong in design-system/; compose shared components in app/.');
 });
+
+test('Agent status is a polite plain-text live region with semantic tones',()=>{
+  const {StatusBar}=loadDesignSystem('status-bar');
+  const html=render(StatusBar,{label:'AI agent',text:'<img src=x onerror=alert(1)>',tone:'working'});
+  assert.match(html,/role="status"/);assert.match(html,/aria-live="polite"/);assert.match(html,/ds-spinner/);assert.match(html,/&lt;img/);assert.doesNotMatch(html,/<img/);
+  assert.match(render(StatusBar,{label:'AI agent',text:'Failed',tone:'error'}),/data-tone="error"/);
+  assert.doesNotMatch(render(StatusBar,{label:'AI agent',text:'Done',tone:'done'}),/ds-spinner/);
+});

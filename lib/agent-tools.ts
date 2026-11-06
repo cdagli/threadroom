@@ -92,7 +92,7 @@ export function reference(){
     limits:{satinWidth:satinLimits.width,splitLength:satinLimits.split,ropeWidth:ropeLimits.width,text:textLimits,sewingSpeed:[production.minSpeed,production.maxSpeed]},
     shapes:shapeKinds,menuCommands,palette,
     threads:`${brotherThreads.length} Brother PEC catalogue threads; use find_threads to search by colour or name/code, then apply a result with update_objects settings.threadCode (e.g. "${brotherThreads[0].code}") or use settings.matchThread:true`,
-    workflow:['get_reference (once)','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','find_threads then update_objects settings.threadCode to choose threads','set_sew_order to reorder listed objects within their existing slots; later layers sew on top, group colours to minimise jumps','capture_preview to look at the result','export_design'],
+    workflow:['get_reference (once)','set_status before each multi-step phase: one short sentence in the user UI language','For hand digitising: view_reference (mm grid) → sample_colors → trace_outline (silhouette polygons) → add_path / shape_operation (intersect to clip; union/offset/subtract to cut the base) → shape_operation flatten → find_threads / update_objects settings.threadCode → set_sew_order → list_issues','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','find_threads then update_objects settings.threadCode to choose threads','set_sew_order to reorder listed objects within their existing slots; later layers sew on top, group colours to minimise jumps','capture_preview to look at the result','export_design'],
   };
 }
 

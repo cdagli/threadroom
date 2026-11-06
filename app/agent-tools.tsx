@@ -12,7 +12,11 @@ import {estimatedSeconds,production,sewingSpeed,threadSequence} from '@/lib/prod
 import {loadCatalog,refFor} from '@/lib/fonts';
 import {ensureSatinFonts,satinFontIds,type SatinFontId} from '@/lib/satin-lettering';
 import {textLimits,type TextSpec} from '@/lib/text';
-import {imageLimits} from '@/lib/images';
+import {activeImage,imageLimits} from '@/lib/images';
+import {artworkPixels} from '@/lib/artwork-color';
+import {sampleColors,traceOutline} from '@/lib/reference-tools';
+import {referencePNG} from './reference-view';
+import type {StatusTone} from '@/design-system';
 import {defaultTolerance} from '@/lib/click-to-stitch';
 import type {Warning} from '@/lib/check';
 import {TranslationError,type Key,type Translator,type Values} from '@/lib/i18n';
@@ -33,6 +37,7 @@ export type AgentApi={
   compiled:Compiled|null;compileFresh:boolean;busy:boolean;hasDraft:boolean;
   history:{undo:number;redo:number};message:string;error:string;
   view:{zoom:number;pan:Point;look:'lines'|'thread';showImage:boolean;density:boolean;timeline:boolean;playing:boolean;panelTab:AgentPanel;panelOpen:boolean;settings:ViewSettings};
+  setStatus(text:string,tone:StatusTone):void;
   clearError():void;notify(key:Key,values?:Values):void;
   commit(next:Project,label?:string):void;relayoutText(o:StitchObject,kind:Kind):StitchObject;
   select(ids:string[]):void;selectImage(id:string|null):void;
@@ -135,6 +140,14 @@ function parseProject(value:unknown):Project{
   if(!validProject(p))throw new Error('This is not a valid Threadroom project.');return normalizeGroups(p);
 }
 
+// Every artwork tool resolves the selected image first, then the top visible reference.
+function referenceImage(api:Api,id?:string){
+  const a=now(api),image=id?a.project().images?.find(i=>i.id===id):activeImage(a.project(),a.imageSelection);
+  if(!image)throw new Error(id?`Unknown reference image "${id}".`:'No reference image. Use import_reference_image first.');
+  return image;
+}
+async function referencePixels(api:Api,id?:string){const image=referenceImage(api,id);return {image,pixels:await artworkPixels(image.src)};}
+
 // ---- schemas -----------------------------------------------------------------------------------
 const pt={type:'array',items:{type:'number'},minItems:2,maxItems:2,description:'[x, y] in mm from the hoop top-left'};
 const idList={type:'array',items:{type:'string'},description:'Object ids from get_design. Omit to use the current selection.'};
@@ -156,6 +169,18 @@ const readOnly={readOnlyHint:true},readsUserText={readOnlyHint:true,untrustedCon
 const intro='Threadroom embroidery editor (Brother PR1X, PES export). Units are mm; the hoop top-left is (0, 0), x right, y down.';
 
 const tools:Tool[]=[
+  {name:'set_status',inputSchema:obj({text:{type:'string',maxLength:140,description:'One short sentence; empty string clears the status'},tone:{type:'string',enum:['working','done','error']}},['text']),
+    description:"Call before each multi-step phase with one short sentence in the user's UI language so they can follow your work. Shows a persistent AI agent status without changing the document or undo history. Default tone working; done hides after 6 seconds, all statuses expire after 2 minutes without an update. Empty text clears.",
+    run:(api,{text,tone='working'})=>{flushSync(()=>now(api).setStatus(text,tone));return {ok:true};}},
+  {name:'trace_outline',annotations:readOnly,inputSchema:obj({imageId:{type:'string'},mode:{type:'string',enum:['alpha','colour']},point:pt,tolerance:{type:'number',minimum:1,maximum:60,description:`Same colour distance as stitch_region; default ${defaultTolerance}`},resolution:{type:'number',minimum:.1,maximum:2},simplify:{type:'number',minimum:0,maximum:5},largestOnly:{type:'boolean'},holes:{type:'boolean'},maxPoints:{type:'integer',minimum:3,maximum:20000}}),
+    description:'Trace reference pixels into polygons in hoop mm without adding objects. Defaults: alpha >128, resolution 0.25 mm, simplify 0.3 mm, largestOnly true, holes false, maxPoints 400 total. colour mode requires point (mm) and floods similar colour. Selected image or top visible by default. Handles rotation and clips to the hoop; points round to 0.01 mm. Rings are implicitly closed, ringTypes marks outer/hole, bounds is [x0,y0,x1,y1], area is mm². Use add_path and shape_operation to build and clip hand digitising.',
+    run:async(api,{imageId,...options})=>{if(options.mode==='colour'&&!options.point)throw new Error('point is required for colour mode.');const {image,pixels}=await referencePixels(api,imageId);return traceOutline(pixels,image,hoops[now(api).project().hoop],options);}},
+  {name:'view_reference',annotations:readOnly,inputSchema:obj({imageId:{type:'string'},region:{type:'array',items:{type:'number'},minItems:4,maxItems:4,description:'[x0,y0,x1,y1] in hoop mm; default rotated image bounds'},size:{type:'integer',minimum:256,maximum:1024},grid:{type:'number',minimum:.01,description:'mm grid step; default 1 for regions ≤25 mm, 5 for ≤80, otherwise 10'},objects:{type:'boolean'}}),
+    description:'Returns a PNG of reference artwork with a millimetre grid and labelled axes for hand digitising, optionally overlaying visible object outlines in their colours. Defaults to selected image or top visible, full rotated image bounds, 768 px longest side, objects false. Shows original pixels at full opacity. Text describes region, scale and plot margins.',
+    run:async(api,{imageId,region,size=768,grid,objects=false})=>{const {image,pixels}=await referencePixels(api,imageId),{blob,mapping:m}=await referencePNG(pixels,image,now(api).project(),region,size,grid,objects);return {content:[{type:'text',text:`Region [${m.region.join(', ')}] mm; ${m.scale.toFixed(4)} px per mm on both axes; top-left plot pixel (${m.margin}, ${m.margin}) maps to (${m.region[0]}, ${m.region[1]}) mm; x right, y down; grid ${m.grid} mm.`},{type:'image',data:await base64(blob),mimeType:'image/png'}]};}},
+  {name:'sample_colors',annotations:readOnly,inputSchema:obj({imageId:{type:'string'},points:{type:'array',items:pt,minItems:1,maxItems:50},radius:{type:'number',minimum:0,maximum:2000,description:'Circular sampling radius in mm; default 0.5'}},['points']),
+    description:'Samples original reference colours at hoop-mm points with an alpha-weighted circular average (default radius 0.5 mm), handling rotation. Selected image or top visible by default. Each result has point, #rrggbb color (null for transparent/outside), and nearest Brother thread {code,name,color,deltaE} by CIEDE2000, or null. Apply with update_objects settings.threadCode.',
+    run:async(api,{imageId,points,radius=.5})=>{const {image,pixels}=await referencePixels(api,imageId);return sampleColors(pixels,image,points,radius);}},
   {name:'get_reference',annotations:readOnly,inputSchema:obj({}),
     description:`${intro} Returns the catalogue an agent needs before editing: stitch kinds (and which need closed shapes), fill patterns and their parameters, underlays, hoops, fabrics with their default densities, lock types, value limits, shape kinds, edit commands, thread info and the suggested workflow. Call once per session.`,
     run:()=>reference()},
@@ -353,7 +378,7 @@ const tools:Tool[]=[
   {name:'auto_digitise',inputSchema:obj({imageId:{type:'string',description:'default: the selected or top visible image'},colours:{type:'number',minimum:2,maximum:12,description:'number of thread colours to separate (default 5)'},ignoreBackground:{type:'boolean',description:'skip the background colour (default true)'}}),
     description:'Traces a reference image into filled stitch regions, one per colour area (like Artwork → Trace). Afterwards call list_issues: small or thin regions usually need fixing, deleting or converting to running stitch.',
     run:async(api,{imageId,colours=5,ignoreBackground=true})=>{
-      needDraftFree(api);const before=now(api).project(),image=imageId?before.images?.find(i=>i.id===imageId):[...(before.images??[])].reverse().find(i=>!i.hidden);
+      needDraftFree(api);const before=now(api).project(),image=referenceImage(api,imageId);
       if(!image)throw new Error('No reference image. Use import_reference_image first.');
       flushSync(()=>{now(api).selectImage(image.id);now(api).setTraceOptions(Math.max(2,Math.min(12,Math.round(colours))),!!ignoreBackground);});await settle();
       await act(api,a=>a.trace());notify(api,'traced the artwork');return outcome(api,before);
@@ -361,7 +386,7 @@ const tools:Tool[]=[
   {name:'stitch_region',inputSchema:obj({point:pt,imageId:{type:'string'},outline:{type:'boolean',description:'running-stitch outline instead of a fill'},tolerance:{type:'number',description:`colour tolerance (default ${defaultTolerance}; higher takes in more similar colours)`}},['point']),
     description:'Click to stitch: fills (or outlines) the colour area of a reference image under point (mm), in that area\'s colour.',
     run:async(api,{point:at,imageId,outline=false,tolerance=defaultTolerance})=>{
-      needDraftFree(api);const before=now(api).project(),image=imageId?before.images?.find(i=>i.id===imageId):[...(before.images??[])].reverse().find(i=>!i.hidden);
+      needDraftFree(api);const before=now(api).project(),image=referenceImage(api,imageId);
       if(!image)throw new Error('No visible reference image.');const p=point(at);
       flushSync(()=>now(api).selectImage(image.id));flushSync(()=>now(api).chooseTool('stitch'));await settle();
       try{await act(api,a=>a.stitchRegion(p,!!outline,tolerance));}finally{flushSync(()=>now(api).chooseTool('select'));}

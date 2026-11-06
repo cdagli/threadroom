@@ -1,5 +1,5 @@
 'use client';
-import {Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
+import {StatusBar,type StatusTone,Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
 import dynamic from 'next/dynamic';
 import {flushSync} from 'react-dom';
 import {Loading} from './panel-loading';
@@ -123,6 +123,8 @@ function StudioEditor() {
   const [pendingSVG,setPendingSVG]=useState<File|null>(null),[density,setDensity]=useState(false),[densityRadius,setDensityRadius]=useState(1.5);
   const [compiledSource,setCompiledSource]=useState<Project|null>(null);
   const [compiled,setCompiled]=useState<Compiled|null>(null), [busy,setBusy]=useState(false);
+  const [agentStatus,setAgentStatus]=useState<{text:string;tone:StatusTone}|null>(null);
+  useEffect(()=>{if(!agentStatus)return;const timer=setTimeout(()=>setAgentStatus(null),agentStatus.tone==='done'?6000:120000);return()=>clearTimeout(timer);},[agentStatus]);
   const [message,setMessage]=useState(''), [error,setError]=useState(''), [apiState,setApiState]=useState<'checking'|'ready'|'offline'>('checking');
   useEffect(()=>{if(!message||error)return;const timer=setTimeout(()=>setMessage(''),4000);return()=>clearTimeout(timer);},[message,error]);
   const [draft,saveDraft]=useState<Point[]>([]), [drawing,setDrawing]=useState(false);
@@ -982,6 +984,7 @@ function StudioEditor() {
     issues:()=>imported?[]:sortWarnings([...checkProject(current.current),...stitchIssues],current.current),checkError,stitchState,apiState,
     compiled,compileFresh,busy,hasDraft,history:{undo:history.length,redo:future.length},message,error,
     view:{zoom:view.zoom,pan:view.pan,look,showImage,density,timeline,playing,panelTab,panelOpen,settings:viewSettings},
+    setStatus:(text,tone)=>setAgentStatus(text?{text,tone}:null),
     clearError:()=>setError(''),notify:(key,values)=>setMessage(t("AI agent: {v0}",{v0:t(key,values)})),
     commit:(next,label)=>commit(next,label),
     relayoutText:(o,kind)=>{const relaid=layoutObject(o);return relaid!==o?relaid:{...o,rings:reclose(o.rings,!isFillKind(kind))};},
@@ -1148,6 +1151,7 @@ function StudioEditor() {
         </div>}
       </aside>}
       <div className="dock-area">
+        <StatusBar label={t("AI agent")} text={agentStatus?.text??''} tone={agentStatus?.tone}/>
         {(error||message)&&<div className={`feedback ${error?'error':''}`} role={error?'alert':'status'}>{error||message}<IconButton variant="ghost" aria-label={t("Dismiss message")} onClick={()=>{setError('');setMessage('');}}>×</IconButton></div>}
         {timeline&&compiled&&<Toolbar className="stitch-playback" role="group" aria-label={t("Stitch playback controls")}>
           <Button variant="secondary" className="play-button" aria-label={playing?t("Pause playback"):t("Play stitches")} title={playing?t("Pause"):t("Play the stitch-out from the start")} onClick={()=>{if(!playing&&progress>=1)setProgress(0);setPlaying(p=>!p);}}><Icon name={playing?'pause':'play'} size={16}/></Button>

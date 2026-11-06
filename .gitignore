@@ -17,3 +17,7 @@ tests/trace-preview.png
 
 .next-build/
 .DS_Store
+
+# Generated reference art for agent digitising (.agents/skills/embroidery-digitizing).
+# Not out/: next build (output: export) writes and clears that folder.
+/agent-out/

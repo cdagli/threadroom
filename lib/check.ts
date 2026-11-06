@@ -2,6 +2,7 @@ import {layoutSatinText} from './satin-lettering';
 import {createT,errorText,type Translator,type Key} from './i18n';
 import {defaultTrimJump, hoops, hasCrossStyle, isFillKind, isWideKind, kindNames, normalizeGroups, resolve, satinDefaults, type Kind, type Point, type Project, type RawWarning, type Severity, type StitchObject} from './project';
 import {blockOutline, moveGeometry, railSamples, reclose} from './curves';
+import {maskComponents} from './mask-components';
 import {flattenOverlaps} from './shape-ops';
 
 // Design check: fast geometry checks run in the editor; stitch checks (short/long stitches, density,
@@ -32,7 +33,7 @@ const textGroup = (kind: Kind) => isFillKind(kind) ? 'fill' : isWideKind(kind) ?
 
 // Rasterised fill: area, thickness (twice the largest inscribed radius) and parts thinner than
 // limits.fillWidth[0] (cells outside the morphological opening by half that width). Cached per rings.
-type Raster = {area: number; thickness: number; thin: {area: number; bounds: Box} | null};
+type Raster = {area: number; thickness: number; thin: {area: number; bounds: Box; parts: {bounds: Box; area: number}[]} | null};
 const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Raster>>>();
 /** @test */ export function raster(rings: Point[][], rule: 'evenodd' | 'nonzero' = 'evenodd'): Raster {
   const cached = rasterCache.get(rings); if (cached?.[rule]) return cached[rule];
@@ -75,9 +76,13 @@ const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Ra
   let deepest = 0;
   for (let k = 0; k < W*H; k++) if (inside[k]) deepest = Math.max(deepest, edge[k]);
   const r = limits.fillWidth[0]/2/cell, core = chamfer(k => inside[k] === 1 && edge[k] >= r+.5);
-  const thin: Point[] = [];
-  for (let k = 0; k < W*H; k++) if (inside[k] && core[k] > r+.5) thin.push([x0+(k%W+.5)*cell, y0+(Math.floor(k/W)+.5)*cell]);
-  const result = {area: count*cell*cell, thickness: Math.max(cell, (2*deepest-.5)*cell), thin: thin.length ? {area: thin.length*cell*cell, bounds: box(thin, cell)} : null};
+  const thinMask = new Uint8Array(W*H);let thinCount=0;
+  for (let k = 0; k < W*H; k++) if (inside[k] && core[k] > r+.5) {thinMask[k]=1;thinCount++;}
+  const parts=maskComponents(thinMask,W).slice(0,8).map(cells=>({
+    bounds:box(cells.map(k=>[x0+(k%W+.5)*cell,y0+(Math.floor(k/W)+.5)*cell] as Point),cell/2).map(n=>round(n,2)) as Box,
+    area:round(cells.length*cell*cell),
+  }));
+  const result = {area: count*cell*cell, thickness: Math.max(cell, (2*deepest-.5)*cell), thin: thinCount ? {area: thinCount*cell*cell, bounds: parts[0].bounds, parts} : null};
   rasterCache.set(rings, {...cached,[rule]:result});
   return result;
 }
@@ -104,7 +109,7 @@ function colourBlocks(p: Project) {
 
 export function checkProject(p: Project): Warning[] {
   const out: RawWarning[] = [], hoop = hoops[p.hoop];
-  const add = (code: string, o: StitchObject, bounds: Box, severity: Severity, values: Record<string, number>) => out.push({code, objectId: o.id, bounds: bounds.map(n => round(n, 2)) as Box, severity, values});
+  const add = (code: string, o: StitchObject, bounds: Box, severity: Severity, values: RawWarning['values']) => out.push({code, objectId: o.id, bounds: bounds.map(n => round(n, 2)) as Box, severity, values});
   for (const o of p.objects) {
     if(o.layoutOnly)continue;
     if (!o.rings.length) continue;
@@ -126,7 +131,10 @@ export function checkProject(p: Project): Warning[] {
       const [fail, check] = cross ? [cross, 2*cross] : limits.fillWidth;
       if (r.area < limits.fillArea[1]) add('fill-small', o, b, r.area < limits.fillArea[0] ? 'fail' : 'check', {area: round(r.area), limit: limits.fillArea[1]});
       else if (r.thickness < check) add('fill-narrow', o, b, r.thickness < fail ? 'fail' : 'check', {width: round(r.thickness), limit: check});
-      else if (r.thin && r.thin.area >= limits.thinArea) add('fill-thin-part', o, r.thin.bounds, 'check', {area: round(r.thin.area), limit: limits.fillWidth[0]});
+      else if (r.thin && r.thin.area >= limits.thinArea) {
+        const values:RawWarning['values']={area:round(r.thin.area),limit:limits.fillWidth[0]};values.parts=r.thin.parts;
+        add('fill-thin-part',o,r.thin.bounds,'check',values);
+      }
     }
     if(o.text?.satin){
       const widths=layoutSatinText(o.text).columns.flatMap(c=>c.rails.points[0].map((q,i)=>Math.hypot(c.rails.points[1][i][0]-q[0],c.rails.points[1][i][1]-q[1])));

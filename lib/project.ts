@@ -56,7 +56,7 @@ export type Project = {
 export type Command = {type: 'stitch' | 'jump'; x: number; y: number; fromX: number; fromY: number; block: number; objectIndex?: number; objectId?: string; fromObjectId?: string; trim?: boolean; tie?: 'in'|'off'|null; travel?: boolean};
 export type Severity = 'fail' | 'check';
 // A compiler design-check finding; bounds [x0, y0, x1, y1] in mm (see lib/check.ts).
-export type RawWarning = {code: string; objectId: string | null; bounds: [number, number, number, number]; severity: Severity; values: Record<string, number>; fromId?: string};
+export type RawWarning = {code: string; objectId: string | null; bounds: [number, number, number, number]; severity: Severity; values: Record<string, number> & {parts?: {bounds: [number, number, number, number]; area: number}[]}; fromId?: string};
 export type Compiled = {
   warnings?: RawWarning[];
   pes: string; filename: string; commands: Command[]; threads: {color: string; name: string; thread?: Thread}[];
