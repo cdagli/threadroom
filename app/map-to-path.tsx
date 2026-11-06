@@ -1,4 +1,5 @@
 'use client';
+import {Button,Input,Select} from '@/design-system';
 import {useMemo,useState} from 'react';
 import {useT} from './i18n';
 import {errorText} from '@/lib/i18n';
@@ -16,17 +17,17 @@ export default function MapToPathContent({project,selection,active=true,onChange
   if(!selection.length)return null;
   const objects=preview?.objects.filter(o=>o.group==='map-preview')??[],box=designBounds(objects);
   return <>
-    {!binding&&<><p className="section-copy">{t('Select objects and choose an open guide path. Preview the repeats, then apply.')}</p><label>{t('Guide path')}<select value={selectedPath} onChange={e=>setPathId(e.target.value)}><option value="">{t('Choose a path')}</option>{paths.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label></>}
-    <label>{t('Repeat mode')}<select value={value.mode} onChange={e=>patch({mode:e.target.value as PathSettings['mode']})}>{(['fill','count','spacing'] as const).map((v,i)=><option key={v} value={v}>{t((['Fill path','Exact count','Fixed spacing'] as const)[i])}</option>)}</select></label>
-    {value.mode==='count'&&<label>{t('Repeat count')}<input type="number" min="1" max="80" step="1" value={value.count} onChange={e=>{const count=e.target.valueAsNumber;if(Number.isInteger(count)&&count>=1&&count<=80)patch({count});}}/></label>}
-    {value.mode!=='count'&&<label>{t('Gap · mm')}<input type="number" min="0" max="100" step=".1" value={value.spacing} onChange={e=>{const spacing=e.target.valueAsNumber;if(spacing>=0&&spacing<=100)patch({spacing});}}/></label>}
-    <label>{t('Start offset · mm')}<input type="number" min="0" max="1000" step=".5" value={value.offset} onChange={e=>{const offset=e.target.valueAsNumber;if(offset>=0&&offset<=1000)patch({offset});}}/></label>
-    {(['rotate','reverse','hidePath'] as const).map((key,i)=><label className="check-label" key={key}><input type="checkbox" checked={value[key]} onChange={e=>patch({[key]:e.target.checked})}/>{t((['Rotate along path','Reverse path','Hide guide from stitches and layers'] as const)[i])}</label>)}
-    <label className="check-label"><input type="checkbox" checked={value.align==='center'} onChange={e=>patch({align:e.target.checked?'center':'start'})}/>{t('Align centre')}</label>
-    {binding&&group?<div className="selection-actions"><button type="button" onClick={()=>onSelect(binding.pathId)}>{t('Edit guide path')}</button><button type="button" onClick={()=>run(()=>onChange(unlinkPath(project,group.id),t('Unlinked from path')))}>{t('Unlink from path')}</button></div>:<>
+    {!binding&&<><p className="section-copy">{t('Select objects and choose an open guide path. Preview the repeats, then apply.')}</p><label>{t('Guide path')}<Select value={selectedPath} onChange={e=>setPathId(e.target.value)}><option value="">{t('Choose a path')}</option>{paths.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</Select></label></>}
+    <label>{t('Repeat mode')}<Select value={value.mode} onChange={e=>patch({mode:e.target.value as PathSettings['mode']})}>{(['fill','count','spacing'] as const).map((v,i)=><option key={v} value={v}>{t((['Fill path','Exact count','Fixed spacing'] as const)[i])}</option>)}</Select></label>
+    {value.mode==='count'&&<label>{t('Repeat count')}<Input type="number" min="1" max="80" step="1" value={value.count} onChange={e=>{const count=e.target.valueAsNumber;if(Number.isInteger(count)&&count>=1&&count<=80)patch({count});}}/></label>}
+    {value.mode!=='count'&&<label>{t('Gap · mm')}<Input type="number" min="0" max="100" step=".1" value={value.spacing} onChange={e=>{const spacing=e.target.valueAsNumber;if(spacing>=0&&spacing<=100)patch({spacing});}}/></label>}
+    <label>{t('Start offset · mm')}<Input type="number" min="0" max="1000" step=".5" value={value.offset} onChange={e=>{const offset=e.target.valueAsNumber;if(offset>=0&&offset<=1000)patch({offset});}}/></label>
+    {(['rotate','reverse','hidePath'] as const).map((key,i)=><label className="check-label" key={key}><Input type="checkbox" checked={value[key]} onChange={e=>patch({[key]:e.target.checked})}/>{t((['Rotate along path','Reverse path','Hide guide from stitches and layers'] as const)[i])}</label>)}
+    <label className="check-label"><Input type="checkbox" checked={value.align==='center'} onChange={e=>patch({align:e.target.checked?'center':'start'})}/>{t('Align centre')}</label>
+    {binding&&group?<div className="selection-actions"><Button variant="secondary" type="button" onClick={()=>onSelect(binding.pathId)}>{t('Edit guide path')}</Button><Button variant="secondary" type="button" onClick={()=>run(()=>onChange(unlinkPath(project,group.id),t('Unlinked from path')))}>{t('Unlink from path')}</Button></div>:<>
       {preview&&<svg className="path-preview" viewBox={`${box.x-3} ${box.y-3} ${box.width+6} ${box.height+6}`} role="img" aria-label={t('Path layout preview')}>{objects.map(o=><path key={o.id} d={objectGeometry(o).path} fill="none" stroke={o.color} strokeWidth=".4"/>)}</svg>}
       {!preview&&<p className="section-copy">{t('Map to path exceeds the hoop or design limits.')}</p>}
-      <button type="button" disabled={!preview} onClick={()=>run(()=>{const next=mapToPath(project,prototypeIds,selectedPath,draft,t('Along path'));onChange(next,t('Objects mapped to path'));onSelect(next.groups!.at(-1)!.pathBinding!.members[0][0]);})}>{t('Apply map to path')}</button>
+      <Button variant="primary" type="button" disabled={!preview} onClick={()=>run(()=>{const next=mapToPath(project,prototypeIds,selectedPath,draft,t('Along path'));onChange(next,t('Objects mapped to path'));onSelect(next.groups!.at(-1)!.pathBinding!.members[0][0]);})}>{t('Apply map to path')}</Button>
     </>}{error&&<p role="alert">{error}</p>}
   </>;
 }

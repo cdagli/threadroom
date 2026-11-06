@@ -1,0 +1,94 @@
+@layer components {
+  .ds-select {
+    --select-height:var(--control-height-md);
+    --select-font:var(--control-font-md);
+    --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235A6068' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+    appearance:none;
+    box-sizing:border-box;
+    min-width:0;
+    max-width:100%;
+    height:var(--select-height);
+    min-height:var(--select-height);
+    padding:0 32px 0 10px;
+    border:1px solid var(--border-strong);
+    border-radius:var(--control-radius);
+    background:var(--surface) var(--select-chevron) no-repeat right 9px center / 14px;
+    color:var(--text);
+    font-family:inherit;
+    font-size:var(--select-font);
+    font-weight:400;
+    line-height:18px;
+    text-align:start;
+    text-overflow:ellipsis;
+    cursor:pointer;
+    box-shadow:0 1px 2px rgb(28 25 20 / .04);
+  }
+  .ds-select--sm {--select-height:var(--control-height-sm);--select-font:var(--control-font-sm)}
+  .ds-select--lg {--select-height:var(--control-height-lg)}
+  .ds-select:enabled:hover {border-color:var(--border-control);background-color:var(--surface-hover)}
+  .ds-select:focus-visible {outline:2px solid var(--focus);outline-offset:2px;border-color:var(--accent)}
+  .ds-select:disabled {background-color:var(--surface-sunken);box-shadow:none}
+  .ds-select[aria-invalid=true] {border-color:var(--danger)}
+  .ds-select--listbox {height:auto;background-image:none;padding:4px;cursor:default}
+
+  /* Enhanced native pickers share the menu treatment without a second JS widget. */
+  @supports (appearance:base-select) {
+    .ds-select:not(.ds-select--listbox),.ds-select:not(.ds-select--listbox)::picker(select) {appearance:base-select}
+    .ds-select:not(.ds-select--listbox) {
+      display:inline-flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding-inline:10px;
+      background-image:none;
+    }
+    .ds-select::picker-icon {
+      content:'';
+      width:14px;
+      height:14px;
+      flex-shrink:0;
+      background:var(--select-chevron) center / 14px no-repeat;
+      transition:rotate .15s ease;
+    }
+    .ds-select:open {border-color:var(--accent);background-color:var(--surface);box-shadow:0 0 0 2px var(--accent-soft)}
+    .ds-select:open::picker-icon {rotate:180deg}
+    .ds-select::picker(select) {
+      margin-block:6px;
+      padding:4px;
+      min-width:anchor-size(self-inline);
+      max-height:min(320px,60dvh);
+      overflow:auto;
+      border:1px solid var(--border-strong);
+      border-radius:var(--surface-radius);
+      background:var(--surface-raised);
+      color:var(--text);
+      box-shadow:var(--shadow-overlay);
+      font-family:inherit;
+      font-size:var(--select-font);
+      font-weight:400;
+      scrollbar-width:thin;
+    }
+    .ds-select option {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-height:32px;
+      padding:7px 10px;
+      border:0;
+      border-radius:4px;
+      background:transparent;
+      color:var(--text);
+      font-weight:400;
+      line-height:18px;
+      cursor:pointer;
+    }
+    .ds-select option:checked {background:var(--selected);color:var(--accent-strong)}
+    .ds-select option:enabled:hover,.ds-select option:focus-visible {background:var(--surface-hover);outline:none}
+    .ds-select option:checked:hover,.ds-select option:checked:focus-visible {background:var(--selected)}
+    .ds-select option:disabled {color:var(--text-disabled);cursor:default}
+    .ds-select option::checkmark {order:1;margin-inline-start:auto;color:var(--accent)}
+    .ds-select optgroup {padding:4px;font-weight:600}
+  }
+  @media(prefers-reduced-motion:reduce) {.ds-select::picker-icon {transition:none}}
+  @media(forced-colors:active) {.ds-select {appearance:auto;background-image:none;box-shadow:none}}
+}

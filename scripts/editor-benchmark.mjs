@@ -23,15 +23,16 @@ class Host {
   getAttribute(k){return this.attributes[k]??null;} addEventListener(){} removeEventListener(){} focus(){} select(){} click(){}
   setPointerCapture(){} hasPointerCapture(){return false;} releasePointerCapture(){}
   getBoundingClientRect(){return {x:0,y:0,left:0,top:0,right:1000,bottom:1000,width:1000,height:1000};}
+  get offsetWidth(){return 32;} get offsetHeight(){return 32;}
   closest(selector){if(selector==='[data-object]'&&this.getAttribute('data-object'))return this;return this.parentNode?.closest(selector)??null;}
   matches(){return false;} querySelector(){return null;}
   get options(){return this.childNodes.flatMap(n=>n.tagName==='OPTION'?[n]:n.options);}
   get firstChild(){return this.childNodes[0]??null;} get lastChild(){return this.childNodes.at(-1)??null;}
   set textContent(v){this.childNodes=[];this.text=String(v);} get textContent(){return this.text??'';}
 }
-const doc=new Host();doc.createElement=n=>new Host(n,doc);doc.createElementNS=(ns,n)=>Object.assign(new Host(n,doc),{namespaceURI:ns});doc.createTextNode=t=>Object.assign(new Host('#text',doc),{nodeValue:t});doc.documentElement=doc.createElement('html');doc.body=doc.createElement('body');doc.activeElement=doc.body;
+const doc=new Host();doc.getElementById=()=>null;doc.createElement=n=>new Host(n,doc);doc.createElementNS=(ns,n)=>Object.assign(new Host(n,doc),{namespaceURI:ns});doc.createTextNode=t=>Object.assign(new Host('#text',doc),{nodeValue:t});doc.documentElement=doc.createElement('html');doc.head=doc.createElement('head');doc.body=doc.createElement('body');doc.activeElement=doc.body;
 const win={document:doc,HTMLElement:Host,HTMLIFrameElement:class {},addEventListener(){},removeEventListener(){},matchMedia:()=>({matches:false})};doc.defaultView=win;
-Object.assign(globalThis,{window:win,document:doc,HTMLElement:Host,SVGElement:Host,ResizeObserver:class{constructor(fn){this.fn=fn;} observe(){this.fn();} disconnect(){}}});
+Object.assign(globalThis,{getComputedStyle:()=>({getPropertyValue:()=>'0'}),CSS:{escape:value=>value},window:win,document:doc,HTMLElement:Host,SVGElement:Host,ResizeObserver:class{constructor(fn){this.fn=fn;} observe(){this.fn();} disconnect(){}}});
 let frames=new Map(),frameId=0;globalThis.requestAnimationFrame=fn=>{frames.set(++frameId,fn);return frameId;};globalThis.cancelAnimationFrame=id=>frames.delete(id);
 const realSetTimeout=globalThis.setTimeout;globalThis.setTimeout=()=>0;win.setTimeout=globalThis.setTimeout;
 let compileCalls=0;
@@ -45,6 +46,7 @@ const cache=new Map();let counts={studio:0,canvas:0,row:0,preview:0,colour:0};gl
 function load(file){
   if(file.endsWith(".json.ts")||file.endsWith(".json.tsx"))return JSON.parse(sourceFor(file.replace(/\.tsx?$/, "")));
   if(!existsSync(new URL('../'+file,import.meta.url)))file=file.replace(/\.tsx$/,'.ts');
+  if(!existsSync(new URL('../'+file,import.meta.url))&&existsSync(new URL('../'+file.replace(/\.ts$/,'.tsx'),import.meta.url)))file=file.replace(/\.ts$/,'.tsx');
   if(!existsSync(new URL('../'+file,import.meta.url)))file=file.replace(/\.ts$/,'.js');
   if(cache.has(file))return cache.get(file).exports;
   let source=sourceFor(file).replaceAll('import.meta.url',JSON.stringify(new URL('../'+file,import.meta.url).href));
@@ -55,7 +57,7 @@ function load(file){
   for(const [name,key] of [['CanvasObject','canvas'],['LayerObjectRow','row'],['LayerPreview','preview'],['ColourRunRow','colour']])source=source.replace(new RegExp(`function ${name}\\(([^]*?)\\)\\s*\\{`),match=>match+`globalThis.__editorBenchmarkCount("${key}");`);
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
   const module={exports:{}};cache.set(file,module);
-  const localRequire=id=>id.startsWith('@/')?load(id.slice(2)+'.ts'):id.startsWith('./')?load(file.slice(0,file.lastIndexOf('/')+1)+id.slice(2)+(file.startsWith('app/')?'.tsx':'.ts')):id==='@astryxdesign/core/Button'?{Button:compiledMode?({label,onClick,isDisabled})=>React.createElement('button',{'aria-label':label,onClick,disabled:isDisabled}):()=>null}:require(id);
+  const localRequire=id=>id==='@/design-system'?load('design-system/index.ts'):id.startsWith('@/')?load(id.slice(2)+'.ts'):id.startsWith('./')?load(file.slice(0,file.lastIndexOf('/')+1)+id.slice(2)+(file.startsWith('app/')?'.tsx':'.ts')):id==='@astryxdesign/core/Button'?{Button:compiledMode?({label,onClick,isDisabled})=>React.createElement('button',{'aria-label':label,onClick,disabled:isDisabled}):()=>null}:require(id);
   new Function('module','exports','require',code)(module,module.exports,localRequire);return module.exports;
 }
 const {demo,object}=load('lib/project.ts'),Studio=load('app/studio.tsx').default,{I18nProvider}=load('app/i18n.tsx');

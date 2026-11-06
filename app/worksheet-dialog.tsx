@@ -1,4 +1,5 @@
 'use client';
+import {Button,Dialog,Select} from '@/design-system';
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {useT} from './i18n';
@@ -16,9 +17,9 @@ export default function Worksheet({project,compiled,units,onClose}:{project:Proj
   const fails=issues.filter(i=>i.severity==='fail').length,checks=issues.length-fails,fabric=fabrics[project.fabric];
   useEffect(()=>{if(!dialog.current?.open)dialog.current?.showModal();},[]);
   const preview=(index?:number)=><svg viewBox={view} role="img" aria-label={index===undefined?t('Design preview'):t('Colour step {step}',{step:index+1})}>{rows.filter(r=>index===undefined||r.index===index).map(r=><path key={r.index} d={r.path} stroke={r.color} strokeWidth=".25" strokeLinecap="round" fill="none"/>)}</svg>;
-  return createPortal(<dialog ref={dialog} className="worksheet-dialog" aria-labelledby={title} onCancel={onClose} onClose={onClose} onKeyDown={e=>e.stopPropagation()} onKeyUp={e=>e.stopPropagation()}>
+  return createPortal(<Dialog ref={dialog} className="worksheet-dialog" aria-labelledby={title} onCancel={onClose} onClose={onClose} onKeyDown={e=>e.stopPropagation()} onKeyUp={e=>e.stopPropagation()}>
     <style media="print">{`@page{size:${paper};margin:12mm}`}</style>
-    <div className="worksheet-controls"><label>{t('Paper size')}<select value={paper} onChange={e=>setPaper(e.target.value as 'A4'|'Letter')}><option value="A4">{t('A4')}</option><option value="Letter">{t('Letter')}</option></select></label><button type="button" onClick={()=>window.print()}>{t('Print worksheet')}</button><button type="button" onClick={onClose}>{t('Close')}</button></div>
+    <div className="worksheet-controls"><label>{t('Paper size')}<Select value={paper} onChange={e=>setPaper(e.target.value as 'A4'|'Letter')}><option value="A4">{t('A4')}</option><option value="Letter">{t('Letter')}</option></Select></label><Button variant="primary" type="button" onClick={()=>window.print()}>{t('Print worksheet')}</Button><Button variant="secondary" type="button" onClick={onClose}>{t('Close')}</Button></div>
     <article className="worksheet-sheet"><h1 id={title}>{t('Worksheet')} · {project.name}</h1>
       <div className="worksheet-overview"><div className="worksheet-thumbnail">{preview()}</div><dl>
         <dt>{t('Design size')}</dt><dd>{length(compiled.stats.width)} × {length(compiled.stats.height)}</dd>
@@ -34,5 +35,5 @@ export default function Worksheet({project,compiled,units,onClose}:{project:Proj
       <h2>{t('Design check')}</h2><p>{issues.length?[fails?t('failsSummary',{count:fails}):'',checks?t('checksSummary',{count:checks}):''].filter(Boolean).join(' · '):compiled.engine==='Imported PES'?t('Imported PES: design checks unavailable.'):t('Ready to stitch: no problems found.')}</p>
       {!!issues.length&&<ul>{issues.map((w,i)=><li key={i}>{explain(w,project,'',t).title}: {explain(w,project,'',t).why}</li>)}</ul>}
     </article>
-  </dialog>,document.body);
+  </Dialog>,document.body);
 }

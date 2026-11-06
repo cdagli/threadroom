@@ -1,3 +1,4 @@
+import {loadDesignSystem} from './load-design-system.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
@@ -331,7 +332,7 @@ test('Non-row panels render translated controls and hide settings the engine ign
   for(const lang of ['en','tr']){
     const t=createT(lang),module={exports:{}};
     // Sibling app components (./angle-settings) are transpiled with the same loader.
-    const require=id=>id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?(()=>{const file=new URL(`../app/${id.slice(2)}.tsx`,import.meta.url);if(!existsSync(file))file.pathname=file.pathname.replace(/\.tsx$/,'.ts');const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;})():requireNode(id);
+    const require=id=>id==='@/design-system'?loadDesignSystem():id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?(()=>{const file=new URL(`../app/${id.slice(2)}.tsx`,import.meta.url);if(!existsSync(file))file.pathname=file.pathname.replace(/\.tsx$/,'.ts');const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;})():requireNode(id);
     new Function('module','exports','require',code)(module,module.exports,require);
     await Promise.all(pending);
     const {FillSettings,CrossSettings}=module.exports;

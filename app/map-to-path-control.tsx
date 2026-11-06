@@ -3,7 +3,7 @@ import dynamic from 'next/dynamic';
 import {useState,type ComponentProps} from 'react';
 import {useT} from './i18n';
 import {Loading} from './panel-loading';
-import {Section} from './settings-section';
+import {Section} from '@/design-system';
 import type MapToPathContent from './map-to-path';
 const Content=dynamic(()=>import('./map-to-path'),{loading:Loading});
 export function MapToPath(props:Omit<ComponentProps<typeof MapToPathContent>,'active'>&{disabled:boolean}){

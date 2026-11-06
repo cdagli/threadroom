@@ -1,6 +1,7 @@
 import {createT} from '@/lib/i18n';
 import {I18nProvider} from './i18n';
 import type { Metadata } from 'next';
+import '@/design-system/styles.css';
 import './globals.css';
 const t=createT('tr');
 // The title is rendered by I18nProvider so it follows the language switch (Next re-applied a metadata

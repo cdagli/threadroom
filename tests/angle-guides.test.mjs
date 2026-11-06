@@ -1,3 +1,4 @@
+import {loadDesignSystem} from './load-design-system.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
@@ -78,7 +79,7 @@ test('Fill settings: Edit angles button, locked angle and Density control only w
   const {resolve}=load('project'),{createT}=load('i18n');
   const compile=(name,require)=>{const file=new URL(`../app/${name}.tsx`,import.meta.url);if(!existsSync(file))file.pathname=file.pathname.replace(/\.tsx$/,'.ts');const m={exports:{}};new Function('module','exports','require',ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)(m,m.exports,require);return m.exports;};
   for(const lang of ['en','tr']){
-    const t=createT(lang),require=id=>id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?compile(id.slice(2),require):requireNode(id);
+    const t=createT(lang),require=id=>id==='@/design-system'?loadDesignSystem():id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?compile(id.slice(2),require):requireNode(id);
     const {FillSettings}=compile('fill-settings',require);
     await Promise.all(pending);
     const render=patch=>{const item={...object('Fill',[square]),...patch};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100},angles:{active:false,onToggle:()=>{}}}));};

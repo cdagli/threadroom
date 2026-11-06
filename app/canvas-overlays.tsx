@@ -6,10 +6,29 @@ import {routeEnds,draftBlockPaths} from '@/lib/curves';
 import type {Warning} from '@/lib/check';
 import {measureAngle} from '@/lib/measure';
 import {unitValue,type Units} from '@/lib/view-settings';
+import {AnnotationLabel} from '@/design-system';
 
-export const IssueMarker=memo(function IssueMarker({focus,canvasScale}:{focus:Warning;canvasScale:number}){
-  const [x0,y0,x1,y1]=focus.bounds,pad=1+4/canvasScale,width=Math.max(x1-x0+2*pad,28/canvasScale),height=Math.max(y1-y0+2*pad,28/canvasScale),x=(x0+x1)/2-width/2,y=(y0+y1)/2-height/2,rx=Math.min(width,height,40/canvasScale)/2;
-                return <g className={`issue-marker ${focus.severity}`} pointerEvents="none"><rect x={x} y={y} width={width} height={height} rx={rx} fill="none" stroke="var(--surface-raised)" strokeWidth={5/canvasScale}/><rect x={x} y={y} width={width} height={height} rx={rx} fill="none" stroke="currentColor" strokeWidth={2.2/canvasScale}/><rect className="issue-pulse" x={x} y={y} width={width} height={height} rx={rx} fill="none" stroke="currentColor" strokeWidth={2/canvasScale}/></g>;
+export const IssueMarker=memo(function IssueMarker({focus,canvasScale,view,title,severityLabel,detail,onOpen,onClose}:{focus:Warning;canvasScale:number;view:[number,number,number,number];title:string;severityLabel:string;detail:string;onOpen:()=>void;onClose:()=>void}){
+  const {t}=useT();
+  // Work in screen pixels so zoom never inflates the annotation or its hit targets.
+  const [x0,y0,x1,y1]=focus.bounds,pad=10,width=Math.max((x1-x0)*canvasScale+2*pad,32),height=Math.max((y1-y0)*canvasScale+2*pad,32);
+  const x=(x0+x1)/2-width/2/canvasScale,y=(y0+y1)/2-height/2/canvasScale,c=8;
+  const corners=`M0 ${c}V0H${c} M${width-c} 0H${width}V${c} M${width} ${height-c}V${height}H${width-c} M${c} ${height}H0V${height-c}`;
+  const [vx,vy,vw,vh]=view,screenX=(x-vx)*canvasScale,screenY=(y-vy)*canvasScale;
+  // Leave space for the editor's floating rail on the right.
+  const labelWidth=Math.min(300,Math.max(0,vw*canvasScale-88));
+  const labelX=Math.max(12,Math.min(screenX,vw*canvasScale-labelWidth-76))-screenX;
+  const labelY=Math.max(76,Math.min(screenY-44,vh*canvasScale-110))-screenY;
+  return <g className={`issue-marker ${focus.severity}`} transform={`translate(${x} ${y}) scale(${1/canvasScale})`}>
+    <g pointerEvents="none" aria-hidden="true" fill="none" stroke="currentColor">
+      <rect width={width} height={height} strokeWidth={1} strokeDasharray="3 5" opacity={.55}/>
+      <path d={corners} stroke="var(--surface-raised)" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round"/>
+      <path d={corners} strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round"/>
+    </g>
+    <foreignObject x={labelX-4} y={labelY-4} width={labelWidth+8} height={42} onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
+      <div style={{padding:4}}><AnnotationLabel title={title} severity={focus.severity} detail={detail} openLabel={`${title} · ${severityLabel} · ${t('Show issue details')}`} closeLabel={t('Close issue')} onOpen={onOpen} onClose={onClose}/></div>
+    </foreignObject>
+  </g>;
 });
 export const EndHandles=memo(function EndHandles({ends,canvasScale,onReset}:{ends:NonNullable<ReturnType<typeof routeEnds>>;canvasScale:number;onReset:(key:'entry'|'exit')=>void}){
   const {t}=useT();

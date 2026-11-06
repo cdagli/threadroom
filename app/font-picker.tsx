@@ -1,4 +1,5 @@
 'use client';
+import {Button,Input,Popover} from '@/design-system';
 import {useT} from './i18n';
 import {errorText,type Translator} from '@/lib/i18n';
 import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent} from 'react';
@@ -19,11 +20,11 @@ function usePreview(load:()=>Promise<string>,key:string) {
 function FontRow({font,selected,active,id,onPick}:{font:CatalogFont&{upload?:boolean};selected:boolean;active:boolean;id:string;onPick:()=>void}) {
   const {t}=useT();
   const family=usePreview(()=>font.upload?previewRef({source:'upload',id:font.id,family:font.family,weight:font.weights[0],italic:font.italic,subsets:[]}):previewFamily(font.id,font.subsets,font.weights.includes(400)?400:font.weights[0]),font.id);
-  return <button type="button" id={id} role="option" aria-selected={selected} className={`font-row${active?' active':''}`} tabIndex={-1} onMouseDown={e=>e.preventDefault()} onClick={onPick}>
+  return <Button variant="item" type="button" id={id} role="option" aria-selected={selected} className={`font-row${active?' active':''}`} tabIndex={-1} onMouseDown={e=>e.preventDefault()} onClick={onPick}>
     <span className="font-sample" style={family?{fontFamily:`'${family}'`}:undefined}>{font.family}</span>
     <small>{font.upload?t("Uploaded"):t(categoryNames[font.category])} · {t('weights.other',{count:font.weights.length})}{font.italic?t('italicSuffix'):''}</small>
     {selected&&<span className="stitch-check" aria-hidden="true">✓</span>}
-  </button>;
+  </Button>;
 }
 
 export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef)=>void}) {
@@ -69,14 +70,14 @@ export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef
   const height=Math.max(120,position.maxHeight-150),first=Math.max(0,Math.floor(scroll/ROW)-4),last=Math.min(shown.length,Math.ceil((scroll+height)/ROW)+4);
   return <div className="font-picker">
     <span className="stitch-label" id={`${id}-label`}>{t("Font")}</span>
-    <button ref={button} type="button" className="font-button" aria-haspopup="listbox" aria-expanded={open} aria-controls={id} aria-label={t("Font: {v0}",{v0:value.family})} popoverTarget={id} onClick={place}>
+    <Button variant="item" ref={button} type="button" className="font-button" aria-haspopup="listbox" aria-expanded={open} aria-controls={id} aria-label={t("Font: {v0}",{v0:value.family})} popoverTarget={id} onClick={place}>
       <span className="font-button-sample" style={current?{fontFamily:`'${current}'`}:undefined}>{value.family}</span>
       <span className="stitch-chevron" aria-hidden="true">⌄</span>
-    </button>
-    <div ref={menu} id={id} className="font-menu" popover="auto" role="dialog" aria-labelledby={`${id}-label`} style={position}
+    </Button>
+    <Popover ref={menu} id={id} className="font-menu" popover="auto" role="dialog" aria-labelledby={`${id}-label`} style={position}
       onToggle={e=>{const shown=e.currentTarget.matches(':popover-open');setOpen(shown);if(shown){setError('');requestAnimationFrame(()=>input.current?.focus());}}}>
-      <input ref={input} className="font-search" type="search" placeholder={t("Search {v0} fonts",{v0:fonts.length?formatNumber(fonts.length):''})} aria-label={t("Search fonts")} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-activedescendant={shown[active]?`${id}-${shown[active].id}`:undefined} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={keys}/>
-      <div className="font-filters" role="group" aria-label={t("Font category")}>{filters.filter(f=>f.id!=='mine'||uploads.length).map(f=><button key={f.id} type="button" aria-pressed={filter===f.id} onClick={()=>setFilter(f.id)}>{f.label}</button>)}</div>
+      <Input ref={input} className="font-search" type="search" placeholder={t("Search {v0} fonts",{v0:fonts.length?formatNumber(fonts.length):''})} aria-label={t("Search fonts")} role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-activedescendant={shown[active]?`${id}-${shown[active].id}`:undefined} value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={keys}/>
+      <div className="font-filters" role="group" aria-label={t("Font category")}>{filters.filter(f=>f.id!=='mine'||uploads.length).map(f=><Button variant="ghost" key={f.id} type="button" aria-pressed={filter===f.id} onClick={()=>setFilter(f.id)}>{f.label}</Button>)}</div>
       <div ref={list} id={`${id}-list`} className="font-list" role="listbox" aria-label={t("Fonts")} style={{height}} onScroll={e=>setScroll(e.currentTarget.scrollTop)}>
         <div style={{height:shown.length*ROW,position:'relative'}}>
           {shown.slice(first,last).map((font,i)=><div key={font.id} style={{position:'absolute',top:(first+i)*ROW,left:0,right:0,height:ROW}}>
@@ -86,9 +87,9 @@ export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef
         {!shown.length&&<p className="empty-list">{fonts.length||error?t("No matching fonts"):t("Loading fonts…")}</p>}
       </div>
       {error&&<p className="font-error" role="alert">{error}</p>}
-      <div className="font-footer"><span>{formatNumber(shown.length)} {t("fonts · Open licence")}</span><button type="button" className="text-button" onClick={()=>file.current?.click()}>{t("Upload font…")}</button>
-        <input ref={file} type="file" className="visually-hidden" tabIndex={-1} aria-label={t("Upload a font file")} accept=".ttf,.otf,.woff,.woff2" onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value='';}}/></div>
-    </div>
+      <div className="font-footer"><span>{formatNumber(shown.length)} {t("fonts · Open licence")}</span><Button variant="link" type="button" className="text-button" onClick={()=>file.current?.click()}>{t("Upload font…")}</Button>
+        <Input ref={file} type="file" className="visually-hidden" tabIndex={-1} aria-label={t("Upload a font file")} accept=".ttf,.otf,.woff,.woff2" onChange={e=>{const f=e.target.files?.[0];if(f)void upload(f);e.target.value='';}}/></div>
+    </Popover>
   </div>;
 }
 

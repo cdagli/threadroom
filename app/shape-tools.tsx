@@ -1,7 +1,6 @@
 'use client';
+import {Button,Hint,Input,Section} from '@/design-system';
 import {useEffect,useState,type ReactNode} from 'react';
-import {Section} from './settings-section';
-import {Hint} from './hint';
 import type {Key} from '@/lib/i18n';
 import {useT} from './i18n';
 import {shapeOptions,cutHoles,flattenOverlaps,combineShapes,offsetShapes,type ShapeResult} from '@/lib/shape-ops';
@@ -16,17 +15,17 @@ export function ShapeTools({project,selection,disabled,keep,onKeep,onResult,onMo
   const amount=Math.abs(mm);
   const group=(label:Key,hint:Key,body:ReactNode)=><div className="tool-group"><div className="tool-group-label">{t(label)}<Hint text={t(hint)}/></div>{body}</div>;
   return <fieldset disabled={disabled} className="tool-section selection-tools shape-tools"><Section id="shape-tools" title={t('Shape tools')} openSignal={focusOffset}>
-    {can.combine&&group('Combine shapes','hint.combineShapes',<div className="selection-actions">{(['union','subtract','intersect'] as const).map((op,i)=><button key={op} type="button" title={t((['Join the shapes into one; the first keeps its stitch settings','Remove the later shapes from the first one','Keep only the area where all shapes overlap'] as const)[i])} onClick={()=>onResult(()=>combineShapes(project,selection,op,t))}>{t((['Union','Subtract','Intersect'] as const)[i])}</button>)}</div>)}
+    {can.combine&&group('Combine shapes','hint.combineShapes',<div className="selection-actions">{(['union','subtract','intersect'] as const).map((op,i)=><Button variant="secondary" key={op} type="button" title={t((['Join the shapes into one; the first keeps its stitch settings','Remove the later shapes from the first one','Keep only the area where all shapes overlap'] as const)[i])} onClick={()=>onResult(()=>combineShapes(project,selection,op,t))}>{t((['Union','Subtract','Intersect'] as const)[i])}</Button>)}</div>)}
     {(can.cut||can.flatten)&&group('Overlaps','hint.overlaps',<><div className="selection-actions two">
-      <button type="button" disabled={!can.cut} title={t('Cut the other shapes out of the fill sewn first')} onClick={()=>onResult(()=>cutHoles(project,selection,keep,t))}>{t('Cut holes')}</button>
-      <button type="button" disabled={!can.flatten} title={t('Remove fill hidden under later fills, keeping a 0.4 mm overlap')} onClick={()=>onResult(()=>flattenOverlaps(project,selection,undefined,t))}>{t('Flatten overlaps')}</button>
-    </div>{can.cut&&<label className="check-label"><input type="checkbox" checked={keep} onChange={e=>onKeep(e.target.checked)}/>{t('Keep cutting shapes')}</label>}</>)}
-    {can.offset&&group('Offset outline','hint.offset',<><div className="shape-offset"><label aria-label={t('Offset · mm')}><input type="number" min=".05" max="20" step=".1" value={mm} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isFinite(n))setMm(n);}}/><span className="unit">mm</span></label>
-      <button type="button" title={t('Grow the outline by this distance with rounded corners')} onClick={()=>onResult(()=>offsetShapes(project,selection,amount,copy,t))}>{t('Grow')}</button><button type="button" title={t('Shrink the outline by this distance')} onClick={()=>onResult(()=>offsetShapes(project,selection,-amount,copy,t))}>{t('Shrink')}</button></div>
-      <label className="check-label"><input type="checkbox" checked={copy} onChange={e=>setCopy(e.target.checked)}/>{t('Add as a new object')}</label></>)}
+      <Button variant="secondary" type="button" disabled={!can.cut} title={t('Cut the other shapes out of the fill sewn first')} onClick={()=>onResult(()=>cutHoles(project,selection,keep,t))}>{t('Cut holes')}</Button>
+      <Button variant="secondary" type="button" disabled={!can.flatten} title={t('Remove fill hidden under later fills, keeping a 0.4 mm overlap')} onClick={()=>onResult(()=>flattenOverlaps(project,selection,undefined,t))}>{t('Flatten overlaps')}</Button>
+    </div>{can.cut&&<label className="check-label"><Input type="checkbox" checked={keep} onChange={e=>onKeep(e.target.checked)}/>{t('Keep cutting shapes')}</label>}</>)}
+    {can.offset&&group('Offset outline','hint.offset',<><div className="shape-offset"><label aria-label={t('Offset · mm')}><Input type="number" min=".05" max="20" step=".1" value={mm} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isFinite(n))setMm(n);}}/><span className="unit">mm</span></label>
+      <Button variant="secondary" type="button" title={t('Grow the outline by this distance with rounded corners')} onClick={()=>onResult(()=>offsetShapes(project,selection,amount,copy,t))}>{t('Grow')}</Button><Button variant="secondary" type="button" title={t('Shrink the outline by this distance')} onClick={()=>onResult(()=>offsetShapes(project,selection,-amount,copy,t))}>{t('Shrink')}</Button></div>
+      <label className="check-label"><Input type="checkbox" checked={copy} onChange={e=>setCopy(e.target.checked)}/>{t('Add as a new object')}</label></>)}
     {group('Draw on the shape','hint.drawOnShape',<div className="selection-actions two">
-      <button type="button" disabled={!(single&&can.fills===1)} title={t('Draw closed shapes inside the selected fill to punch holes (O)')} onClick={()=>onMode('holes')}>{t('Draw holes')}</button>
-      <button type="button" disabled={!can.knife} title={t('Split shapes along a straight line (K)')} onClick={()=>onMode('knife')}>{t('Knife')}</button>
+      <Button variant="secondary" type="button" disabled={!(single&&can.fills===1)} title={t('Draw closed shapes inside the selected fill to punch holes (O)')} onClick={()=>onMode('holes')}>{t('Draw holes')}</Button>
+      <Button variant="secondary" type="button" disabled={!can.knife} title={t('Split shapes along a straight line (K)')} onClick={()=>onMode('knife')}>{t('Knife')}</Button>
     </div>)}
   </Section></fieldset>;
 }

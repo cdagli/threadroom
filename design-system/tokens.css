@@ -1,0 +1,81 @@
+@layer tokens, app, components;
+@layer tokens {
+/* Shared UI and canvas colours. Artwork/thread dyes are document data. */
+
+:root{
+  --bg-workspace:#E6E3DD;
+  --surface:#FFFFFF;
+  --surface-raised:#FFFFFF;
+  --surface-sunken:#F7F6F3;
+  --surface-pressed:#E9E6DF;
+  --surface-hover:#F2F0EB;
+  --border:#E7E4DE;
+  --border-control:#86827A;
+  --border-strong:#D9D5CD;
+  --text:#1E2226;
+  --text-placeholder:#8A8F96;
+  --text-disabled:#8A8F96;
+  --text-muted:#5A6068;
+  --icon:#454B53;
+  --accent:#2F6B63;
+  --accent-hover:#275B54;
+  --accent-strong:#1F4A44;
+  --accent-contrast:#FFFFFF;
+  --accent-soft:#E2EFEC;
+  --selected:#E2EFEC;
+  --focus:#2F6B63;
+  --danger:#B42318;
+  --danger-soft:#FDECEA;
+  --warning:#8A5100;
+  --warning-icon:#B07300;
+  --warning-soft:#FFF3D6;
+  --success:#1F6B3B;
+  --success-soft:#E5F3E9;
+  --shadow-overlay:0 1px 2px rgba(28,25,20,.06),0 8px 24px rgba(28,25,20,.10);
+  /* Viridis: ordered luminance, readable without red/green discrimination. */
+  --density-0:#440154;
+  --density-1:#3B528B;
+  --density-2:#21918C;
+  --density-3:#5EC962;
+  --density-4:#FDE725;
+  --travel-jump:#2563C9;
+  --travel-line:#C2570C;
+  --measure-line:#1F4A44;
+  --centre-cross:#B9AE9C;
+  --fabric:#FBF8F1;
+  --fabric-weave:#c8bba4;
+  --grid:#E8E1D3;
+  --hoop-rim:#D2B48C;
+  --hoop-border:#9B7B52;
+  --hoop-shadow:#6e5f4640;
+  --node-smooth:#21C55F;
+  --node-corner:#5979F7;
+  --node-selected:#FFFF00;
+  --node-outline:#000000;
+  --draft-node:#4868D8;
+  --draft-cursor:#D93636;
+  --draft-fill:#2F6B6333;
+  --needle-fill:#FFFFFF66;
+  --panel:300px;--rail:52px;--gap:12px;
+  --settings-width:336px;--canvas-top-height:44px;--canvas-dock-height:54px;--canvas-ruler-size:20px;
+}
+
+:root {
+  --control-radius:6px;
+  --control-height-sm:28px;
+  --control-height-md:32px;
+  --control-height-lg:40px;
+  --control-height-xl:44px;
+  --control-font-sm:11px;
+  --control-font-md:12px;
+  --control-gap:6px;
+  --control-padding:10px;
+  --control-disabled-opacity:.45;
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --surface-radius:10px;
+}
+
+}

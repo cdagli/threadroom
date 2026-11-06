@@ -1,8 +1,14 @@
 # Threadroom POC
 
 A beginner-oriented embroidery editor built with **Next.js 16, React 19,
-Astryx, and a headless Python + Pystitch exporter**. Supports the Brother PR1X.
+the local design system, and a headless Python + Pystitch exporter**. Supports the Brother PR1X.
 The existing `../pes-viewer` and original bear files are unchanged.
+
+## UI components
+
+Reusable controls live in [`design-system/`](design-system/README.md). Import from
+`@/design-system`; keep editor panels and canvas behavior in `app/`. The shared
+components own button sizes, variants, fields, surfaces, icons, and interaction states.
 
 ## Language
 
@@ -749,6 +755,14 @@ pattern the machine could embroider from a PES file. References:
 [Brother PR1X](https://www.brother-usa.com/p/embroidery/PR1X) and the
 [Ink/Stitch stitch library](https://inkstitch.org/docs/stitch-library/).
 
+## AI agent tools (WebMCP)
+
+The editor registers WebMCP tools on `document.modelContext` (Chrome 149+, or `chrome://flags/#enable-webmcp-testing`
+for local development). A browser agent can read the design, read and explain check issues, digitise artwork,
+edit shapes point by point (`get_points`, `edit_points`), apply fixes and export, through the same actions
+and undo history as the UI. Results are always in English, and arguments are validated against each tool's schema. See
+[docs/webmcp.md](docs/webmcp.md) for the tool list and example flows.
+
 ## Run locally
 
 Use Node 22 or 24 and Python 3.12+ (Vercel is pinned to 3.12).
@@ -1047,6 +1061,5 @@ PES bytes (base64) and decoded stitch commands. Nothing is written to persistent
 server storage. The frontend stores projects on the user's own device.
 
 References: [Vercel Python Functions](https://vercel.com/docs/functions/runtimes/python/api-directory),
-[Astryx setup](https://astryx.atmeta.com/docs/getting-started),
 [Pystitch](https://github.com/inkstitch/pystitch),
 [Brother PR1X](https://www.brother-usa.com/p/sewing-embroidery/PR1X).

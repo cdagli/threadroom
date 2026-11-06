@@ -1,4 +1,5 @@
 'use client';
+import {Toolbar} from '@/design-system';
 import {useLayoutEffect,useRef,useState,type ReactNode,type RefObject} from 'react';
 import {worldToClient,type Viewport} from '@/lib/viewport';
 import type {Rect} from '@/lib/editing';
@@ -45,5 +46,5 @@ export function SelectionAnchor({box,view,hoop,canvas,container,rail,topClearanc
     const [x,y]=worldToClient(view,[box.x,box.y],rect,hoop),[right,bottom]=worldToClient(view,[box.x+box.width,box.y+box.height],rect,hoop);
     return {x,y,width:right-x,height:bottom-y};
   }});
-  return <div {...anchor} className={`selection-bar ${className}`} role="toolbar" aria-label={label}>{children}</div>;
+  return <Toolbar {...anchor} className={`selection-bar ${className}`} role="toolbar" aria-label={label}>{children}</Toolbar>;
 }
