@@ -360,7 +360,8 @@ function StudioEditor() {
   function invalidate(){revision.current++;traceTask.cancel();svgTask.cancel();hoverTask.cancel();clickTask.cancel();lastStitch.current=null;setStitchHover(null);compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
   function layoutObject(o:StitchObject):StitchObject{
     if(!o.text)return o;if(o.text.satin)return {...o,kind:'satin-block',rings:layoutSatinText(o.text).rings};
-    const fonts=loadedFonts(o.text.font);if(!fonts.length)return o;
+    // A restored project has no fonts loaded yet: fetch them and relay out once ready instead of keeping stale outlines.
+    const fonts=loadedFonts(o.text.font);if(!fonts.length){loadTextFonts(o.id,o.text);return o;}
     return {...o,rings:layoutText(o.text,fonts,!isFillKind(o.kind)).rings};
   }
   function relayout(id:string){
