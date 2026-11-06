@@ -1,5 +1,6 @@
 'use client';
 import {useT} from './i18n';
+import {Hint} from './hint';
 import type {StitchObject} from '@/lib/project';
 import {crossingGuides,guideLimits,guideMode} from '@/lib/angle-guides';
 export type AngleEditing={active:boolean;onToggle:()=>void};
@@ -7,7 +8,7 @@ export type AngleEditing={active:boolean;onToggle:()=>void};
 export function GuideControls({item,angles,onChange}:{item:StitchObject;angles?:AngleEditing;onChange:(patch:Partial<StitchObject>)=>void}){
   const {t}=useT(),mode=guideMode(item),guides=item.angleGuides??[];
   if(!mode||!angles)return null;
-  return <div className="guide-controls" style={{display:"grid",gap:6}}><button type="button" className="edit-points-button" aria-pressed={angles.active} title={t(mode==='flow'?'Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.':'Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red.')} onClick={angles.onToggle}>{angles.active?t('Done editing'):t(mode==='flow'?'Edit flow field':'Edit angles')}<kbd>A</kbd></button>
+  return <div className="guide-controls" style={{display:"grid",gap:8}}><div className="guide-action"><button type="button" className="edit-points-button" aria-pressed={angles.active} title={t(mode==='flow'?'Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.':'Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red.')} onClick={angles.onToggle}>{angles.active?t('Done editing'):t(mode==='flow'?'Edit flow field':'Edit angles')}<kbd>A</kbd></button><Hint text={t("hint.angleGuides")}/></div>
     {guides.length>0&&<div className="field-heading"><span className="field-value inherited">{t(mode==='flow'?'Flow guides · {v0}':'Angle guides · {v0}',{v0:guides.length})}</span><button type="button" className="field-value reset" onClick={()=>onChange({angleGuides:undefined})}>{t('Clear guides')}</button></div>}
     {mode==='angles'&&crossingGuides(guides).some(Boolean)&&<p className="fabric-advice" role="status">{t('Crossing guides are ignored: the first guide sets the angle.')}</p>}
   </div>;
@@ -20,8 +21,8 @@ export function lockedAngle(item:StitchObject,t:ReturnType<typeof useT>['t']):st
 // Ember's fill Density Control: shown only while two or more guides sweep the rows.
 export function DensityControl({item,onChange}:{item:StitchObject;onChange:(patch:Partial<StitchObject>)=>void}){
   const {t,formatNumber}=useT(),on=item.rowShortening??true,trigger=item.densityTrigger??guideLimits.defaultTrigger,[lo,hi]=guideLimits.trigger;
-  return <details className="fill-section" open><summary>{t('Density control')}</summary><p className="fabric-advice">{t('Where rows converge closer than the trigger × row space, alternate rows stop short so the inside of a bend is not overfilled.')}</p>
+  return <div className="density-controls"><div className="field-heading density-heading">{t('Density control')}<Hint text={t("hint.densityControl")}/></div><p className="fabric-advice">{t('Where rows converge closer than the trigger × row space, alternate rows stop short so the inside of a bend is not overfilled.')}</p>
     <label className="check-label"><input type="checkbox" checked={on} onChange={e=>onChange({rowShortening:e.target.checked?undefined:false})}/>{t('Row shortening')}</label>
     <label><span className="field-heading">{t('Density trigger')} · {formatNumber(trigger,2)}{item.densityTrigger!==undefined?<button type="button" className="field-value reset" onClick={()=>onChange({densityTrigger:undefined})}>{t('Reset')}</button>:<span className="field-value inherited">{t('Default')}</span>}</span><input type="range" min={lo} max={hi} step=".01" disabled={!on} value={trigger} aria-label={t('Density trigger')} onChange={e=>{const n=Number(e.target.value);if(n>=lo&&n<=hi)onChange({densityTrigger:n});}}/></label>
-  </details>;
+  </div>;
 }

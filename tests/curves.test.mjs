@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {load} from './load-lib.mjs';
 const {curvePoints,moveGeometry,simplifyPath,geometryPayload,samplePath,closestInsertion,insertionHandles,insertGeometryPoint,removeGeometryPoint}=load('curves');
-const {zoomViewport,panViewport,clientToWorld,viewportScale}=load('viewport');
+const {fitViewport,keepViewportOnResize,worldToClient,zoomViewport,panViewport,clientToWorld,viewportScale}=load('viewport');
 const {object,validProject}=load('project');
 const anchors=[[20,40],[35,20],[55,30],[65,50]];
 const near=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1])<1e-8;
@@ -245,5 +245,69 @@ test('Levien curves retain their model through edits, validation, compiler paylo
     assert.deepEqual(geometryPayload({...project,objects:[stale]}).objects[0].rings,changed.rings);
     assert.equal(exportSVG({...project,objects:[stale]}),exportSVG({...project,objects:[changed]}));
     const handle=insertionHandles(changed)[0];assert.ok(closestInsertion(changed,handle.point).distance<1e-8);
+  }
+});
+
+test('Fit keeps the hoop rim within fixed chrome reservations, including asymmetric padding and letterboxing',()=>{
+  for(const rect of [{left:0,top:0,width:1140,height:900},{left:25,top:20,width:724,height:620},{left:0,top:0,width:1600,height:700}]){
+    for(const hoop of [{width:100,height:100},{width:180,height:130},{width:130,height:180}]){
+      for(const insets of [{top:72,right:64,bottom:88,left:12},{top:112,right:64,bottom:156,left:32},{top:112,right:64,bottom:88,left:360}]){
+        const view=fitViewport(rect,hoop,insets),topLeft=worldToClient(view,[-3,-3],rect,hoop),bottomRight=worldToClient(view,[hoop.width+3,hoop.height+3],rect,hoop);
+        assert.ok(topLeft[0]>=rect.left+insets.left-1e-8);
+        assert.ok(topLeft[1]>=rect.top+insets.top-1e-8);
+        assert.ok(bottomRight[0]<=rect.left+rect.width-insets.right+1e-8);
+        assert.ok(bottomRight[1]<=rect.top+rect.height-insets.bottom+1e-8);
+        assert.ok(near(clientToWorld(view,topLeft,rect,hoop),[-3,-3]));
+        const center=worldToClient(view,[hoop.width/2,hoop.height/2],rect,hoop);
+        assert.ok(near(center,[rect.left+(rect.width+insets.left-insets.right)/2,rect.top+(rect.height+insets.top-insets.bottom)/2]));
+      }
+    }
+  }
+});
+
+
+test('Canvas resizes preserve zoom, pixel scale and every hoop point across aspect ratios',()=>{
+  const insets={top:88,right:0,bottom:78,left:380};
+  for(const hoop of [{width:100,height:100},{width:180,height:130},{width:130,height:180}]){
+    const original={left:23,top:41,width:1100,height:800};
+    for(const view of [{zoom:1.7,pan:[14,-6]},fitViewport(original,hoop,insets)]){
+      const source=structuredClone(view),points=[[0,0],[hoop.width,hoop.height],[hoop.width/2,hoop.height/2],[-3,-3]];
+      let before=original,next=view;
+      // Panel close/open, then window resizes that swap the limiting dimension.
+      for(const size of [{width:1400,height:800},{width:1100,height:800},{width:550,height:1000},{width:1600,height:450},original]){
+        const rect={...original,...size};
+        next=keepViewportOnResize(next,before,rect,hoop);
+        assert.equal(next.zoom,view.zoom);
+        assert.ok(Math.abs(viewportScale(next,rect,hoop)-viewportScale(view,original,hoop))<1e-8);
+        for(const point of points){
+          const client=worldToClient(view,point,original,hoop);
+          assert.ok(near(worldToClient(next,point,rect,hoop),client));
+          assert.ok(near(clientToWorld(next,client,rect,hoop),point));
+        }
+        before=rect;
+      }
+      assert.ok(near(next.pan,view.pan));
+      assert.deepEqual(view,source,'resize must not mutate its input');
+    }
+  }
+});
+
+test('Zoom anchors and pixel pan distances stay correct after a canvas resize',()=>{
+  const hoop={width:180,height:130},oldSize={left:20,top:40,width:1200,height:700},rect={...oldSize,width:650,height:900};
+  const resized=keepViewportOnResize(fitViewport(oldSize,hoop,{top:88,right:0,bottom:78,left:380}),oldSize,rect,hoop);
+  const client=[411,345],anchor=clientToWorld(resized,client,rect,hoop),zoomed=zoomViewport(resized,anchor,resized.zoom*1.2,hoop);
+  assert.equal(zoomed.baseScale,resized.baseScale);
+  assert.ok(near(worldToClient(zoomed,anchor,rect,hoop),client));
+  const delta=[100,-40],panned=panViewport(zoomed,delta,viewportScale(zoomed,rect,hoop));
+  assert.ok(near(worldToClient(panned,anchor,rect,hoop),[client[0]+delta[0],client[1]+delta[1]]));
+  const size={...rect,width:1300,height:500},again=keepViewportOnResize(panned,rect,size,hoop);
+  assert.ok(near(worldToClient(again,anchor,size,hoop),worldToClient(panned,anchor,rect,hoop)));
+});
+
+test('Hidden or zero-sized canvases do not corrupt the viewport during resize',()=>{
+  const hoop={width:100,height:100},view={zoom:2,pan:[3,-4]},size={width:900,height:700};
+  for(const empty of [{width:0,height:700},{width:900,height:0}]){
+    assert.equal(keepViewportOnResize(view,size,empty,hoop),view);
+    assert.equal(keepViewportOnResize(view,empty,size,hoop),view);
   }
 });

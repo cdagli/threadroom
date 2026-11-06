@@ -12,7 +12,7 @@ type Props={project:Project;compiled:Compiled|null;selection:string[];disabled:b
 function Eye({hidden}:{hidden:boolean}){return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7m10 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/>{hidden&&<path d="m3 3 18 18"/>}</svg>;}
 function Padlock({locked}:{locked:boolean}){return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d={`M6 11h12v10H6V11m2 0V8a4 4 0 0 1 ${locked?'8 0v3':'7.7-1.5'}`}/></svg>;}
 export default function LayersPanel({project,compiled,selection,disabled,imported,onSelect,onSelection,onRename,onHide,onLock,onMove,onPlace,onPosition,children}:Props){
-  const {t,formatNumber}=useT();
+  const {t}=useT();
   // Objects view: one row per object; Colours view: one row per run of consecutive same-thread objects.
   const [view,setView]=useState<'objects'|'colours'>('objects'),[positioning,setPositioning]=useState<{id:string;value:string}|null>(null),position=useRef(positioning);position.current=positioning;
   useEffect(()=>{try{if(localStorage.getItem('threadroom-layers-view')==='colours')setView('colours');}catch{/* Storage is optional. */}},[]);
@@ -73,7 +73,7 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
   return <section className="panel-section objects-section">
     <div className="layers-view" role="radiogroup" aria-label={t('Layers view')}>{(['objects','colours'] as const).map(v=><button key={v} type="button" role="radio" aria-checked={view===v} onClick={()=>chooseView(v)}>{t(v==='objects'?'Objects':'Colours')}</button>)}</div>
     <div ref={list} className={`object-list ${line!==null?'reordering':''}`} aria-label={t("Layers")} onPointerMove={move} onPointerUp={e=>up(e)} onPointerCancel={e=>up(e,true)} onLostPointerCapture={e=>{if(drag.current)up(e,true);}}>
-      {view==='colours'?runs.map(run=><ColourRunRow key={run.key} run={run} selected={run.ids.every(id=>selection.includes(id))} disabled={disabled} label={formatNumber(run.index+1).padStart(2,'0')+(run.end-run.index>1?`–${formatNumber(run.end).padStart(2,'0')}`:'')} onDown={runDown} onClick={runClick}/>):rows.map(row=>{
+      {view==='colours'?runs.map(run=><ColourRunRow key={run.key} run={run} selected={run.ids.every(id=>selection.includes(id))} disabled={disabled} onDown={runDown} onClick={runClick}/>):rows.map(row=>{
         if(row.type==='group'){
           const hidden=row.ids.every(id=>project.objects.find(o=>o.id===id)?.hidden),locked=row.ids.every(id=>project.objects.find(o=>o.id===id)?.locked),selected=row.ids.every(id=>selection.includes(id));
           return <LayerGroupRow key={row.key} group={row.group!} name={row.name} count={row.ids.length} collapsed={!!row.collapsed} hidden={hidden} locked={locked} selected={selected} disabled={disabled} renameInput={renaming?.group&&renaming.id===row.group?nameInput():null} onDown={groupDown} onClick={groupClick} onSelect={selectGroup} onCollapse={collapseGroup} onRename={renameGroup} onHide={hideGroup} onLock={lockGroup}/>;
@@ -91,9 +91,9 @@ const LayerPreview=memo(function LayerPreview({o}:{o:StitchObject}){
   return <svg className="layer-preview" width="32" height="32" viewBox={`${b.x-pad} ${b.y-pad} ${Math.max(b.width,1)+2*pad} ${Math.max(b.height,1)+2*pad}`} aria-hidden="true"><path d={geometry.path} fill={isFillKind(o.kind)?o.color:'none'} fillRule={o.text||o.fillRule==='nonzero'?'nonzero':'evenodd'} stroke={isFillKind(o.kind)?'none':o.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinecap="round"/></svg>;
 });
 const LayerObjectRow=memo(function LayerObjectRow({o,i,selected,grouped,disabled,renameInput,positionInput,onPosition,onDown,onClick,onSelect,onHide,onLock,onRename}:{o:StitchObject;i:number;selected:boolean;grouped:boolean;disabled:boolean;renameInput:ReactNode;positionInput:ReactNode;onPosition:(id:string)=>void;onDown:(id:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:Props['onSelect'];onSelect:Props['onSelect'];onHide:Props['onHide'];onLock:Props['onLock'];onRename:(o:StitchObject)=>void}){
-  const {t,formatNumber}=useT();
+  const {t}=useT();
   return <div data-layer={`object:${o.id}`} className={`object-row ${selected?'selected':''} ${o.hidden?'hidden-object':''} ${o.locked?'locked-object':''} ${grouped?'group-member':''}`} role="button" tabIndex={disabled?-1:0} aria-label={o.name} aria-pressed={selected} aria-disabled={disabled} onPointerDown={e=>onDown(o.id,e)} onClick={e=>{onClick(o.id,e);}} onKeyDown={e=>{if(e.target!==e.currentTarget)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();if(!disabled)onSelect(o.id,e);}}}>
-        {positionInput??<button type="button" className="order" disabled={disabled} aria-label={t('Sew order {v0}: change position',{v0:i+1})} title={t('Click to type a new sew position')} onClick={e=>{e.stopPropagation();onPosition(o.id);}}>{formatNumber(i+1).padStart(2,'0')}</button>}<LayerPreview o={o}/>
+        <LayerPreview o={o}/>{positionInput??<button type="button" className="layer-thread-dot" style={{background:o.color}} disabled={disabled} aria-label={t('Sew order {v0}: change position',{v0:i+1})} title={t('Click to type a new sew position')} onClick={e=>{e.stopPropagation();onPosition(o.id);}}/>}
         <span className="layer-name">{renameInput?renameInput:<strong title={o.name} onDoubleClick={e=>{e.stopPropagation();if(!disabled)onRename(o);}}>{o.name}</strong>}<small>{o.text?t("Text · {v0} · {v1}",{v0:o.text.satin?satinFonts[o.text.satin.font].name:o.text.font.family,v1:t(kindNames[o.kind])}):t(kindNames[o.kind])}</small></span>
         <button className="icon-button layer-lock" disabled={disabled} aria-label={t(o.locked?'unlockNamed':'lockNamed',{name:o.name})} aria-pressed={!!o.locked} title={o.locked?t('Unlock object'):t('Lock object (Ctrl / ⌘ L)')} onClick={e=>{e.stopPropagation();onLock([o.id]);}}><Padlock locked={!!o.locked}/></button>
         <button className="icon-button layer-eye" disabled={disabled} aria-label={t(o.hidden?'showNamed':'hideNamed',{name:o.name})} aria-pressed={!o.hidden} title={o.hidden?t("Show object"):t("Hide object (still exported)")} onClick={e=>{e.stopPropagation();onHide([o.id]);}}><Eye hidden={!!o.hidden}/></button>
@@ -110,12 +110,12 @@ const LayerGroupRow=memo(function LayerGroupRow({group,name,count,collapsed,hidd
           </div>;
 });
 
-const ColourRunRow=memo(function ColourRunRow({run,selected,disabled,label,onDown,onClick}:{run:ColourRun;selected:boolean;disabled:boolean;label:string;onDown:(key:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:(key:string)=>void}){
+const ColourRunRow=memo(function ColourRunRow({run,selected,disabled,onDown,onClick}:{run:ColourRun;selected:boolean;disabled:boolean;onDown:(key:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:(key:string)=>void}){
   const {t}=useT(),b=run.thread&&brotherThreads.find(b=>b.code===run.thread!.code);
   const name=b?t('Brother {code} {name}',{code:b.code,name:t(`thread.${b.name}`)}):t('Custom thread · {color}',{color:run.color.toUpperCase()});
   const detail=[t('objects.other',{count:run.ids.length}),...(run.stitches!==null?[t('stitchCount.other',{count:run.stitches})]:[])].join(' · ');
   return <div data-layer={run.key} className={`object-row colour-run ${selected?'selected':''}`} role="button" tabIndex={disabled?-1:0} aria-label={`${name}, ${detail}`} aria-pressed={selected} aria-disabled={disabled} title={t('Drag to move these objects together in sew order')} onPointerDown={e=>onDown(run.key,e)} onClick={()=>onClick(run.key)} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onClick(run.key);}}}>
-    <span className="order run-order">{label}</span><span className="thread-swatch run-swatch" style={{background:run.color}}/>
+    <span className="thread-swatch run-swatch" style={{background:run.color}}/>
     <span className="layer-name"><strong title={name}>{name}</strong><small>{detail}</small></span>
   </div>;
 });

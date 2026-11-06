@@ -768,8 +768,8 @@ during development. Set `THREADROOM_API_PORT` to request a particular port, or
 `THREADROOM_PYTHON` if your Python executable is elsewhere. If Python fails,
 the launcher stops the web server instead of leaving a disconnected editor.
 Neither process should be exposed publicly as a development server.
-Restart `npm run dev` after changing Python files; the Python process does not
-hot-reload its imported compiler.
+The launcher restarts Python when backend Python files or JSON pattern tables
+change, clearing imported code and cached stitch plans while keeping the API port.
 
 ## Deploy to Vercel
 

@@ -88,5 +88,19 @@ test('Fill settings: Edit angles button, locked angle and Density control only w
     assert.ok(sweep.includes(t('Density control')));assert.ok(sweep.includes(t('Row shortening')));assert.ok(!sweep.includes(t('Gradient mode'))&&!sweep.includes(`>${t('Gradient')}<`));
     assert.ok(sweep.includes(t('More than one stitch angle. Change them with Edit angles.')));
     assert.ok(render({fillPattern:'streamlines'}).includes(t('Edit flow field')));assert.ok(!render({fillPattern:'circular'}).includes(t('Edit angles')));
+    // Core controls sit in the open Stitch settings section; every other section starts collapsed, including during SSR.
+    for(const html of [plain,one,sweep,render({fillPattern:'sweepSatin'})]){
+      const details=[...html.matchAll(/<details\b([^>]*)>/g)],isOpen=attrs=>/\bopen(?:[=\s]|$)/.test(attrs);assert.ok(details.length>1);
+      assert.ok(details[0][1].includes('data-section="stitch-settings"')&&isOpen(details[0][1]));
+      assert.ok(details.slice(1).every(([,attrs])=>!isOpen(attrs)));
+      assert.ok(html.indexOf(t('Fill pattern'))<html.indexOf('<details',html.indexOf('<details')+1));
+    }
+    assert.ok(plain.includes('data-section="density-texture"'));assert.ok(plain.includes('data-section="underlays"'));
+    const ramp=render({gradient:{mode:'ramp',start:0,end:1,endSpacing:2}}),plateau=render({gradient:{mode:'plateau',center:.5,width:.2,endSpacing:2}});
+    const hint=key=>renderToStaticMarkup(React.createElement('span',{'aria-label':t(`hint.${key}`)})).match(/aria-label="[^"]*"/)[0];
+    for(const key of ['fillPattern','stitchAngle','rowSpace','stitchLength','pullCompensation','handStitch','gradient','underlays','edgeWalk','underlayAngle','underlaySpacing','underlayLength','underlayInset'])assert.ok(plain.includes(hint(key)),key);
+    for(const key of ['gradientMode','gradientStart','gradientEnd','gradientEndSpacing'])assert.ok(ramp.includes(hint(key)),key);
+    for(const key of ['gradientCenter','gradientWidth'])assert.ok(plateau.includes(hint(key)),key);
+    assert.ok(sweep.includes(hint('densityControl')));
   }
 });

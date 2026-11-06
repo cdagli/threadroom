@@ -6,6 +6,7 @@ const localAPI = process.env.THREADROOM_LOCAL_API
 const config: NextConfig = {
   output: localAPI ? undefined : 'export',
   distDir: localAPI ? '.next' : '.next-build',
+  devIndicators: { position: 'bottom-right' },
   images: { unoptimized: true },
   trailingSlash: false,
   allowedDevOrigins: ['127.0.0.1'],

@@ -1,5 +1,6 @@
 'use client';
 import {useT} from './i18n';
+import {Section} from './settings-section';
 import dynamic from 'next/dynamic';
 import {Loading} from './panel-loading';
 import {errorText,type Translator} from '@/lib/i18n';
@@ -45,7 +46,7 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
   },[spec.font.id,spec.font.source,spec.satin]);
   const multiline=spec.content.includes('\n'),number=(n:string,[min,max]:readonly [number,number])=>{const v=Number(n);return Number.isFinite(v)&&v>=min&&v<=max?v:null;};
   return <section className="panel-section text-panel" aria-label={t("Text")}>
-    <div className="settings-heading"><h2>{t("Text")}</h2>{loading&&<span className="text-status" role="status">{t("Loading font…")}</span>}</div>
+    <Section id="text" title={t("Text")} defaultOpen summaryExtra={loading?<span className="text-status" role="status">{t("Loading font…")}</span>:undefined}>
     <textarea ref={textArea} className="text-input" aria-label={t("Text")} rows={2} maxLength={textLimits.content} value={spec.content} spellCheck={false}
       style={family?{fontFamily:`'${family}'`,fontWeight:spec.font.weight,fontStyle:spec.font.italic?'italic':'normal'}:undefined}
       onChange={e=>onChange({content:e.target.value},'content')}/>
@@ -67,7 +68,9 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       <div className="segmented" role="group" aria-label={t("Alignment")}>{aligns.map(a=><button key={a.id} type="button" aria-label={a.label} title={a.label} aria-pressed={spec.align===a.id} onClick={()=>onChange({align:a.id})}><Glyph d={a.icon}/></button>)}</div>
       {multiline&&<label className="inline-number">{t("Lines")}<input type="number" aria-label={t("Line spacing")} min={textLimits.lineHeight[0]} max={textLimits.lineHeight[1]} step=".1" value={spec.lineHeight} onChange={e=>{const n=number(e.target.value,textLimits.lineHeight);if(n!==null)onChange({lineHeight:n},'lineHeight');}}/></label>}
     </div>
-    <span className="stitch-label">{t("Shape")}</span>
+    <button type="button" className="text-button convert-text" onClick={onConvert}>{t("Convert to shapes")}</button>
+    </Section>
+    <Section id="text-shape" title={t("Text shape")} forceOpen={spec.layout==='path'&&!spec.path} summaryExtra={shapes.find(s=>s.id===spec.layout)?.label}>
     <div className="segmented shape-switch" role="group" aria-label={t("Text shape")}>{shapes.map(s=><button key={s.id} type="button" aria-pressed={spec.layout===s.id} onClick={()=>{if(s.id==='path'&&!spec.path){onChange({layout:'path'});return;}onChange({layout:s.id});}}><Glyph d={s.icon}/><span>{s.label}</span></button>)}</div>
     {spec.layout==='arc'&&<Range label={spec.bend>=0?t("Arch up"):t("Arch down")} value={spec.bend} min={-100} max={100} format={n=>Math.abs(n)===100?t("Circle"):`${formatNumber(Math.abs(n))}%`} onChange={bend=>onChange({bend},'bend')}/>}
     {spec.layout==='wave'&&<div className="setting-grid">
@@ -87,15 +90,15 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       </>}
     </div>}
     {spec.layout!=='path'&&<Range label={t("Rotation")} value={Math.round(spec.rotation)} min={-180} max={180} format={n=>`${formatNumber(n)}°`} onChange={rotation=>onChange({rotation},'rotation')}/>}
-    {fill&&!spec.satin&&<div className="border-options">
+    </Section>
+    {fill&&!spec.satin&&<Section id="text-border" title={t("Border")} summaryExtra={spec.border?undefined:t("None")}><div className="border-options">
       <label>{t("Border")}<select value={spec.border?.kind||'none'} onChange={e=>onChange({border:e.target.value==='none'?undefined:{thread:spec.border?.thread,color:spec.border?.color||'#664538',width:spec.border?.width||1,kind:e.target.value as NonNullable<TextSpec['border']>['kind']}})}><option value="none">{t("None")}</option><option value="running">{t("Running outline")}</option><option value="bean">{t("Bean outline")}</option><option value="satin">{t("Satin border")}</option></select></label>
       {spec.border&&<div className="setting-grid">
         <label>{t("Colour")}<div className="colour-picker"><input type="color" aria-label={t("Border colour")} value={spec.border.color} onChange={e=>onChange({border:{...spec.border!,color:e.target.value,thread:undefined}},'borderColor')}/><span>{spec.border.color.toUpperCase()}</span></div></label>
         {spec.border.kind==='satin'&&<label>{t("Width · mm")}<input type="number" min={textLimits.borderWidth[0]} max={textLimits.borderWidth[1]} step=".1" value={spec.border.width} onChange={e=>{const n=number(e.target.value,textLimits.borderWidth);if(n!==null)onChange({border:{...spec.border!,width:n}},'borderWidth');}}/></label>}
       </div>}
-    </div>}
+    </div></Section>}
     {missing.length>0&&<p className="text-warning" role="status">{t("Not in this font:")} {missing.slice(0,12).join(' ')}</p>}
     {fill&&!spec.satin&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
-    <button type="button" className="text-button convert-text" onClick={onConvert}>{t("Convert to shapes")}</button>
   </section>;
 }

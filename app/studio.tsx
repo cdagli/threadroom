@@ -1,5 +1,6 @@
 'use client';
 import dynamic from 'next/dynamic';
+import {flushSync} from 'react-dom';
 import {Loading} from './panel-loading';
 import {StitchOverlays,OverlayControls} from './stitch-overlays';
 import {measurePoint} from '@/lib/measure';
@@ -12,16 +13,20 @@ import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selecti
 import {defaultView,formatLength,playbackRate,playbackSpeeds,readViewSettings,type ViewSettings} from '@/lib/view-settings';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
 import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
-import {Fragment, Profiler, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
+import {Section} from './settings-section';
+import {Hint,ToolHint} from './hint';
+import {Fragment, Profiler, useEffect, useLayoutEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 import {Button} from '@astryxdesign/core/Button';
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
 import {bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
-import {clientToWorld, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
+import {clientToWorld, fitViewport, keepViewportOnResize, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
 import {canvasMenu, objectMenu, type MenuAction, type MenuEntry} from '@/lib/context-menu';
 import {ContextMenu} from './context-menu';
+import {SelectionBar} from './selection-bar';
+import {SelectionAnchor} from './selection-anchor';
 import {editorTask,taskCancelled} from '@/lib/editor-task';
 import {artworkPixels, traceArtworkPixels, sampleArtwork} from '@/lib/artwork-color';
 import {defaultTolerance, toleranceLimits, type Pixels} from '@/lib/click-to-stitch';
@@ -63,6 +68,7 @@ type Tool = 'select' | 'pan' | 'measure' | 'open' | 'closed' | 'blocks' | 'freeh
 const pathTool=(t:Tool)=>t==='open'||t==='closed'||t==='blocks'||t==='holes';
 // Cut holes and the knife are reached from the Shape tools section, click to stitch from the Artwork
 // tab; all three also have shortcuts, not dock buttons.
+const drawTool=(t:Tool)=>['open','closed','blocks','freehand','points'].includes(t);
 const dockTool=(t:Tool)=>t!=='holes'&&t!=='knife'&&t!=='stitch';
 const shapeKinds=Object.keys(shapeNames) as ShapeKind[];
 const shapeMakers={circle,star,triangle,diamond,hexagon,heart};
@@ -117,6 +123,25 @@ const icons: Record<string,string> = {
 function Icon({name, size=18}: {name: string; size?: number}) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={icons[name]||icons.needle}/></svg>;
 }
+function ToolGroupButton<T extends string>({id,label,groupLabel,title,icon,active,selected,options,divider=false,onActivate,onSelect}:{
+  id:string;label:string;groupLabel:string;title:string;icon:string;active:boolean;selected:T;
+  options:{id:T;icon:string;label:string;shortcut?:string;title?:string}[];divider?:boolean;
+  onActivate:()=>void;onSelect:(id:T)=>void;
+}) {
+  const popover=useRef<HTMLDivElement>(null),button=useRef<HTMLButtonElement>(null);
+  function close(){if(popover.current?.matches(':popover-open'))popover.current.hidePopover();}
+  return <span className="tool-slot">
+    {divider&&<span className="toolbar-divider"/>}
+    <button ref={button} type="button" className={`tool ${active?'active':''}`} style={{anchorName:`--${id}`}} aria-label={groupLabel} aria-pressed={active} title={title} popoverTarget={id} popoverTargetAction="show" onClick={onActivate}>
+      <Icon name={icon}/><span>{label}</span><i className="tool-group-caret" aria-hidden="true"/>
+    </button>
+    <div ref={popover} id={id} className="tool-group-flyout" style={{positionAnchor:`--${id}`}} popover="auto" role="group" aria-label={groupLabel} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();button.current?.focus({preventScroll:true});}}}>
+      {options.map(option=><button key={option.id} type="button" aria-pressed={selected===option.id} title={option.title??option.label} onClick={()=>{onSelect(option.id);close();button.current?.focus({preventScroll:true});}}>
+        <Icon name={option.icon}/><span>{option.label}</span>{option.shortcut&&<kbd>{option.shortcut}</kbd>}
+      </button>)}
+    </div>
+  </span>;
+}
 function download(blob: Blob, name: string) {
   const url=URL.createObjectURL(blob), link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -154,6 +179,8 @@ function StudioEditor() {
   const [project,setProject]=useState<Project>(()=>({...initial,name:t('Sleepy little bear')}));
   const [ready,setReady]=useState(false), [saved,setSaved]=useState(true);
   const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>('select');
+  const [lastDraw,setLastDraw]=useState<Tool>('open');
+  useEffect(()=>{if(drawTool(tool))setLastDraw(tool);},[tool]);
   const selected=selection.at(-1)??null,anchor=useRef<string|null>(null);
   function setSelected(id:string|null){setSelection(id?[id]:[]);anchor.current=id;}
   function selectObject(id:string,keys:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean}){
@@ -205,7 +232,7 @@ function StudioEditor() {
   useEffect(()=>{cancelColourPick();},[tool,selection.join('|'),art?.id]);
   useEffect(()=>{if(!pickHint)return;const timer=setTimeout(()=>setPickHint(''),3000);return()=>clearTimeout(timer);},[pickHint]);
   const [spacePan,setSpacePan]=useState(false),[panMode,setPanMode]=useState(false);
-  const [navigating,setNavigating]=useState(false);
+  const [navigating,setNavigating]=useState(false),[selectionDragging,setSelectionDragging]=useState(false);
   const draftDrag=useRef<{index:number;start:Point;before:Point[];moved:boolean}|null>(null);
   const closedDraft=tool==='closed'||tool==='holes';
   const canFinish=draft.length>=(closedDraft?3:tool==='blocks'?4:2);
@@ -226,10 +253,12 @@ function StudioEditor() {
   const [pathTarget,setPathTarget]=useState<string|null>(null),[guide,setGuide]=useState<{text:string;id:string;name:string}|null>(null);
   const [fontLoading,setFontLoading]=useState(0),[fontsReady,setFontsReady]=useState(0);
   const textFocus=useRef(false),textArea=useRef<HTMLTextAreaElement>(null),lastFont=useRef(defaultFont),lastMerge=useRef<{key:string;time:number}|null>(null);
-  const [zoom,setZoom]=useState(1), [pan,setPan]=useState<Point>([0,0]);
+  const [view,setView]=useState<Viewport>({zoom:1,pan:[0,0]}),{zoom,pan}=view;
   const [canvasSize,setCanvasSize]=useState({width:1,height:1});
   const [playing,setPlaying]=useState(false), [progress,setProgress]=useState(1);
   const file=useRef<HTMLInputElement>(null), svg=useRef<SVGSVGElement>(null);
+  const stage=useRef<HTMLElement>(null),rail=useRef<HTMLElement>(null);
+  const measuredCanvas=useRef<{width:number;height:number;hoop:string}|null>(null);
   const current=useRef(project); current.current=project;
   const revision=useRef(0), playback=useRef(0),playRequest=useRef(0);
   const compiling=useRef<{version:number;controller:AbortController;promise:Promise<Compiled|null>}|null>(null);
@@ -240,7 +269,7 @@ function StudioEditor() {
   if(!moveQueue.current)moveQueue.current=frameQueue(run=>requestAnimationFrame(run),id=>cancelAnimationFrame(id));
   useEffect(()=>()=>moveQueue.current?.cancel(),[]);
   const dragUndo=useRef(dragHistory<Project>()),endDragRef=useRef(()=>{});
-  const viewport=useRef<Viewport>({zoom:1,pan:[0,0]});viewport.current={zoom,pan};
+  const viewport=useRef(view);viewport.current=view;
   const wheelHandler=useRef<((event:WheelEvent)=>void)|null>(null);
   const touches=useRef(new Map<number,Point>());
   const touchStart=useRef<{draft:Point[];corners:boolean[];project:Project}|null>(null);
@@ -253,24 +282,20 @@ function StudioEditor() {
   const selectionBox=useMemo(()=>selectionBounds(project,movableIds.length?movableIds:selection),[project.objects,movableIds,selection.join('|')]);
   const selectionRotation=items[0]?.rotation??items[0]?.text?.rotation??0;
   const size=useMemo(()=>designBounds(project.objects),[project.objects]);
-  const viewWidth=hoop.width*1.18/zoom, viewHeight=hoop.height*1.18/zoom;
+  const canvasScale=viewportScale(view,canvasSize,hoop)||1;
+  const viewWidth=canvasSize.width/canvasScale, viewHeight=canvasSize.height/canvasScale;
   const viewX=hoop.width/2-viewWidth/2+pan[0], viewY=hoop.height/2-viewHeight/2+pan[1];
-  const canvasScale=viewportScale({zoom,pan},canvasSize,hoop)||1;
   const editing=editPoints&&tool==='select'&&!!item&&!item.hidden&&!item.locked&&!multi&&!item.text&&!hasDraft;
   const angles=angleMode&&tool==='select'&&!!item&&!item.hidden&&!item.locked&&!multi&&!editing&&!hasDraft&&!!guideMode(item),flowGuides=!!item&&guideMode(item)==='flow';
+  const transient=!!(colourPick||pickHint||panMode||angles||editing||continuation||pathTarget);
+  const showToolHint=transient||hasDraft||!!shapeDraft||drawing;
+  const pointBox=useMemo(()=>editing&&item?bounds([{...item,rings:item.rails?.points??(item.curve?[item.curve.points]:item.rings)}]):null,[editing,item]);
   const handles=useMemo(()=>editing&&item?insertionHandles(item):[],[editing,item]);
   const addPreview=editing&&pointMode==='add'&&item&&hover?closestInsertion(item,hover):null;
   const canUndoDraft=hasDraft&&draft.length>(continuation?.base||0);
   const selectedIndex=project.objects.indexOf(item!),previousObject=project.objects[selectedIndex-1],nextObject=project.objects[selectedIndex+1];
   const ends=useMemo(()=>tool==='select'&&item&&!item.hidden&&!item.locked&&!multi&&!editing&&!hasDraft&&!continuation?routeEnds(project,item.id):null,[tool,item,multi,editing,hasDraft,continuation,previousObject,nextObject,project.fabric,project.locks]);
 
-  useEffect(()=>{
-    const canvas=svg.current;if(!canvas)return;
-    const observer=new ResizeObserver(()=>{const rect=canvas.getBoundingClientRect();setCanvasSize({width:rect.width,height:rect.height});});observer.observe(canvas);
-    const wheel=(e:WheelEvent)=>wheelHandler.current?.(e);
-    canvas.addEventListener('wheel',wheel,{passive:false});
-    return()=>{observer.disconnect();canvas.removeEventListener('wheel',wheel);};
-  },[]);
   useEffect(()=>{setActivePoint(null);setPointMode('move');},[selected,editPoints]);
   useEffect(()=>setAngleMode(false),[selected,tool]);
   useEffect(()=>{if(tool!=='open')setPathTarget(null);},[tool]);
@@ -281,7 +306,39 @@ function StudioEditor() {
     return [...new Set(item.text.content.replace(/\s/g,''))].filter(c=>!fonts.some(f=>f.charToGlyphIndex(c)>0));
   },[item?.text,fontLoading,fontsReady]);
 
-  function applyViewport(next:Viewport){viewport.current=next;setZoom(next.zoom);setPan(next.pan);setHover(null);}
+  function applyViewport(next:Viewport){viewport.current=next;setView(next);setHover(null);}
+  const fitMeasured=useStableCallback(()=>{
+    const canvas=svg.current,area=stage.current;if(!canvas||!area)return;
+    const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
+    const css=getComputedStyle(area),px=(name:string)=>parseFloat(css.getPropertyValue(name));
+    const gap=px('--gap'),ruler=viewSettings.rulers?px('--canvas-ruler-size'):0;
+    // Always reserve the full settings width, even with no selection or a collapsed overlay.
+    const insets={top:ruler+2*gap+px('--canvas-top-height'),right:px('--rail')+gap,bottom:2*gap+px('--canvas-dock-height'),left:ruler+2*gap+px('--settings-width')};
+    measuredCanvas.current={width:rect.width,height:rect.height,hoop:current.current.hoop};
+    setCanvasSize({width:rect.width,height:rect.height});
+    applyViewport(fitViewport(rect,hoops[current.current.hoop],insets));
+  });
+  const syncCanvasSize=useStableCallback(()=>{
+    if(!ready)return;
+    const rect=svg.current?.getBoundingClientRect();if(!rect?.width||!rect.height)return;
+    const before=measuredCanvas.current;
+    // Only initial load and a new hoop request an automatic fit.
+    if(!before||before.hoop!==current.current.hoop){fitMeasured();return;}
+    if(before.width===rect.width&&before.height===rect.height)return;
+    measuredCanvas.current={width:rect.width,height:rect.height,hoop:current.current.hoop};
+    applyViewport(keepViewportOnResize(viewport.current,before,rect,hoops[current.current.hoop]));
+    setCanvasSize({width:rect.width,height:rect.height});
+  });
+  // Compensate in the layout phase when React changes panel width; the observer handles window resizes.
+  useLayoutEffect(()=>{syncCanvasSize();});
+  useEffect(()=>{
+    const canvas=svg.current;if(!canvas)return;
+    // ResizeObserver runs before paint; commit compensation before the browser draws the new size.
+    const observer=new ResizeObserver(()=>flushSync(syncCanvasSize));observer.observe(canvas);
+    const wheel=(e:WheelEvent)=>wheelHandler.current?.(e);
+    canvas.addEventListener('wheel',wheel,{passive:false});
+    return()=>{observer.disconnect();canvas.removeEventListener('wheel',wheel);};
+  },[syncCanvasSize]);
   function zoomBy(factor:number,client?:Point){
     const view=viewport.current,rect=svg.current!.getBoundingClientRect();
     const anchor=client?clientToWorld(view,client,rect,hoop):[hoop.width/2+view.pan[0],hoop.height/2+view.pan[1]] as Point;
@@ -426,7 +483,7 @@ function StudioEditor() {
   function redo(){setActivePoint(null);if(!future.length)return;const previous=current.current;setHistory(h=>[...h,previous]);current.current=future[0];setProject(future[0]);restoreSelection(future[0]);setFuture(future.slice(1));invalidate();}
   // Phones show the side panel as a drawer over the canvas, so it closes when the canvas is needed.
   function narrowScreen(){return window.matchMedia('(max-width: 760px)').matches;}
-  function openTab(t:PanelTab){if(panelOpen&&panelTab===t&&narrowScreen()){setPanelOpen(false);return;}setPanelTab(t);setPanelOpen(true);}
+  function openTab(t:PanelTab){if(panelOpen&&panelTab===t){setPanelOpen(false);return;}setPanelTab(t);setPanelOpen(true);}
   function leavePanel(){setPanelTab('layers');if(narrowScreen())setPanelOpen(false);}
   function closePanel(id:string){const panel=document.getElementById(id);if(panel?.matches(':popover-open'))panel.hidePopover();}
   function point(e:ReactPointerEvent<SVGSVGElement>):Point {
@@ -526,7 +583,7 @@ function StudioEditor() {
     return snapBounds(box,p.objects.filter(o=>!ids.includes(o.id)&&!o.hidden&&o.rings.length).map(o=>objectGeometry(o).bounds),6/canvasScale,viewSettings.snapGrid?viewSettings.gridSize/viewSettings.subdivisions:null,viewSettings.snapObjects,point);
   }
   function cancelTransform(){
-    moveQueue.current?.cancel();const before=dragUndo.current.cancel();transformDrag.current=null;drag.current=null;setSnapGuides([]);
+    moveQueue.current?.cancel();setSelectionDragging(false);const before=dragUndo.current.cancel();transformDrag.current=null;drag.current=null;setSnapGuides([]);
     if(before){current.current=before;setProject(before);invalidate();setSaved(false);}
   }
   function deleteSelected(){if(!selected){if(selImage&&!selImage.locked)deleteImage(selImage.id);return;}const ids=editableSelection();if(!ids.length)return;commit({...project,objects:project.objects.filter(o=>!ids.includes(o.id))});setSelection(selection.filter(id=>!ids.includes(id)));}
@@ -605,6 +662,7 @@ function StudioEditor() {
       if(!hasDraft&&selection.length&&e.shiftKey&&['h','v'].includes(e.key.toLowerCase())){e.preventDefault();selectionAction(e.key.toLowerCase()==='h'?'flipH':'flipV');return;}
       if(e.key==='+'||e.key==='='){e.preventDefault();zoomBy(1.2);return;}
       if(e.key==='-'||e.key==='_'){e.preventDefault();zoomBy(1/1.2);return;}
+      if(e.key==='0'){e.preventDefault();fit();return;}
       if(e.key==='Enter'&&hasDraft){e.preventDefault();finish();return;}
       if(e.key==='Enter'&&editing){e.preventDefault();finishEditing();return;}
       if(e.key==='Backspace'||e.key==='Delete'){e.preventDefault();if(hasDraft){if(canUndoDraft)popDraft();}else if(editing)removePoint();else deleteSelected();return;}
@@ -620,11 +678,12 @@ function StudioEditor() {
   // Drags commit one undo step when they end: on pointer-up, lost capture, a window pointer-up
   // (if capture failed) or, as a last resort, the next pointer-down.
   function capture(e:ReactPointerEvent<SVGSVGElement>){try{e.currentTarget.setPointerCapture(e.pointerId);}catch{/* Window pointer-up still ends the drag. */}}
-  function startDrag(d:Omit<NonNullable<typeof drag.current>,'before'>,e:ReactPointerEvent<SVGSVGElement>){endDrag();drag.current={...d,before:current.current};dragUndo.current.begin(current.current);capture(e);}
-  function endDrag(){moveQueue.current?.flush();drag.current=null;transformDrag.current=null;setSnapGuides(g=>g.length?[]:g);lastMerge.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
+  function startDrag(d:Omit<NonNullable<typeof drag.current>,'before'>,e:ReactPointerEvent<SVGSVGElement>){endDrag();setSelectionDragging(true);drag.current={...d,before:current.current};dragUndo.current.begin(current.current);capture(e);}
+  function endDrag(){moveQueue.current?.flush();setSelectionDragging(false);drag.current=null;transformDrag.current=null;setSnapGuides(g=>g.length?[]:g);lastMerge.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
   endDragRef.current=endDrag;
   function dragTo(next:Project){try{next=syncPathBindings(normalizeGroups(next),drag.current?.before??transformDrag.current?.before??current.current);}catch{return;}dragUndo.current.update(next);current.current=next;setProject(next);invalidate();setSaved(false);}
   function pointerDown(e:ReactPointerEvent<SVGSVGElement>){
+    closePanel('draw-tools');closePanel('shape-tools');
     e.currentTarget.focus({preventScroll:true});
     if(colourPickRef.current){e.preventDefault();if(e.button===0)void pickColour(point(e));return;}
     if(e.pointerType==='touch'){
@@ -641,8 +700,8 @@ function StudioEditor() {
     }
     endDrag();pressedAnchor.current=null;pressedObject.current=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')??null;if(e.button>2)return;
     const handle=(e.target as SVGElement).closest('[data-transform]')?.getAttribute('data-transform') as ScaleHandle|'rotate'|undefined;
-    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!selection.length&&selImage&&!selImage.locked){transformDrag.current={before:current.current,ids:[],box:imageBounds(selImage),start:point(e),angle:selImage.rotation??0,handle,image:selImage.id};dragUndo.current.begin(current.current);capture(e);return;}
-    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
+    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!selection.length&&selImage&&!selImage.locked){setSelectionDragging(true);transformDrag.current={before:current.current,ids:[],box:imageBounds(selImage),start:point(e),angle:selImage.rotation??0,handle,image:selImage.id};dragUndo.current.begin(current.current);capture(e);return;}
+    if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){setSelectionDragging(true);transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
     const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
     if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan,button:e.button,target:(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')};capture(e);return;}
@@ -688,7 +747,7 @@ function StudioEditor() {
       if(e.button!==0)return;
       // Reference images sit under every object; locked or hidden ones take no canvas clicks.
       const imageHit=!source&&!editing?current.current.images?.find(i=>i.id===target.closest('[data-image]')?.getAttribute('data-image')&&!i.locked&&!i.hidden):undefined;
-      if(imageHit){selectImage(imageHit.id);transformDrag.current={before:current.current,ids:[],box:imageBounds(imageHit),start:p,angle:imageHit.rotation??0,handle:'move',image:imageHit.id};dragUndo.current.begin(current.current);capture(e);return;}
+      if(imageHit){selectImage(imageHit.id);setSelectionDragging(true);transformDrag.current={before:current.current,ids:[],box:imageBounds(imageHit),start:p,angle:imageHit.rotation??0,handle:'move',image:imageHit.id};dragUndo.current.begin(current.current);capture(e);return;}
       if(source){const ids=selection.includes(source.id)?unlockedIds(current.current,selection):[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
       else if(!editing){setSelected(null);setImageSel(null);}
     }
@@ -729,7 +788,7 @@ function StudioEditor() {
     if(pathTool(tool)||tool==='points'||(editing&&pointMode==='add'))setHover(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height?p:null);
     if(measuring.current){setMeasure(m=>m&&{...m,b:measurePoint(m.a,p,e.shiftKey)});return;}
     if((tool==='shape'||tool==='knife')&&shapeDraft){const press=shapePress.current;if(press&&Math.hypot(e.clientX-press.client[0],e.clientY-press.client[1])>4)press.moved=true;setShapeDraft({...shapeDraft,end:p,square:e.ctrlKey||e.metaKey});return;}
-    if(panDrag.current){const d=panDrag.current;applyViewport(panViewport({zoom:viewport.current.zoom,pan:d.source},[e.clientX-d.start[0],e.clientY-d.start[1]],scaleForCanvas()));return;}
+    if(panDrag.current){const d=panDrag.current;applyViewport(panViewport({...viewport.current,pan:d.source},[e.clientX-d.start[0],e.clientY-d.start[1]],scaleForCanvas()));return;}
     if(tool==='stitch'){hoverStitch(p);return;}
     if(draftDrag.current){const d=draftDrag.current;if(Math.hypot(e.clientX-d.start[0],e.clientY-d.start[1])>3)d.moved=true;if(d.moved)setDraft(d.before.map((a,i)=>i===d.index?[Math.max(0,Math.min(hoop.width,p[0])),Math.max(0,Math.min(hoop.height,p[1]))]:a));return;}
     if(drawing){if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>!d.length||Math.hypot(p[0]-d[d.length-1][0],p[1]-d[d.length-1][1])>1e-6?[...d,p]:d);}
@@ -769,7 +828,7 @@ function StudioEditor() {
     endDrag();
     if(drawing){setDrawing(false);const p=point(e);if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>[...d,p]);if(draftRef.current.length>=2)finish(draftRef.current);else cancelDrawing();}
   }
-  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
+  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();setSelectionDragging(false);draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
   function openMenu(x:number,y:number,target:string|null,keyboard=false){
     const p=current.current,o=target?p.objects.find(o=>o.id===target&&!o.hidden&&!o.locked):undefined,canPaste=!!clipboard.current?.objects.length;
     let ids=selection;if(o&&!selection.includes(o.id)){ids=[o.id];setSelected(o.id);setEditPoints(false);}
@@ -827,8 +886,8 @@ function StudioEditor() {
   }
   function chooseTool(next:Tool){cancelColourPick();
     if(next==='stitch'&&next!==tool){const image=activeImage(current.current,imageSel);if(!image||image.hidden){setError(t("Show a reference image to use Click to stitch."));return;}setStitchImage(image.id);setShowImage(true);void workingPixels(image).catch(e=>{if(!taskCancelled(e))setError(errorText(e,t,'Could not read the reference image.'));});}if(next==='holes'&&next!==tool&&!(item&&!multi&&isFillKind(item.kind)&&!item.hidden&&!item.locked&&shapeRegion(item))){setError(t("Select a fill to cut holes in."));return;}if(next==='pan'&&draftRef.current.length){setPanMode(p=>!p);return;}if(next===tool){setPanMode(false);return;}if(draftRef.current.length){if(canFinish){if(!finish(draftRef.current,'switch'))return;}else cancelDrawing();}cancelDrawing();setTool(next);setMeasure(null);stopPlayback();if(next==='text')ensureFonts(lastFont.current,t("Your text"),t).catch(()=>{});}
-  function fit(){applyViewport({zoom:1,pan:[0,0]});}
-  function fitArtwork(width=art?.width||hoop.width,height=art?.height||hoop.height){applyViewport({zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
+  function fit(){fitMeasured();}
+  function fitArtwork(width=art?.width||hoop.width,height=art?.height||hoop.height){applyViewport({...viewport.current,zoom:Math.max(1,Math.min(6,Math.min(hoop.width/width,hoop.height/height)*.82)),pan:[0,0]});}
   // Edit angles (A): a fill without guides starts with one across its bounds at the current angle.
   function toggleAngles(){if(!item||!guideMode(item)||item.locked)return;if(angles){setAngleMode(false);return;}setEditPoints(false);if(!item.angleGuides?.length&&guideMode(item)==='angles')updateObject(withGuides(item,[seedGuide(item)]));setAngleMode(true);}
   // Convert to redwork / Break apart (W): one undo step; the result is selected.
@@ -939,7 +998,7 @@ function StudioEditor() {
     const v=viewport.current,width=hoop.width*1.18/v.zoom,height=hoop.height*1.18/v.zoom,cx=hoop.width/2+v.pan[0],cy=hoop.height/2+v.pan[1];
     if(x0>=cx-width/2&&x1<=cx+width/2&&y0>=cy-height/2&&y1<=cy+height/2)return;
     const zoom=Math.min(v.zoom,Math.max(.5,Math.min(hoop.width*1.18/((x1-x0)*1.3+6),hoop.height*1.18/((y1-y0)*1.3+6))));
-    applyViewport({zoom,pan:[(x0+x1)/2-hoop.width/2,(y0+y1)/2-hoop.height/2]});
+    applyViewport({...v,zoom,pan:[(x0+x1)/2-hoop.width/2,(y0+y1)/2-hoop.height/2]});
   }
   function applyFix(w:Warning){const fix=fixFor(w,project,t);if(!fix)return;commit(fix.apply(project),t("Fixed: {v0}.",{v0:explain(w,project,'',t).title.toLocaleLowerCase(lang)}));setFocusKey(null);}
   const objectName=(id:string|null)=>project.objects.find(o=>o.id===id)?.name||t("Whole design");
@@ -976,7 +1035,7 @@ function StudioEditor() {
       {issues.length>0&&<ul className="issue-list">{issues.map(w=><li key={w.key}><button aria-current={focusKey===w.key} onClick={()=>focusIssue(w)} title={t("Show on the canvas")}><i className={`severity-dot ${w.severity}`} aria-label={t(severityNames[w.severity])}/><span><strong>{explain(w,project,checkError,t).title}</strong><small>{objectName(w.objectId)} · {t(severityNames[w.severity])}</small></span><span className="row-chevron">›</span></button></li>)}</ul>}
       <p className="check-note">{stitchState==='pending'?t("Stitch checks run a moment after you stop editing."):stitchState==='offline'?t("Stitch checks need the stitch engine, which is offline."):t("Checks shapes and the generated stitches.")} <span title={t("Will likely fail: fix before stitching. Worth checking: may sew poorly on soft baby fabric.")}>{t("What do these mean?")}</span></p>
     </div>
-    <section className="stage" aria-label={t("Embroidery editor")}>
+    <section ref={stage} className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
         {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages}/>}
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);if(tool==='stitch')hoverStitch(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
@@ -988,8 +1047,9 @@ function StudioEditor() {
               <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="var(--hoop-rim)" filter="url(#hoop-shadow)"/>
               <rect x="0" y="0" width={hoop.width} height={hoop.height} rx="3" fill="var(--fabric)" stroke="var(--hoop-border)" strokeWidth=".35"/>
               <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#cloth)" pointerEvents="none"/>
-              <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="var(--centre-cross)" strokeWidth=".15" pointerEvents="none"/></>}
+              <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="var(--centre-cross)" strokeWidth={1.1/canvasScale} pointerEvents="none"/></>}
               {viewSettings.showGrid&&viewSettings.subdivisions>1&&viewSettings.gridSize/viewSettings.subdivisions*canvasScale>=6&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#fine-grid)" opacity=".5" pointerEvents="none"/>}
+              {viewSettings.showGrid&&<path d={`M0 ${hoop.height/2}H${hoop.width}M${hoop.width/2} 0V${hoop.height}`} stroke="var(--centre-cross)" strokeWidth={.65/canvasScale} opacity=".55" pointerEvents="none"/>}
               {viewSettings.showGrid&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>}
               {shownImages.map(i=><g key={i.id} data-image={i.id} transform={i.rotation?`rotate(${i.rotation} ${i.x+i.width/2} ${i.y+i.height/2})`:undefined} pointerEvents={tool==='select'&&!editing&&!i.locked&&!colourPick?'all':'none'}>{thread?<rect x={i.x} y={i.y} width={i.width} height={i.height} fill="transparent"/>:<image href={i.src} x={i.x} y={i.y} width={i.width} height={i.height} preserveAspectRatio="none" opacity={i.opacity}/>}</g>)}
               <>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" pointerEvents="none" opacity={showTravel?.35:1}/>)}
@@ -1012,32 +1072,42 @@ function StudioEditor() {
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
         </svg>
         {densityField&&<DensityLegend field={densityField} radius={densityRadius} travel={showTravel} onRadius={setDensityRadius} onClose={()=>setDensity(false)}/>}
-        {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
+        {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} hoop={hoop} selection={selection.length?selectionBounds(project,selection):selImage&&!selImage.hidden?imageBounds(selImage):null} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
         {cursor&&<output className="cursor-position" aria-label={t('Cursor position')}>X {displayLength(cursor[0])} · Y {displayLength(cursor[1])}</output>}
         {!project.objects.length&&!images.length&&!compiled&&<div className="empty-canvas"><Icon name="needle" size={32}/><p>{t("Import artwork or draw a path.")}</p></div>}
       </div>
+      {tool==='select'&&items.length>0&&!hasDraft&&!shapeDraft&&!drawing&&!editing&&!angles&&!colourPick&&!selectionDragging&&!navigating&&!spacePan&&!panMode&&<SelectionBar
+        box={selectionBox} view={view} hoop={hoop} canvas={svg} container={stage} rail={rail}
+        allLocked={allLocked} multi={multi} grouped={items.some(o=>o.group!==undefined)}
+        edit={!multi&&item&&!item.hidden&&!item.locked?(item.text?'text':item.kind!=='redwork'?'points':null):null}
+        orderDisabled={{top:hasDraft||!items.length||selection.includes(project.objects[0]?.id),up:hasDraft||!items.length||selection.includes(project.objects[0]?.id),down:hasDraft||!items.length||selection.includes(project.objects.at(-1)?.id??''),bottom:hasDraft||!items.length||selection.includes(project.objects.at(-1)?.id??'')}}
+        onEdit={item?.text?focusText:editObject} onAction={menuAction} onOrder={reorderSelection} onMore={(x,y)=>openMenu(x,y,null,true)}
+      />}
+      <div className="canvas-top-row">
       <header className="project-chip">
         <a className="brand" href="/" aria-label={t("Threadroom home")}>t<span className="brand-dot">.</span></a>
         <input aria-label={t("Project name")} value={project.name} maxLength={40} onChange={e=>commit({...project,name:e.target.value})}/><span className={`save-indicator ${saved?'':'unsaved'}`} role="status" aria-label={saved?t("Saved locally"):t("Unsaved")} title={saved?t("Saved locally"):t("Unsaved")}/>
         <button className="icon-button" aria-label={t("Project menu")} title={t("Import, samples, save and SVG export")} popoverTarget="project-menu"><Icon name="chevron" size={16}/></button>
       </header>
-      <div className="top-actions">{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title={t("Design check: problems that could spoil the stitch-out")} aria-label={t("Design check: {v0}{v1}",{v0:badge,v1:fails?t(', {v0} likely to fail',{v0:fails}):''})}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={t('exportWarning.other',{count:fails})}>{t('failsSummary',{count:fails})}</small>}</button>}<Button label={t("Export PES")} size="sm" variant="primary" isLoading={busy} isDisabled={hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}/></div>
-      {<div className="tool-banner">
-        <div className="tool-guidance" role={colourPick?'status':undefined}>{colourPick?<><strong><Icon name="eyedropper" size={14}/>{t("Pick thread colour")}</strong><span>{t("Click the reference image to pick its colour · Esc to cancel")}</span>{pickHint&&<span>{pickHint}</span>}</>:<><strong><Icon name={editing?'select':tool==='shape'?shapeKind:tools.find(t=>t.id===tool)!.icon} size={14}/>{angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)?.title}</strong><span>{panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)?.hint}</span></>}</div>
-        {!colourPick&&(pathTool(tool)||tool==='points'||tool==='stitch'||editing||tool==='select'&&item)&&<div className="banner-actions">
-          {tool==='stitch'&&<div className="draw-actions"><label className="stitch-tolerance" title={t("How far a colour may differ from the clicked one and still join the area")}>{t("Colour tolerance")}<input type="range" min={toleranceLimits[0]} max={toleranceLimits[1]} step="1" value={tolerance} onChange={e=>{const n=Number(e.target.value);setTolerance(n);hoverStitch(cursor,n);}}/><output>{formatNumber(tolerance)}</output></label><Button label={t("Done")} variant="primary" size="sm" onClick={()=>chooseTool('select')}/></div>}
-          {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</button><button title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</button><Button label={closedDraft?t("Close shape"):t("Done")} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
-          {editing&&<div className="point-actions" role="group" aria-label={t("Point editing tools")}>
-            <button aria-label={t("Move points")} title={t("Drag a point to move it")} aria-pressed={pointMode==='move'} onClick={()=>setPointMode('move')}><Icon name="select" size={15}/><span>{t("Move")}</span></button>
-            <button aria-label={t("Add point")} title={t("Click the curve to insert a point")} aria-pressed={pointMode==='add'} disabled={!!item?.curve&&item.curve.points.length>=200||!!item?.rails&&item.rails.points[0].length>=100} onClick={()=>setPointMode('add')}><Icon name="plus" size={15}/><span>{t("Add point")}</span></button>
-            <button aria-label={t("Remove point")} title={t("Click a point to remove it, or select one and press Delete")} aria-pressed={pointMode==='remove'} onClick={()=>setPointMode('remove')}><Icon name="minus" size={15}/><span>{t("Remove")}</span></button>
-            {(item?.curve||item?.rails)&&(()=>{const corner=!!activePoint&&isCorner(item,...activePoint);return <button aria-label={corner?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1],activePoint[0])}><Icon name={corner?'curve':'closed'} size={15}/><span>{corner?t("Curve"):t("Corner")}</span></button>;})()}
-            {item?.curve&&!item.curve.closed&&<button aria-label={t("Continue curve")} title={activePoint?.[1]===0?t("Continue from the first point"):t("Continue from the last point")} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>{t("Continue")}</span></button>}
-          </div>}
-          {tool==='select'&&item&&!multi&&!item.hidden&&!item.locked&&!item.text&&item.kind!=='redwork'&&<button className="edit-points-button" aria-pressed={editPoints} onClick={()=>{if(editPoints)finishEditing();else editObject();}}>{editPoints?t("Done editing"):t("Edit points")}</button>}
-          {tool==='select'&&item?.text&&!item.locked&&<button className="edit-points-button" onClick={focusText}>{t("Edit text")}</button>}
-        </div>}
+      <div className="top-actions"><div className="view-modes" role="group" aria-label={t("View modes")}>
+          <button className={`view-mode ${timeline?'active':''}`} aria-label={timeline?t("Hide stitch playback"):t("Play stitches")} aria-pressed={timeline} aria-busy={busy} title={timeline?t("Hide stitch playback"):t("Play the stitch-out from the start")} disabled={hasDraft||busy||outside||(!project.objects.length&&!compiled)} onClick={()=>void play()}><Icon name="play" size={16}/><span>{t("Play")}</span></button>
+          <button className={`view-mode ${look==='thread'?'active':''}`} aria-label={t("Realistic view")} aria-pressed={look==='thread'} aria-busy={busy} title={t("Toggle realistic view: how the stitches will look on your fabric")} disabled={!project.objects.length&&!compiled} onClick={toggleRealistic}><Icon name="eye" size={16}/><span>{busy?t("Working…"):t("Realistic")}</span></button>
+      </div>{stitchState!=='none'&&<button className={`check-badge ${fails?'fail':issues.length?'check':stitchState==='done'?'ok':''}`} popoverTarget="check-panel" title={t("Design check: problems that could spoil the stitch-out")} aria-label={t("Design check: {v0}{v1}",{v0:badge,v1:fails?t(', {v0} likely to fail',{v0:fails}):''})}><Icon name={issues.length?'alert':'check'} size={15}/><span>{badge}</span>{fails>0&&<small title={t('exportWarning.other',{count:fails})}>{t('failsSummary',{count:fails})}</small>}</button>}</div>
+      {showToolHint&&<div className="tool-banner">
+        <ToolHint title={colourPick?t("Pick thread colour"):angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)!.title} text={colourPick?[t("Click the reference image to pick its colour · Esc to cancel"),pickHint].filter(Boolean).join(' · '):panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:pathHint}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)!.hint}/>
       </div>}
+      </div>
+      {editing&&pointBox&&!colourPick&&!selectionDragging&&!navigating&&!spacePan&&!panMode&&<SelectionAnchor
+        box={pointBox} view={view} hoop={hoop} canvas={svg} container={stage} rail={rail}
+        className="point-actions" label={t("Point editing tools")}
+      >
+        <button aria-label={t("Move points")} title={t("Drag a point to move it")} aria-pressed={pointMode==='move'} onClick={()=>setPointMode('move')}><Icon name="select" size={15}/><span>{t("Move")}</span></button>
+        <button aria-label={t("Add point")} title={t("Click the curve to insert a point")} aria-pressed={pointMode==='add'} disabled={!!item?.curve&&item.curve.points.length>=200||!!item?.rails&&item.rails.points[0].length>=100} onClick={()=>setPointMode('add')}><Icon name="plus" size={15}/><span>{t("Add point")}</span></button>
+        <button aria-label={t("Remove point")} title={t("Click a point to remove it, or select one and press Delete")} aria-pressed={pointMode==='remove'} onClick={()=>setPointMode('remove')}><Icon name="minus" size={15}/><span>{t("Remove")}</span></button>
+        {(item?.curve||item?.rails)&&(()=>{const corner=!!activePoint&&isCorner(item,...activePoint);return <button aria-label={corner?t("Make curve point"):t("Make corner point")} title={t("Switch the selected point between a sharp corner and a smooth curve (or double-click the point)")} disabled={!activePoint} onClick={()=>activePoint&&toggleCorner(activePoint[1],activePoint[0])}><Icon name={corner?'curve':'closed'} size={15}/><span>{corner?t("Curve"):t("Corner")}</span></button>;})()}
+        {item?.curve&&!item.curve.closed&&<button aria-label={t("Continue curve")} title={activePoint?.[1]===0?t("Continue from the first point"):t("Continue from the last point")} disabled={item.curve.points.length>=200} onClick={continueCurve}><Icon name="curve" size={15}/><span>{t("Continue")}</span></button>}
+        <Button label={t("Done")} tooltip={`${t('Done editing')} (Enter)`} variant="primary" size="sm" onClick={finishEditing}/>
+      </SelectionAnchor>}
       {showTravel&&compiled&&<div className="travel-legend" role="note" aria-label={t("Travel view legend")}><span title={t("The needle lifts and the hoop moves without sewing")}><i className="legend-jump"/>{t("Jump ·")} {formatNumber(stitchPaths.jumpCount)}</span><span title={t("A sewn stitch joining two pieces without cutting the thread")}><i className="legend-travel"/>{t("Travel stitch ·")} {formatNumber(stitchPaths.travelCount)}</span><span title={t("The machine cuts the thread here before a jump")}><i className="legend-trim">✕</i>{t("Trim (thread cut) ·")} {formatNumber(stitchPaths.trims.length)}</span></div>}
       {focus&&focusCopy&&<div className={`issue-callout ${focus.severity}`} role="status" aria-live="polite">
         <div className="issue-callout-head"><i className={`severity-dot ${focus.severity}`}/><strong>{focusCopy.title}</strong><small>{t(severityNames[focus.severity])} · {objectName(focus.objectId)}</small><button className="icon-button" aria-label={t("Close issue")} onClick={()=>setFocusKey(null)}><Icon name="close" size={14}/></button></div>
@@ -1045,35 +1115,45 @@ function StudioEditor() {
         <div className="issue-actions">{focusFix&&<button className="issue-fix-button" title={focusFix.title} onClick={()=>applyFix(focus)}>{focusFix.label}</button>}{issues.length>1&&<span className="issue-nav"><button aria-label={t("Previous issue")} title={t("Previous issue")} onClick={()=>focusIssue(issues[(focusIndex-1+issues.length)%issues.length])}>‹</button><span>{formatNumber(focusIndex+1)} / {formatNumber(issues.length)}</span><button aria-label={t("Next issue")} title={t("Next issue")} onClick={()=>focusIssue(issues[(focusIndex+1)%issues.length])}>›</button></span>}</div>
       </div>}
       {item&&<aside className={`settings-overlay ${settingsCollapsed?'collapsed':''}`} aria-label={multi?t("Selection settings"):item.text?t("Text settings"):t("Object settings")}>
-        <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?t('objects.other',{count:items.length}):item.name}>{multi?t('objects.other',{count:items.length}):item.name}</h2><button className="icon-button" aria-label={t("Delete selected object")} title={t("Delete (Delete key)")} disabled={hasDraft||allLocked} onClick={deleteSelected}><Icon name="trash" size={16}/></button><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} title={settingsCollapsed?t("Expand settings"):t("Collapse settings")} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
+        <div className="overlay-heading"><span className="swatch" style={{background:item.color}}/><h2 title={multi?t('objects.other',{count:items.length}):item.name}>{multi?t('objects.other',{count:items.length}):item.name}</h2><button className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} title={settingsCollapsed?t("Expand settings"):t("Collapse settings")} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></button></div>
         {!settingsCollapsed&&<div className="overlay-body">
         {items.some(o=>o.locked)&&<div className="lock-notice" role="status"><Icon name="lock" size={15}/><span>{allLocked?t(multi?'Locked objects: settings are read-only.':'Locked object: settings are read-only.'):t('Locked objects in the selection are not changed.')}</span><button type="button" disabled={hasDraft} onClick={()=>lockSelection(items.filter(o=>o.locked).map(o=>o.id))}>{t('Unlock')}</button></div>}
-        <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
-        <div className="selection-size">{displayLength(selectionBox.width)} × {displayLength(selectionBox.height)}</div>
+        <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} size={`${displayLength(selectionBox.width)} × ${displayLength(selectionBox.height)}`} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected}/>
         <ShapeTools focusOffset={focusOffset} project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
-        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><button title={t("Group (⌘G)")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} onClick={ungroupSelection}>{t("Ungroup")}</button><RedworkAction project={project} selection={selection} onRun={redwork}/><button onClick={deleteSelected}>{t("Delete")}</button></div></fieldset>:<>
+        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><RedworkAction project={project} selection={selection} onRun={redwork}/></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel onReady={focusTextReady} spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
-        <fieldset disabled={hasDraft||allLocked} className="panel-section settings">{item.text&&<h2 className="settings-subheading">{t("Stitches")}</h2>}
+        <fieldset disabled={hasDraft||allLocked} className="panel-section settings object-settings">
+          <Section id="object" title={item.text?t("Stitches"):t("Object & stitch type")} defaultOpen summaryExtra={t(kindNames[item.kind])}>
           <label><span className="field-heading">{t("Object name")}</span><input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
           <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
           <RedworkAction project={project} selection={selection} onRun={redwork}/>
-          <ThreadPicker project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/>
-          {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&<div className="setting-grid"><label><span className="field-heading">{t("Length · mm")}</span><input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input"><span className="field-heading">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm{source('spacing')}</span><input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>}
-          {['running','bean','backstitch'].includes(item.kind)&&<label><span className="field-heading">{t("Stitch tolerance · mm")}{item.tolerance!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({tolerance:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:.2})}</span>}</span><input type="number" min=".1" max="1" step=".1" value={item.tolerance??.2} onChange={e=>{const n=Number(e.target.value);if(n>=.1&&n<=1)updateObject({tolerance:n});}}/></label>}
+          </Section>
+          <Section id="thread" title={t("Thread")} summaryExtra={<span className="thread-summary"><i style={{background:item.color}}/>{item.color.toUpperCase()}</span>}>
+          <ThreadPicker hint project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/>
+          </Section>
           {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop} angles={{active:angles,onToggle:toggleAngles}}/>}
+          {item.kind!=='fill'&&<Section id="stitch-settings" title={t("Stitch settings")} defaultOpen>
+          {!(item.kind==='cross'&&hasCrossStyle(item))&&<div className="setting-grid"><label><span className="field-heading">{t("Length · mm")}<Hint text={t("hint.stitchLength")}/></span><input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{usesSpacing(item.kind)&&<label htmlFor="spacing-input"><span className="field-heading">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm<Hint text={t("hint.spacing")}/>{source('spacing')}</span><input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>}
           {item.kind==='cross'&&<><CrossSettings item={item} onChange={updateObject}/><StitchAngle value={item.angle} onChange={angle=>updateObject({angle})}/></>}
-          {isRopeKind(item.kind)&&<label htmlFor="rope-width-input"><span className="field-heading">{t("Rope width · mm")}{item.ropeWidth!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({ropeWidth:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:ropeDefaults.width})}</span>}</span><input id="rope-width-input" type="number" min={ropeLimits.width[0]} max={ropeLimits.width[1]} step=".1" value={item.ropeWidth??ropeDefaults.width} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=ropeLimits.width[0]&&n<=ropeLimits.width[1])updateObject({ropeWidth:n});}}/></label>}
+          {isRopeKind(item.kind)&&<label htmlFor="rope-width-input"><span className="field-heading">{t("Rope width · mm")}<Hint text={t("hint.ropeWidth")}/>{item.ropeWidth!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({ropeWidth:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:ropeDefaults.width})}</span>}</span><input id="rope-width-input" type="number" min={ropeLimits.width[0]} max={ropeLimits.width[1]} step=".1" value={item.ropeWidth??ropeDefaults.width} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=ropeLimits.width[0]&&n<=ropeLimits.width[1])updateObject({ropeWidth:n});}}/></label>}
           {item.kind==='e-stitch'&&<label className="check-label"><input type="checkbox" checked={!!item.eFlipped} onChange={e=>updateObject({eFlipped:e.target.checked||undefined})}/>{t("Flip teeth to the other side")}</label>}
-          {usesSplit(item.kind)&&<div className="setting-grid">{isWideKind(item.kind)&&<label><span className="field-heading">{t("Width · mm")}</span><input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label>}<label htmlFor="split-input"><span className="field-heading">{t("Split above · mm")}{source('splitLength')}</span><input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
-          {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/>{t("Short stitches on curves")}{source('shortStitches')}</label>}
-          {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&usesPull(item.kind)&&<label htmlFor="pull-input"><span className="field-heading">{t("Pull compensation · mm")}{source('pullCompensation')}</span><input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
-          {item.kind!=='fill'&&!(item.kind==='cross'&&hasCrossStyle(item))&&underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input"><span className="field-heading">{t("Underlay")}{source('underlay')}</span><select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{t(underlayNames[u])}</option>)}</select></label>}
-          <div className="setting-grid"><label htmlFor="tie-in-input"><span className="field-heading">{t("Tie-in")}{source('tieIn')}</span><select id="tie-in-input" value={resolved!.tieIn} onChange={e=>updateObject({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label htmlFor="tie-off-input"><span className="field-heading">{t("Tie-off")}{source('tieOff')}</span><select id="tie-off-input" value={resolved!.tieOff} onChange={e=>updateObject({tieOff:e.target.value as Lock})}>{lockOptions}</select></label></div>
-          {(resolved!.tieIn!=='none'||resolved!.tieOff!=='none')&&<label htmlFor="lock-size-input"><span className="field-heading">{t("Lock size · mm")}{source('lockSize')}</span><input id="lock-size-input" type="number" min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={resolved!.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))updateObject({lockSize:Number(e.target.value)});}}/></label>}
-          <div className="ends-row"><span><i className="end-dot entry"/>{t("Entry ·")} <i className="end-dot exit"/>{t("exit")}</span>{item.entry||item.exit?<button type="button" className="field-value reset" title={t("Return to automatic entry and exit")} onClick={()=>updateObject({entry:undefined,exit:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Auto")}</span>}</div>
+          {usesSplit(item.kind)&&isWideKind(item.kind)&&<label><span className="field-heading">{t("Width · mm")}<Hint text={t("hint.satinWidth")}/></span><input type="number" min={satinLimits.width[0]} max={satinLimits.width[1]} step=".5" value={item.satinWidth} onChange={e=>{const n=Number(e.target.value);if(n>=satinLimits.width[0]&&n<=satinLimits.width[1])updateObject({satinWidth:n});}}/></label>}
+          </Section>}
+          {item.kind!=='fill'&&(['running','bean','backstitch'].includes(item.kind)||usesSplit(item.kind)||usesShortStitches(item.kind)||(!(item.kind==='cross'&&hasCrossStyle(item))&&(usesPull(item.kind)||underlayOptions(item.kind).length>1)))&&<Section id="advanced" title={t("Advanced")}>
+          {['running','bean','backstitch'].includes(item.kind)&&<label><span className="field-heading">{t("Stitch tolerance · mm")}<Hint text={t("hint.stitchTolerance")}/>{item.tolerance!==undefined?<button type="button" className="field-value reset" onClick={()=>updateObject({tolerance:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Default · {v0}",{v0:.2})}</span>}</span><input type="number" min=".1" max="1" step=".1" value={item.tolerance??.2} onChange={e=>{const n=Number(e.target.value);if(n>=.1&&n<=1)updateObject({tolerance:n});}}/></label>}
+          {usesSplit(item.kind)&&<div className="setting-grid"><label htmlFor="split-input"><span className="field-heading">{t("Split above · mm")}<Hint text={t("hint.splitAbove")}/>{source('splitLength')}</span><input id="split-input" type="number" min={satinLimits.split[0]} max={satinLimits.split[1]} step=".5" value={resolved!.splitLength} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=satinLimits.split[0]&&n<=satinLimits.split[1])updateObject({splitLength:n});}}/></label></div>}
+          {usesShortStitches(item.kind)&&<label className="check-label"><input type="checkbox" checked={resolved!.shortStitches} onChange={e=>updateObject({shortStitches:e.target.checked})}/><span className="field-heading">{t("Short stitches on curves")}<Hint text={t("hint.shortStitches")}/></span>{source('shortStitches')}</label>}
+          {!(item.kind==='cross'&&hasCrossStyle(item))&&usesPull(item.kind)&&<label htmlFor="pull-input"><span className="field-heading">{t("Pull compensation · mm")}<Hint text={t("hint.pullCompensation")}/>{source('pullCompensation')}</span><input id="pull-input" type="number" min="0" max="1" step=".05" value={resolved!.pullCompensation} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=0&&n<=1)updateObject({pullCompensation:n});}}/></label>}
+          {!(item.kind==='cross'&&hasCrossStyle(item))&&underlayOptions(item.kind).length>1&&<label htmlFor="underlay-input"><span className="field-heading">{t("Underlay")}<Hint text={t("hint.underlay")}/>{source('underlay')}</span><select id="underlay-input" value={resolved!.underlay} onChange={e=>updateObject({underlay:e.target.value as Underlay})}>{underlayOptions(item.kind).map(u=><option key={u} value={u}>{t(underlayNames[u])}</option>)}</select></label>}
+          </Section>}
+          <Section id="start-finish" title={t("Start & finish")}>
+          <div className="setting-grid"><label htmlFor="tie-in-input"><span className="field-heading">{t("Tie-in")}<Hint text={t("hint.tieIn")}/>{source('tieIn')}</span><select id="tie-in-input" value={resolved!.tieIn} onChange={e=>updateObject({tieIn:e.target.value as Lock})}>{lockOptions}</select></label><label htmlFor="tie-off-input"><span className="field-heading">{t("Tie-off")}<Hint text={t("hint.tieOff")}/>{source('tieOff')}</span><select id="tie-off-input" value={resolved!.tieOff} onChange={e=>updateObject({tieOff:e.target.value as Lock})}>{lockOptions}</select></label></div>
+          {(resolved!.tieIn!=='none'||resolved!.tieOff!=='none')&&<label htmlFor="lock-size-input"><span className="field-heading">{t("Lock size · mm")}<Hint text={t("hint.lockSize")}/>{source('lockSize')}</span><input id="lock-size-input" type="number" min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={resolved!.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))updateObject({lockSize:Number(e.target.value)});}}/></label>}
+          <div className="ends-row"><span className="field-heading"><span><i className="end-dot entry"/>{t("Entry ·")} <i className="end-dot exit"/>{t("exit")}</span><Hint text={t("hint.entryExit")}/></span>{item.entry||item.exit?<button type="button" className="field-value reset" title={t("Return to automatic entry and exit")} onClick={()=>updateObject({entry:undefined,exit:undefined})}>{t("Reset")}</button>:<span className="field-value inherited">{t("Auto")}</span>}</div>
+          </Section>
         </fieldset></>}
         </div>}
       </aside>}
@@ -1088,38 +1168,41 @@ function StudioEditor() {
           <OverlayControls value={viewSettings} onChange={patch=>setViewSettings(v=>({...v,...patch}))}/>
         </div>}
         {apiState==='offline'&&!compiled&&<span className="sim-hint" role="status">{t("Engine offline · showing shapes")}</span>}
-        {thread&&<span className="sim-hint" title={t("Thread is drawn about 0.4 mm wide at true scale. Real fabric stretches, so test-stitch on matching scrap first.")}>{t("Simulation on")} {t(fabric.label).toLocaleLowerCase(lang)} {t("· fabric pull and puckering aren’t shown")}</span>}
+        {!colourPick&&(pathTool(tool)||tool==='points'||tool==='stitch')&&<div className="canvas-action-bar" role="toolbar" aria-label={t(tool==='stitch'?"Click to stitch":"Drawing tools")}>
+          {tool==='stitch'&&<div className="draw-actions"><label className="stitch-tolerance" title={t("How far a colour may differ from the clicked one and still join the area")}>{t("Colour tolerance")}<input type="range" min={toleranceLimits[0]} max={toleranceLimits[1]} step="1" value={tolerance} onChange={e=>{const n=Number(e.target.value);setTolerance(n);hoverStitch(cursor,n);}}/><output>{formatNumber(tolerance)}</output></label><Button label={t("Done")} variant="primary" size="sm" onClick={()=>chooseTool('select')}/></div>}
+          {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><button title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</button><button title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</button><Button label={closedDraft?t("Close shape"):t("Done")} variant="primary" size="sm" isDisabled={!canFinish} onClick={()=>finish()}/></div>}
+        </div>}
         <div className="dock" role="toolbar" aria-label={t("Editor tools")}>
-          {tools.filter(x=>dockTool(x.id)).map((toolInfo,i)=>{const active=(toolInfo.id==='pan'?(tool==='pan'||panMode):tool===toolInfo.id&&!panMode);
-            return <span key={toolInfo.id} className="tool-slot">{(i===3||i===8)&&<span className="toolbar-divider"/>}<button className={active?'tool active':'tool'} title={`${toolInfo.id==='shape'?t("Shapes: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.label} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key})`} aria-label={toolInfo.id==='shape'?t("Shapes: {v0}",{v0:t(shapeNames[shapeKind])}):toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.id==='shape'?shapeKind:toolInfo.icon}/><span>{toolInfo.label}</span></button>{toolInfo.id==='shape'&&tool==='shape'&&<div className="shape-flyout" role="radiogroup" aria-label={t("Shape")}>{shapeKinds.map(k=><button key={k} role="radio" aria-checked={shapeKind===k} aria-label={t(shapeNames[k])} title={t(shapeNames[k])} onClick={()=>{setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}><Icon name={k} size={17}/></button>)}</div>}</span>;})}
-          <span className="toolbar-divider"/>
-          <button className={`tool ${timeline?'active':''}`} aria-label={timeline?t("Hide stitch playback"):t("Play stitches")} aria-busy={busy} title={timeline?t("Hide stitch playback"):t("Play the stitch-out from the start")} disabled={hasDraft||busy||outside||(!project.objects.length&&!compiled)} onClick={()=>void play()}><Icon name="play"/><span>{t("Play")}</span></button>
-          <button className={`tool ${look==='thread'?'active':''}`} aria-label={t("Realistic view")} aria-pressed={look==='thread'} aria-busy={busy} title={t("Toggle realistic view: how the stitches will look on your fabric")} disabled={!project.objects.length&&!compiled} onClick={toggleRealistic}><Icon name="eye"/><span>{busy?t("Working…"):t("Realistic")}</span></button>
+          {tools.filter(x=>dockTool(x.id)&&(!drawTool(x.id)||x.id==='open')).map(toolInfo=>{
+            if(toolInfo.id==='open'){
+              const last=tools.find(x=>x.id===lastDraw)!;
+              return <ToolGroupButton key="draw" id="draw-tools" label={t('Draw')} groupLabel={t('Drawing tools')} title={`${last.label} (${last.key}) — ${last.hint}`} icon={last.icon} active={drawTool(tool)&&!panMode} selected={lastDraw} divider
+                options={tools.filter(x=>drawTool(x.id)).map(x=>({id:x.id,icon:x.icon,label:x.label,shortcut:x.key,title:`${x.label} (${x.key}) — ${x.hint}`}))} onActivate={()=>chooseTool(lastDraw)} onSelect={chooseTool}/>;
+            }
+            const active=toolInfo.id==='pan'?(tool==='pan'||panMode):tool===toolInfo.id&&!panMode;
+            if(toolInfo.id==='shape')return <ToolGroupButton key="shape" id="shape-tools" label={t('Shapes')} groupLabel={t('Shapes')} title={`${t('Shapes: {v0}',{v0:t(shapeNames[shapeKind])})} (${toolInfo.key}) — ${toolInfo.hint}`} icon={shapeKind} active={active} selected={shapeKind}
+              options={shapeKinds.map(k=>({id:k,icon:k,label:t(shapeNames[k])}))} onActivate={()=>chooseTool('shape')} onSelect={k=>{chooseTool('shape');setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}/>;
+            return <span key={toolInfo.id} className="tool-slot">{toolInfo.id==='text'&&<span className="toolbar-divider"/>}<button className={active?'tool active':'tool'} title={`${toolInfo.label} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key}) — ${toolInfo.hint}`} aria-label={toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.icon}/><span>{toolInfo.label}</span></button></span>;
+          })}
         </div>
       </div>
       <div className="corner-controls">
-        <div className="zoom-controls"><button aria-label={t("Zoom in")} title={t("Zoom in (+)")} onClick={()=>zoomBy(1.2)}><Icon name="plus" size={16}/></button><span>{formatNumber(Math.round(zoom*100))}%</span><button aria-label={t("Zoom out")} title={t("Zoom out (−)")} onClick={()=>zoomBy(1/1.2)}><Icon name="minus" size={16}/></button><button aria-label={t("Fit hoop")} title={t("Fit hoop")} onClick={fit}><Icon name="fit" size={16}/></button></div>
-        <div className="history-controls"><button title={t("Undo (Ctrl / ⌘ Z)")} aria-label={t("Undo")} disabled={!hasDraft&&!history.length} onClick={undo}><Icon name="undo"/></button><button title={t("Redo (Ctrl / ⌘ Shift Z)")} aria-label={t("Redo")} disabled={hasDraft||!future.length} onClick={redo}><Icon name="redo"/></button></div>
+        <div className="canvas-controls"><button title={t("Undo (Ctrl / ⌘ Z)")} aria-label={t("Undo")} disabled={!hasDraft&&!history.length} onClick={undo}><Icon name="undo"/></button><button title={t("Redo (Ctrl / ⌘ Shift Z)")} aria-label={t("Redo")} disabled={hasDraft||!future.length} onClick={redo}><Icon name="redo"/></button><span className="toolbar-divider"/><button aria-label={t("Zoom out")} title={t("Zoom out (−)")} onClick={()=>zoomBy(1/1.2)}><Icon name="minus" size={16}/></button><span>{formatNumber(Math.round(zoom*100))}%</span><button aria-label={t("Zoom in")} title={t("Zoom in (+)")} onClick={()=>zoomBy(1.2)}><Icon name="plus" size={16}/></button><button aria-label={t("Fit hoop")} title={t("Fit hoop")+" (0)"} onClick={fit}><Icon name="fit" size={16}/></button></div>
       </div>
       {!focus&&<div className="canvas-navigation-hint">{t(hoop.label)} {t("hoop · Scroll to zoom · Space / right-drag to pan")}</div>}
     </section>
-    <nav className="panel-rail" role="tablist" aria-label={t("Panels")} aria-orientation="vertical">
-      {tabs.map(t=><button key={t.id} role="tab" id={`tab-${t.id}`} aria-controls="side-panel" aria-selected={panelOpen&&panelTab===t.id} aria-label={t.label} title={t.label} onClick={()=>openTab(t.id)}><Icon name={t.icon}/></button>)}
+    <nav ref={rail} className="panel-rail" role="tablist" aria-label={t("Panels")} aria-orientation="vertical">
+      {tabs.map(t=><button key={t.id} role="tab" aria-expanded={panelOpen&&panelTab===t.id} id={`tab-${t.id}`} aria-controls="side-panel" aria-selected={panelOpen&&panelTab===t.id} aria-label={t.label} title={t.label} onClick={()=>openTab(t.id)}><Icon name={t.icon}/></button>)}
       <span className="rail-divider"/>
       <button aria-label={t('Keyboard shortcuts')} title={t('Keyboard shortcuts')+' (?)'} onClick={()=>setShortcutHelp(true)}>?</button>
-      <button aria-label={panelOpen?t("Hide panel"):t("Show panel")} title={panelOpen?t("Hide panel"):t("Show panel")} aria-expanded={panelOpen} aria-controls="side-panel" onClick={()=>setPanelOpen(o=>!o)}><Icon name="panel"/></button>
+      <span className="rail-divider"/>
+      <button className="rail-export" aria-label={t("Export PES")} title={t("Export PES")} aria-busy={busy} disabled={busy||hasDraft||!ready||(!project.objects.length&&!compiled)||outside} onClick={()=>void generate(true)}><Icon name="download"/></button>
     </nav>
     <aside id="side-panel" className="side-panel" role="tabpanel" aria-labelledby={`tab-${panelTab}`} hidden={!panelOpen}>
-      <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<span className="count-badge">{formatNumber(project.objects.length)}</span>}<button className="icon-button" aria-label={t("Hide panel")} onClick={()=>setPanelOpen(false)}><Icon name="close" size={16}/></button></div>
+      <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<><span className="count-badge">{formatNumber(project.objects.length)}</span>{project.objects.some(o=>o.locked)&&<button className="icon-button" type="button" disabled={hasDraft} title={t('Unlock all objects')} aria-label={t('Unlock all objects')} onClick={unlockEverything}><Icon name="lock" size={15}/></button>}</>}</div>
       {panelTab==='layers'&&<>
-        <LayersPanel project={project} compiled={compileFresh?compiled:null} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onLock={lockSelection} onPlace={(ids,index)=>commit(placeObjects(project,ids,index))} onPosition={(id,n)=>commit(placeObjects(project,[id],positionIndex(project,id,n)))} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))}>
-          <div className="layers-footer" role="group" aria-label={t("Layer actions")}>
-            <button disabled={hasDraft||items.length<2} title={t("Group (⌘G)")} aria-label={t("Group selected objects")} onClick={groupSelection}>{t('groupAction')}</button><button disabled={hasDraft||!items.some(o=>o.group!==undefined)} title={t("Ungroup (⇧⌘G)")} aria-label={t("Ungroup selected objects")} onClick={ungroupSelection}>{t("Ungroup")}</button>
-            {(['top','up','down','bottom'] as const).map((where,i)=><button key={where} disabled={hasDraft||!items.length||((where==='top'||where==='up')?selection.includes(project.objects[0]?.id):selection.includes(project.objects.at(-1)?.id??''))} aria-label={t(`move.${where}`)} title={t(`move.${where}`)} onClick={()=>reorderSelection(where)}>{['⇈','↑','↓','⇊'][i]}</button>)}
-            <button disabled={hasDraft||!items.length||allLocked} aria-label={t("Delete selected objects")} title={t("Delete (Delete key)")} onClick={deleteSelected}><Icon name="trash" size={16}/></button>
-            {project.objects.some(o=>o.locked)&&<button disabled={hasDraft} title={t('Unlock all objects')} aria-label={t('Unlock all objects')} onClick={unlockEverything}><Icon name="lock" size={14}/>{t('Unlock all')}</button>}
-          </div>
-        </LayersPanel>
+        <LayersPanel project={project} compiled={compileFresh?compiled:null} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onLock={lockSelection} onPlace={(ids,index)=>commit(placeObjects(project,ids,index))} onPosition={(id,n)=>commit(placeObjects(project,[id],positionIndex(project,id,n)))} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))} children={null}/>
+
       </>}
       {panelTab==='artwork'&&<section className="panel-section">
         <button className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>{t("Import file")}</strong></button>

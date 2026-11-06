@@ -1,6 +1,7 @@
 'use client';
 import {useId,useMemo,useState,type ReactNode} from 'react';
 import {useT} from './i18n';
+import {Hint} from './hint';
 import {useStableCallback} from './use-stable-callback';
 import dynamic from 'next/dynamic';
 import {Loading} from './panel-loading';
@@ -8,7 +9,7 @@ const ThreadCatalogue=dynamic(()=>import('./thread-catalogue'),{loading:Loading}
 import {palette,type Project} from '@/lib/project';
 import {applyThread,brotherThreads,matchBrother,nearestBrother,type Thread} from '@/lib/threads';
 
-export default function ThreadPicker({project,selection,onChange,eyedropper}:{project:Project;selection:string[];onChange:(p:Project)=>void;eyedropper:ReactNode}){
+export default function ThreadPicker({project,selection,onChange,eyedropper,hint=false}:{hint?:boolean;project:Project;selection:string[];onChange:(p:Project)=>void;eyedropper:ReactNode}){
   const {t}=useT(),id=useId(),[opened,setOpened]=useState(false);
   const items=project.objects.filter(o=>selection.includes(o.id)),item=items[0];
   const colors=useMemo(()=>[...new Map(project.objects.flatMap(o=>[o,...(o.text?.border?[o.text.border]:[])]).map(o=>[o.color.toLowerCase()+':'+(o.thread?.code??''),o])).values()],[project.objects]);
@@ -19,7 +20,7 @@ export default function ThreadPicker({project,selection,onChange,eyedropper}:{pr
   const nearest=nearestBrother(item.color),mixed=items.some(o=>o.color!==item.color);
   const label=(thread:Thread)=>{const b=brotherThreads.find(b=>b.code===thread.code)!;return t('Brother {code} {name}',{code:b.code,name:t(`thread.${b.name}`)});};
   return <div className="thread-picker">
-    <label>{t('Thread colour')}<div className="colour-picker"><input type="color" aria-label={t('Thread colour')} value={item.color} onChange={e=>choose(e.target.value)}/>{eyedropper}<span>{mixed?t('Mixed colours'):item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button type="button" key={c} aria-label={t('Use thread {v0}',{v0:c})} style={{background:c}} onClick={()=>choose(c)}/>)}</div></label>
+    <label>{hint?<span className="field-heading">{t('Thread colour')}<Hint text={t('hint.thread')}/></span>:t('Thread colour')}<div className="colour-picker"><input type="color" aria-label={t('Thread colour')} value={item.color} onChange={e=>choose(e.target.value)}/>{eyedropper}<span>{mixed?t('Mixed colours'):item.color.toUpperCase()}</span>{palette.slice(0,4).map(c=><button type="button" key={c} aria-label={t('Use thread {v0}',{v0:c})} style={{background:c}} onClick={()=>choose(c)}/>)}</div></label>
     <div className="thread-actions"><button type="button" popoverTarget={id}>{t('Brother threads')}</button><button type="button" onClick={()=>onChange(matchBrother(project,selection))}>{t('Match to Brother')}</button></div>
     <p className="thread-match">{!mixed&&(item.thread?label(item.thread):t('≈ Brother {code} {name}',{code:nearest.code,name:t(`thread.${nearest.name}`)}))}</p>
     <div className="design-colors" role="group" aria-label={t('Design colours')}><span>{t('Design colours')}</span>{colors.map(o=><button type="button" key={o.color+':'+o.thread?.code} className="thread-swatch" style={{background:o.color}} title={o.thread?label(o.thread):o.color} aria-label={t('Use thread {v0}',{v0:o.thread?label(o.thread):o.color})} onClick={()=>choose(o.color,o.thread)}/>)}</div>
