@@ -76,13 +76,13 @@ export function validThread(value:unknown,color:string):value is Thread {
   if(typeof color!=='string'||!value||typeof value!=='object')return false;const t=value as Thread;
   return t.brand==='brother'&&brotherThreads.some(b=>b.code===t.code&&b.name===t.name&&b.color===color.toLowerCase());
 }
-/** @test */ export function rgbToLab(color:string):Lab {
+export function rgbToLab(color:string):Lab {
   const [r,g,b]=[1,3,5].map(i=>{const v=parseInt(color.slice(i,i+2),16)/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});
   const f=(v:number)=>v>216/24389?Math.cbrt(v):(24389/27*v+16)/116;
   const x=f((.4124564*r+.3575761*g+.1804375*b)/.95047),y=f(.2126729*r+.7151522*g+.072175*b),z=f((.0193339*r+.119192*g+.9503041*b)/1.08883);
   return [116*y-16,500*(x-y),200*(y-z)];
 }
-/** @test */ export function deltaE2000([l1,a1,b1]:Lab,[l2,a2,b2]:Lab):number {
+export function deltaE2000([l1,a1,b1]:Lab,[l2,a2,b2]:Lab):number {
   const rad=Math.PI/180,sin=(v:number)=>Math.sin(v*rad),cos=(v:number)=>Math.cos(v*rad);
   const c=(Math.hypot(a1,b1)+Math.hypot(a2,b2))/2,g=.5*(1-Math.sqrt(c**7/(c**7+25**7)));
   const ap1=(1+g)*a1,ap2=(1+g)*a2,c1=Math.hypot(ap1,b1),c2=Math.hypot(ap2,b2);

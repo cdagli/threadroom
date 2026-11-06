@@ -23,7 +23,7 @@ Where `document.modelContext` doesn't exist, registration does nothing.
 
 - Lengths are millimetres. The hoop's top-left corner is `(0, 0)`; x grows right and y grows down. Angles are degrees.
 - Objects are identified by `id` (from `get_design`). Tools that act on objects take `ids`; when you omit
-  it they use the user's current selection.
+  it they use the user's current selection, except `set_sew_order`, which requires a nonempty list.
 - A design holds at most 80 objects. Everything must stay inside the hoop.
 - Reading tools are marked `readOnlyHint`. Tools that return object names, text or file names are also marked
   `untrustedContentHint`, so agents treat that content as data. `load_project` and `new_design` replace the
@@ -39,6 +39,7 @@ Where `document.modelContext` doesn't exist, registration does nothing.
 | Tool | What it does |
 | --- | --- |
 | `get_reference` | Stitch kinds, fill patterns, underlays, hoops, fabrics, lock types, limits, shapes, commands, suggested workflow |
+| `find_threads` | Brother PEC catalogue: nearest colours by CIEDE2000, case-insensitive name substring or exact code; combine filters; default five search results (max 64), or the whole catalogue without filters. Apply with `update_objects` `settings.threadCode` |
 | `get_design` | Project setup and every object in stitch order, with bounds, colour, thread and key settings |
 | `get_objects` | Full and resolved (inherited) settings; with `geometry: true`, point lists too |
 | `list_issues` | The check panel: severity, object, bounds, title, why it matters, how to fix it, one-click fix; can wait for stitch-level checks |
@@ -47,6 +48,7 @@ Where `document.modelContext` doesn't exist, registration does nothing.
 | `capture_preview` | PNG of the design: a realistic stitch render, or shapes on the hoop |
 | `select_objects` | Select objects or a reference image, optionally panning to them |
 | `edit_objects` | Right-click commands: copy, cut, paste, duplicate, delete, group, lock, hide, redwork, order, flip, rotate… |
+| `set_sew_order` | Listed ids fill their existing slots in the given order; unlisted objects stay in place. All ids give a full permutation in one undo step. Sew order is layer order; later objects sew on top. Group colours and minimise jumps |
 | `update_objects` | Stitch settings, colour or Brother thread, stitch kind, density, underlay, ties, entry and exit |
 | `add_shape` | Circle, rectangle, star, triangle, diamond, hexagon, heart |
 | `add_path` | Open line, closed fill, satin block or manual points, with corner or smooth anchors |
@@ -83,4 +85,5 @@ Locked, hidden, text and redwork objects are refused.
 
 **Analyse the design.** `get_stitch_report` (sewing time, colour changes, trims) → `set_view`
 (`density: true`) → `capture_preview` (`mode: "stitches"`) → suggest merging colours or reordering
-(`edit_objects` `front`/`back`) to reduce thread changes.
+with `set_sew_order` to reduce thread changes and jumps. Use `find_threads` to choose colours, then
+apply the returned code with `update_objects` (`settings: {threadCode: "2"}`).

@@ -1,10 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
-const {designSummary,objectDetail,issueReport,issueCounts,reference,patchObject,makeShape,makePath,checked,validateArgs,englishMessage,editablePoints,editPoints}=load('agent-tools');
+const {designSummary,objectDetail,issueReport,issueCounts,reference,findThreads,setSewOrder,patchObject,makeShape,makePath,checked,validateArgs,englishMessage,editablePoints,editPoints}=load('agent-tools');
 const {createT}=load('i18n');
 const {demo,object,defaultLocks,defaultTrimJump}=load('project');
 const {checkProject}=load('check');
+const {brotherThreads}=load('threads');
 const blank=objects=>({version:1,name:'Agent',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{...defaultLocks},trimJump:defaultTrimJump,objects});
 
 test('Design summary lists objects in mm without image data or raw geometry',()=>{
@@ -38,6 +39,61 @@ test('Object patches mirror the settings panel rules',()=>{
   const reset=patchObject({...line,spacing:.5},{spacing:null}).object;assert.equal('spacing' in reset,false);
   assert.match(patchObject({...line,locked:true},{name:'x'}).error,/locked/);
   assert.equal(patchObject(line,{matchThread:true}).object.thread.brand,'brother');
+});
+test('Thread search returns the nearest CIEDE2000 matches with rounded distances',()=>{
+  assert.deepEqual(findThreads({color:'#123456'}).threads,[
+    {code:'21',name:'Ultramarine',color:'#0b3d91',deltaE:8.1},
+    {code:'1',name:'Prussian Blue',color:'#0e1f7c',deltaE:10.5},
+    {code:'2',name:'Blue',color:'#0a55a3',deltaE:13.2},
+    {code:'23',name:'Dark Gray',color:'#293133',deltaE:14.3},
+    {code:'59',name:'Electric Blue',color:'#095ba6',deltaE:14.9},
+  ]);
+  assert.equal(findThreads({color:'#123456',limit:64}).threads.length,64);
+  const exact=findThreads({color:'#0A55A3'}).threads[0];
+  assert.deepEqual(exact,{code:'2',name:'Blue',color:'#0a55a3',deltaE:0});
+});
+test('Thread queries match name substrings without case or exact codes and filter before ranking',()=>{
+  const {threads}=findThreads({query:'bLuE',limit:64});
+  assert.deepEqual(threads,brotherThreads.filter(t=>t.name.toLowerCase().includes('blue')).map(({code,name,color})=>({code,name,color})));
+  assert.deepEqual(findThreads({query:'2'}).threads,[{code:'2',name:'Blue',color:'#0a55a3'}]);
+  assert.deepEqual(findThreads({query:'not a thread'}).threads,[]);
+  const filtered=findThreads({color:'#ed171f',query:'blue',limit:3}).threads;
+  assert.deepEqual(filtered,findThreads({color:'#ed171f',limit:64}).threads.filter(t=>t.name.toLowerCase().includes('blue')).slice(0,3));
+  assert.equal(findThreads({query:'green'}).threads.length,5);
+});
+test('Unfiltered thread lookup exposes the catalogue and validates colours and limits',()=>{
+  assert.deepEqual(findThreads().threads,brotherThreads.map(({code,name,color})=>({code,name,color})));
+  assert.equal(findThreads({limit:1}).threads.length,1);
+  for(const color of ['red','#123','#zzzzzz','#1234567'])assert.match(findThreads({color}).error,/#rrggbb/);
+  for(const limit of [0,-1,65,1.5,NaN,Infinity])assert.match(findThreads({limit}).error,/integer from 1 to 64/);
+});
+const sewProject=()=>blank(['a','b','c','d','e'].map(id=>({...object(id,[[[10,10],[20,10]]],'running'),id})));
+test('Partial sew order fills the listed objects’ original slots and preserves unlisted positions',()=>{
+  const p=sewProject(),ids=['e','a','c'],{project:next}=setSewOrder(p,ids);
+  assert.deepEqual(next.objects.map(o=>o.id),['e','b','a','d','c']);
+  assert.equal(next.objects[1],p.objects[1]);assert.equal(next.objects[3],p.objects[3]);
+  assert.deepEqual(next.objects,[p.objects[4],p.objects[1],p.objects[0],p.objects[3],p.objects[2]]);
+  assert.deepEqual(p.objects.map(o=>o.id),['a','b','c','d','e']);assert.deepEqual(ids,['e','a','c']);
+  assert.ok('project' in checked(next));
+});
+test('Every id gives a full sew permutation; unchanged orders preserve the project reference',()=>{
+  const p=sewProject(),ids=['d','b','e','a','c'];
+  assert.deepEqual(setSewOrder(p,ids).project.objects.map(o=>o.id),ids);
+  assert.equal(setSewOrder(p,['c']).project,p);assert.equal(setSewOrder(p,['a','c','e']).project,p);
+});
+test('Sew order rejects unknown or duplicate ids without changing the project',()=>{
+  const p=sewProject(),before=structuredClone(p);
+  assert.match(setSewOrder(p,['e','missing']).error,/Unknown object id "missing"/);
+  assert.match(setSewOrder(p,['c','a','c']).error,/Duplicate object id "c"/);
+  assert.match(setSewOrder(p,[]).error,/at least one/);
+  assert.deepEqual(p,before);
+});
+test('Sew order normalizes group membership when the new order splits a group block',()=>{
+  const p=sewProject();p.groups=[{id:'g',name:'Group'}];p.objects=p.objects.map(o=>['a','b'].includes(o.id)?{...o,group:'g'}:o);
+  const {project:next}=setSewOrder(p,['b','c','a']);
+  assert.deepEqual(next.objects.map(o=>o.id),['b','c','a','d','e']);
+  assert.deepEqual(next.objects.map(o=>o.group),['g',undefined,undefined,undefined,undefined]);
+  assert.equal(p.objects[0].group,'g');assert.ok('project' in checked(next));
 });
 test('Shapes and paths are built like the drawing tools and stay inside the hoop',()=>{
   const p=blank([]);

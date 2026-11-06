@@ -1,8 +1,8 @@
-import {bounds,fabrics,hoops,isFillKind,kindHints,kindNames,lockLimits,lockNames,object,palette,resolve,ropeLimits,satinLimits,underlayNames,underlayOptions,validProject,type Kind,type Point,type Project,type StitchObject} from './project';
+import {bounds,fabrics,hoops,isFillKind,kindHints,kindNames,lockLimits,lockNames,normalizeGroups,object,palette,resolve,ropeLimits,satinLimits,underlayNames,underlayOptions,validProject,type Kind,type Point,type Project,type StitchObject} from './project';
 import {blockOutline,changeStitchKind,curveRing,draftRails,insertGeometryPoint,isClosedShape,moveGeometry,removeGeometryPoint,routeEnds,setCorner,withEnd,withRails} from './curves';
 import {explain,fixFor,type Warning} from './check';
 import {fillPatterns} from './fill-patterns';
-import {brotherThreads,nearestBrother,threadReference,type Thread} from './threads';
+import {brotherThreads,deltaE2000,nearestBrother,rgbToLab,threadReference,type Thread} from './threads';
 import {circle,diamond,heart,hexagon,rect,shapeNames,star,triangle,type ShapeKind} from './shapes';
 import {textLimits} from './text';
 import {production} from './production';
@@ -91,9 +91,35 @@ export function reference(){
     locks:{types:Object.fromEntries(Object.entries(lockNames).map(([k,v])=>[k,en(v)])),size:lockLimits.size,trimJump:lockLimits.trim},
     limits:{satinWidth:satinLimits.width,splitLength:satinLimits.split,ropeWidth:ropeLimits.width,text:textLimits,sewingSpeed:[production.minSpeed,production.maxSpeed]},
     shapes:shapeKinds,menuCommands,palette,
-    threads:`${brotherThreads.length} Brother embroidery threads; pass threadCode (e.g. "${brotherThreads[0].code}") or matchThread:true to update_objects`,
-    workflow:['get_reference (once)','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','capture_preview to look at the result','export_design'],
+    threads:`${brotherThreads.length} Brother PEC catalogue threads; use find_threads to search by colour or name/code, then apply a result with update_objects settings.threadCode (e.g. "${brotherThreads[0].code}") or use settings.matchThread:true`,
+    workflow:['get_reference (once)','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','find_threads then update_objects settings.threadCode to choose threads','set_sew_order to reorder listed objects within their existing slots; later layers sew on top, group colours to minimise jumps','capture_preview to look at the result','export_design'],
   };
+}
+
+// Searches use five results by default; without filters, expose the whole PEC catalogue.
+export function findThreads({color,query,limit}:{color?:string;query?:string;limit?:number}={}):{threads:{code:string;name:string;color:string;deltaE?:number}[]}|{error:string}{
+  if(color!==undefined&&!/^#[0-9a-f]{6}$/i.test(color))return {error:'color must be a #rrggbb hex colour.'};
+  const count=limit??(color!==undefined||query!==undefined?5:64);
+  if(!Number.isInteger(count)||count<1||count>64)return {error:'limit must be an integer from 1 to 64.'};
+  const q=query?.toLowerCase(),matches=brotherThreads.filter(t=>q===undefined||t.name.toLowerCase().includes(q)||t.code===q);
+  if(color===undefined)return {threads:matches.slice(0,count).map(({code,name,color})=>({code,name,color}))};
+  const lab=rgbToLab(color);
+  return {threads:matches.map(({code,name,color})=>({code,name,color,deltaE:deltaE2000(lab,rgbToLab(color))}))
+    .sort((a,b)=>a.deltaE-b.deltaE).slice(0,count).map(t=>({...t,deltaE:Math.round(t.deltaE*10)/10}))};
+}
+
+// Fill only the listed objects' original slots, preserving every unlisted object's position.
+export function setSewOrder(p:Project,ids:readonly string[]):{project:Project}|{error:string}{
+  if(!ids.length)return {error:'Pass at least one object id.'};
+  const byId=new Map(p.objects.map(o=>[o.id,o])),seen=new Set<string>();
+  for(const id of ids){
+    if(!byId.has(id))return {error:`Unknown object id "${id}". Call get_design for current ids.`};
+    if(seen.has(id))return {error:`Duplicate object id "${id}".`};
+    seen.add(id);
+  }
+  let index=0;
+  const objects=p.objects.map(o=>seen.has(o.id)?byId.get(ids[index++])!:o);
+  return {project:normalizeGroups(objects.every((o,i)=>o===p.objects[i])?p:{...p,objects})};
 }
 
 // Settings an agent may patch; null resets a setting to its inherited (fabric/Setup) default.
