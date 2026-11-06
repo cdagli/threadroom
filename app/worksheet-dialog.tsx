@@ -5,7 +5,7 @@ import {createPortal} from 'react-dom';
 import {useT} from './i18n';
 import {fabrics,hoops,type Compiled,type Project} from '@/lib/project';
 import {checkProject,explain,stitchWarnings} from '@/lib/check';
-import {estimatedSeconds,production,sewingSpeed,stitchBounds,threadSequence} from '@/lib/production';
+import {production,sewingSpeed,stitchBounds,threadSequence} from '@/lib/production';
 import {brotherThreads} from '@/lib/threads';
 import {formatLength,type Units} from '@/lib/view-settings';
 

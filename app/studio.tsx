@@ -3,6 +3,7 @@ import {Button,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover
 import dynamic from 'next/dynamic';
 import {flushSync} from 'react-dom';
 import {Loading} from './panel-loading';
+import StudioLoading from './studio-loading';
 import {StitchOverlays,OverlayControls} from './stitch-overlays';
 import {measurePoint} from '@/lib/measure';
 import {MapToPath} from './map-to-path-control';
@@ -296,7 +297,7 @@ function StudioEditor() {
     try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
     let live=true;
     const restore=()=>{if(!live)return;try{p=syncPathBindings(migrateImages(normalizeGroups(p)));}catch{p=migrateImages(demo(initialT));}current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);};
-    if(p.objects.some(o=>o.text?.satin))void ensureSatinFonts().then(restore).catch(e=>setError(errorText(e,t,'The font could not be loaded.')));else restore();
+    if(p.objects.some(o=>o.text?.satin))void ensureSatinFonts().then(restore).catch(e=>{if(!live)return;restore();setError(errorText(e,initialT,'The font could not be loaded.'));});else restore();
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
     return()=>{live=false;};
   },[]);
@@ -974,7 +975,9 @@ function StudioEditor() {
     changeImage:(id,patch)=>changeImage(id,patch),deleteImage,setViewSettings:patch=>setViewSettings(v=>({...v,...patch})),setDensity,setLook,setShowImage,
     openPanel:tab=>{setPanelTab(tab);setPanelOpen(true);},play,download,
   };
-  return <main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
+  // Keep the canvas mounted for measurement, but hide placeholder content until restoration
+  // and the layout-phase viewport fit have completed. Inert also blocks keyboard focus.
+  return <>{!ready&&<StudioLoading/>}<main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} data-loading={!ready||undefined} inert={!ready} aria-hidden={!ready||undefined} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
     <Input ref={file} type="file" tabIndex={-1} className="visually-hidden" aria-label={t("Import artwork or project")} accept=".png,.jpg,.jpeg,.webp,.svg,.pes,.pec,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/>
     <MenuPopover id="project-menu" className="project-popover" aria-label={t("Project")}>
       <MenuGroup label={t('Project')}>
@@ -1207,5 +1210,5 @@ function StudioEditor() {
     {pendingSVG&&<SVGImportChoice file={pendingSVG} onClose={()=>setPendingSVG(null)} onChoose={shapes=>{const f=pendingSVG;setPendingSVG(null);void importFile(f,shapes);}}/>}
     <AgentTools api={agentApi}/>
     {shortcutHelp&&<ShortcutHelp tools={tools} onClose={()=>{setShortcutHelp(false);requestAnimationFrame(()=>svg.current?.focus());}}/>}
-  </main>;
+  </main></>;
 }

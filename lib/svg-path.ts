@@ -1,7 +1,7 @@
 import type {Point} from './project';
 export type Matrix=[number,number,number,number,number,number];
 export const identity:Matrix=[1,0,0,1,0,0];
-export const map=(m:Matrix,[x,y]:Point):Point=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
+/** @test */ export const map=(m:Matrix,[x,y]:Point):Point=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
 export const multiply=(a:Matrix,b:Matrix):Matrix=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
 const number='[+-]?(?:\\d*\\.\\d+|\\d+\\.?\\d*)(?:[eE][+-]?\\d+)?';
 export function numbers(s:string):number[]{

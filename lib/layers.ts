@@ -54,7 +54,7 @@ export const unlockAll=(p:Project):Project=>p.objects.some(o=>o.locked)?{...p,ob
 export type ColourRun={key:string;color:string;thread?:Thread;ids:string[];index:number;end:number;stitches:number|null};
 const runKey=(o:StitchObject)=>`${o.color.toLowerCase()}|${o.thread?.code??''}`;
 const stitchCache=new WeakMap<Command[],Map<string,number>>();
-export function objectStitches(commands:Command[]){
+function objectStitches(commands:Command[]){
   let counts=stitchCache.get(commands);if(counts)return counts;counts=new Map();
   for(const c of commands)if(c.type==='stitch'&&c.objectId!==undefined)counts.set(c.objectId,(counts.get(c.objectId)??0)+1);
   stitchCache.set(commands,counts);return counts;

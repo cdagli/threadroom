@@ -2,7 +2,7 @@ import {createT,TranslationError,type Translator} from './i18n';
 import {curveRing} from './curves';
 import {hoops,object,validProject,type Point,type Project,type StitchObject} from './project';
 import {migrateImages} from './images';
-import {identity,map,multiply,numbers,pathData,transform,type Matrix,type Subpath} from './svg-path';
+import {identity,multiply,numbers,pathData,transform,type Matrix,type Subpath} from './svg-path';
 type Style=Record<string,string>;
 const properties=['fill','stroke','stroke-width','fill-rule','color','fill-opacity','stroke-opacity','visibility','display','opacity','clip-path','mask','filter','vector-effect'];
 const declarations=(s:string):Style=>Object.fromEntries(s.split(';').flatMap(part=>{const at=part.indexOf(':');return at<0?[]:[[part.slice(0,at).trim().toLowerCase(),part.slice(at+1).trim()]];}));
@@ -18,7 +18,7 @@ function matches(el:Element,s:string):boolean{
   while(parts.length){const part=parts.pop()!;while(parent&&!simple(parent,part))parent=parent.parentElement;if(!parent)return false;parent=parent.parentElement;}
   return true;
 }
-export function svgLength(s:string):number|null{
+/** @test */ export function svgLength(s:string):number|null{
   const m=s.trim().match(/^([+-]?(?:\d*\.\d+|\d+\.?\d*)(?:e[+-]?\d+)?)\s*(mm|cm|in|px)?$/i);if(!m)return null;
   const n=Number(m[1])*({mm:1,cm:10,in:25.4,px:25.4/96}[m[2]?.toLowerCase()??'px']!);return Number.isFinite(n)?n:null;
 }
@@ -54,7 +54,7 @@ function shape(el:Element):string|null{
 type Source={d:string;m:Matrix;style:Style;name:string};
 const distance=(a:Point,b:Point)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 // Join only compatible consecutive open outlines, considering either end and either direction.
-export function joinStrokes(objects:StitchObject[]):StitchObject[]{
+function joinStrokes(objects:StitchObject[]):StitchObject[]{
   const out:StitchObject[]=[],open=(o:StitchObject)=>o.kind!=='fill'&&o.rings.length===1&&distance(o.rings[0][0],o.rings[0].at(-1)!)>1e-8;
   for(const o of objects){
     let current=o,at=out.length;
@@ -102,7 +102,7 @@ export function readSVGSources(source:string,t:Translator=createT('en'),parser:P
     return {sources,viewBox:v,width:w,height:h,aspect:root.getAttribute('preserveAspectRatio')??'xMidYMid meet'};
   }catch(e){if(e instanceof TranslationError)throw e;throw new TranslationError(t,'This SVG could not be imported. Use paths, basic shapes, solid colours and transforms.');}
 }
-export function importSVG(source:string,filename:string,project:Project,t:Translator=createT('en'),parser:Pick<DOMParser,'parseFromString'>=new DOMParser()):Project{
+/** @test */ export function importSVG(source:string,filename:string,project:Project,t:Translator=createT('en'),parser:Pick<DOMParser,'parseFromString'>=new DOMParser()):Project{
   return importSVGSources(readSVGSources(source,t,parser),filename,project,t);
 }
 export function importSVGSources(input:SVGSources,filename:string,project:Project,t:Translator=createT('en')):Project{

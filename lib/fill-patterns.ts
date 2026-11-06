@@ -9,7 +9,7 @@ export function validPatternParams(id:FillPattern|undefined,params:unknown):para
   const schema=fillPatterns.find(p=>p.id===(id??'even'))?.params??[];
   return Object.entries(params).every(([key,v])=>{const f=schema.find(f=>f.key===key);return f&&typeof v==='number'&&Number.isFinite(v)&&v>=f.min&&v<=f.max&&Math.abs((v-f.min)/f.step-Math.round((v-f.min)/f.step))<1e-7;});
 }
-export type PatternRow=[number,number[]];
+type PatternRow=[number,number[]];
 function descriptor(xs:number[],width:number):PatternRow {
   const points:number[]=[];
   for(const x of xs.sort((a,b)=>a-b))if(x>=-1e-6&&x<=width+1e-6&&(!points.length||x-points.at(-1)!>1e-4))points.push(x);
@@ -29,7 +29,7 @@ function heartCrossings(y:number,size:number):number[] {
   return unique.flatMap(e=>(e**1.5>=1e-8?[-(e**1.5),e**1.5]:[0]).map(x=>(x+1)/2*size));
 }
 // These pure row descriptors mirror embroidery/patterns.py; parity is checked for every pattern.
-export function patternCycle(id:FillPattern,L=4,s=.2,params?:PatternParams):{rows:PatternRow[];shear:number} {
+/** @test */ export function patternCycle(id:FillPattern,L=4,s=.2,params?:PatternParams):{rows:PatternRow[];shear:number} {
   const p=fillPatterns.find(p=>p.id===id)!;
   const v=Object.fromEntries(p.params.map(f=>[f.key,params?.[f.key]??f.default])),mode=p.mode;
   const offsets=(values:number[]):PatternRow[]=>values.map(o=>[o,[L]]),range=(n:number)=>Array.from({length:n},(_,i)=>i),mod=(x:number,n:number)=>(x%n+n)%n;
@@ -64,7 +64,6 @@ export function patternCycle(id:FillPattern,L=4,s=.2,params?:PatternParams):{row
   }
   return {rows,shear};
 }
-export function patternOffset(id:FillPattern,row:number,length:number,params?:PatternParams):number {const {rows}=patternCycle(id,length,.2,params);return rows[(row%rows.length+rows.length)%rows.length][0];}
 // Show a full cycle in mm, including variable-length crossings and continuous shear.
 export function patternPreview(id:FillPattern,params?:PatternParams):[number,number][][] {
   if(id==='streamlines')return Array.from({length:12},(_,i)=>Array.from({length:15},(_,j)=>[2+j*38/14,Math.max(2,Math.min(26,3+i*1.85+1.5*Math.sin(j/3+i/4)))]));

@@ -10,7 +10,7 @@ type Surface={
 };
 
 // Read the screen-space box on each placement, including canvas/chrome resizes.
-export function useSelectionAnchor({screenBox,canvas,container,rail,topClearance=0}:Surface&{screenBox:(canvasRect:DOMRect)=>Rect;topClearance?:number}){
+function useSelectionAnchor({screenBox,canvas,container,rail,topClearance=0}:Surface&{screenBox:(canvasRect:DOMRect)=>Rect;topClearance?:number}){
   const bar=useRef<HTMLDivElement>(null),[position,setPosition]=useState({left:0,top:0,ready:false});
   const place=useStableCallback(()=>{
     const el=bar.current,area=container.current,svg=canvas.current;if(!el||!area||!svg)return;

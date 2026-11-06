@@ -3,11 +3,11 @@ import {Button,Icon,Input,Section,SegmentedControl,Select,Textarea} from '@/desi
 import {useT} from './i18n';
 import dynamic from 'next/dynamic';
 import {Loading} from './panel-loading';
-import {errorText,type Translator} from '@/lib/i18n';
-import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject} from 'react';
+import type {Translator} from '@/lib/i18n';
+import {useEffect, useState, type RefObject} from 'react';
 import {loadCatalog, previewRef, weightNames} from '@/lib/fonts';
 import {satinFonts,satinLetteringDefaults,columnLimits,columnWidth,type SatinFontId} from '@/lib/satin-lettering';
-import {textLimits, type FontRef, type TextLayout, type TextSpec} from '@/lib/text';
+import {textLimits, type TextLayout, type TextSpec} from '@/lib/text';
 
 function usePreview(load:()=>Promise<string>,key:string) {
   const [family,setFamily]=useState<string|null>(null);

@@ -6,22 +6,12 @@ import {imageToWorld} from './images';
 
 /** Small flat-art tracer: quantise colour, find connected components and trace
  * pixel boundaries, preserving holes. No image is uploaded to the server. */
-export async function traceArtwork(art: Artwork&{rotation?:number}, colours: number, ignoreBackground: boolean,t:Translator=createT('en')): Promise<StitchObject[]> {
-  const image = new Image(); image.src = art.src; await image.decode();
-  const factor=80/Math.max(image.naturalWidth, image.naturalHeight);
-  const w=Math.max(2, Math.round(image.naturalWidth*factor)), h=Math.max(2,Math.round(image.naturalHeight*factor));
-  const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
-  const ctx=canvas.getContext('2d', {willReadFrequently:true})!;
-  ctx.drawImage(image,0,0,w,h); const rgba=ctx.getImageData(0,0,w,h).data;
-  return tracePixels({width:w,height:h,data:rgba},art,colours,ignoreBackground,t);
-}
-
 export function tracePixels(image:ImagePixels,art:Artwork,colours:number,ignoreBackground:boolean,t:Translator=createT('en')):StitchObject[]{
   return orderTrace(traceRaster(image,art,colours,ignoreBackground,t).map(o=>simplifyTrace(o,traceTolerance(Math.max(art.width,art.height)))));
 }
 
 // Pure raster entry point also used by the headless sewing-order benchmark.
-export function traceRaster(image:ImagePixels,art:Artwork,colours:number,ignoreBackground:boolean,t:Translator=createT('en')):StitchObject[]{
+/** @test */ export function traceRaster(image:ImagePixels,art:Artwork,colours:number,ignoreBackground:boolean,t:Translator=createT('en')):StitchObject[]{
   const {width:w,height:h,data:rgba}=image;
   const pixels=Array.from({length:w*h}, (_,i)=>[rgba[i*4],rgba[i*4+1],rgba[i*4+2]]);
   const distance=(a:number[],b:number[])=>a.reduce((d,v,i)=>d+(v-b[i])**2,0);

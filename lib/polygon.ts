@@ -7,7 +7,7 @@ import type {Point} from './project';
 export type Region=Point[][][];
 type Pair=[number,number];type Geom=Pair[][]|Pair[][][];
 
-export const ringArea=(r:Point[])=>{let a=0;for(let i=0;i<r.length;i++){const p=r[i],q=r[(i+1)%r.length];a+=p[0]*q[1]-q[0]*p[1];}return a/2;};
+/** @test */ export const ringArea=(r:Point[])=>{let a=0;for(let i=0;i<r.length;i++){const p=r[i],q=r[(i+1)%r.length];a+=p[0]*q[1]-q[0]*p[1];}return a/2;};
 const perimeter=(r:Point[])=>r.reduce((s,p,i)=>{const q=r[(i+1)%r.length];return s+Math.hypot(q[0]-p[0],q[1]-p[1]);},0);
 export const regionArea=(g:Region)=>g.reduce((s,poly)=>s+poly.reduce((t,r,i)=>t+(i?-1:1)*Math.abs(ringArea(r)),0),0);
 export const regionRings=(g:Region)=>g.flat();
@@ -21,7 +21,7 @@ function rdp(points:Point[],tol:number):Point[]{
   return best<=tol?[a,b]:[...rdp(points.slice(0,index+1),tol).slice(0,-1),...rdp(points.slice(index),tol)];
 }
 // Drops repeated, collinear and near-collinear points (within tol mm) of a closed ring.
-export function cleanRing(ring:Point[],tol=.005):Point[]{
+/** @test */ export function cleanRing(ring:Point[],tol=.005):Point[]{
   const r=open(ring).filter((p,i,a)=>{const q=a[(i+a.length-1)%a.length];return a.length<2||Math.hypot(p[0]-q[0],p[1]-q[1])>1e-7;});
   if(r.length<3)return r.map(p=>[p[0],p[1]]);
   let far=0,best=-1;for(let i=1;i<r.length;i++){const d=Math.hypot(r[i][0]-r[0][0],r[i][1]-r[0][1]);if(d>best){best=d;far=i;}}
@@ -61,10 +61,10 @@ export function regionFromRings(rings:Point[][]):Region{
   const clean=rings.map(r=>cleanRing(r,0)).filter(r=>r.length>=3&&Math.abs(ringArea(r))>1e-9);
   return clean.length?run(clean.length===1?'union':'xor',clean.map(r=>[[r]]),1e-6,0):[];
 }
-export function insideRegion(g:Region,p:Point):boolean{
+/** @test */ export function insideRegion(g:Region,p:Point):boolean{
   let n=0;for(const r of g.flat())for(let i=0;i<r.length;i++){const a=r[i],b=r[(i+1)%r.length];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<a[0]+(p[1]-a[1])*(b[0]-a[0])/(b[1]-a[1]))n++;}return n%2===1;
 }
-export function regionCentroid(poly:Point[][]):Point{
+function regionCentroid(poly:Point[][]):Point{
   let A=0,x=0,y=0;for(const r of poly)r.forEach((a,i)=>{const b=r[(i+1)%r.length],v=a[0]*b[1]-b[0]*a[1];A+=v;x+=(a[0]+b[0])*v;y+=(a[1]+b[1])*v;});
   return Math.abs(A)>1e-12?[x/(3*A),y/(3*A)]:poly[0][0];
 }

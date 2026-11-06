@@ -1,7 +1,7 @@
 'use client';
 import {memo,type RefObject} from 'react';
 import {flushSync} from 'react-dom';
-import {useWebMCP} from 'use-webmcp-tool';
+import {useWebMCP} from '@/lib/use-webmcp';
 import {around,centre,selectionBounds,translate,type Align,type Matrix} from '@/lib/editing';
 import {designSummary,editablePoints,editPoints,en,englishMessage,issueCounts,issueReport,makePath,makeShape,menuCommands,objectDetail,objectLimit,patchObject,reference,shapeKinds,stitchKinds,checked,validateArgs,type MenuCommand,type ObjectPatch,type PathMode,type PointOp,type Schema} from '@/lib/agent-tools';
 import {defaultLocks,defaultTrimJump,demo,fabrics,hoops,lockLimits,normalizeGroups,validProject,withFabric,type Compiled,type Fabric,type Kind,type StitchObject,type Point,type Project,type RefImage} from '@/lib/project';

@@ -15,9 +15,9 @@ export const en=createT('en');
 const r2=(n:number)=>Math.round(n*100)/100;
 const roundPoint=([x,y]:Point):Point=>[r2(x),r2(y)];
 const box=(b:{x:number;y:number;width:number;height:number})=>({x:r2(b.x),y:r2(b.y),width:r2(b.width),height:r2(b.height)});
-export const objectBox=(o:StitchObject)=>box(bounds([o.rails?{...o,rings:[blockOutline(o.rails)]}:o]));
+const objectBox=(o:StitchObject)=>box(bounds([o.rails?{...o,rings:[blockOutline(o.rails)]}:o]));
 
-export function summarizeObject(o:StitchObject,p:Project,index:number){
+function summarizeObject(o:StitchObject,p:Project,index:number){
   const r=resolve(o,p.fabric,p.locks);
   return {
     id:o.id,index,name:o.name,kind:o.kind,kindName:en(kindNames[o.kind]),color:o.color,
@@ -97,7 +97,7 @@ export function reference(){
 }
 
 // Settings an agent may patch; null resets a setting to its inherited (fabric/Setup) default.
-export const editableKeys=['name','color','kind','length','angle','satinWidth','fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked'] as const;
+const editableKeys=['name','color','kind','length','angle','satinWidth','fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked'] as const;
 export type ObjectPatch=Partial<Record<typeof editableKeys[number],unknown>>&{threadCode?:string;matchThread?:boolean};
 const resettable=new Set<string>(['fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked']);
 
@@ -223,7 +223,7 @@ export function englishMessage(message:string):string{
 // ---- point editing -------------------------------------------------------------------------------
 // The anchors the point editor shows. Curves: ring 0, one entry per anchor. Satin blocks: ring 0 is the
 // left rail and ring 1 the right rail; index k on both rails is rung k. Plain outlines: one ring per path.
-export function pointEditBlock(o:StitchObject):string|null{
+function pointEditBlock(o:StitchObject):string|null{
   if(o.text)return 'Text is laid out from its font; change it with update_text, or convert it to shapes first.';
   if(o.kind==='redwork')return 'Redwork points can\'t be edited. Break it apart (edit_objects breakApart) to edit the source lines.';
   if(o.locked)return `"${o.name}" is locked. Unlock it first.`;

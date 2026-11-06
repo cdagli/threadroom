@@ -76,7 +76,7 @@ export const hasCrossStyle=(o:StitchObject)=>o.crossStyle!==undefined||(['crossS
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
 export const isRopeKind=(kind:Kind)=>kind==='double-rope'||kind==='triple-rope';
 // Satin settings without a width: blocks take their width from the rails.
-export const isSatinKind=(kind:Kind)=>kind==='satin'||kind==='satin-block';
+const isSatinKind=(kind:Kind)=>kind==='satin'||kind==='satin-block';
 export const usesSplit=(kind:Kind)=>isWideKind(kind)||kind==='satin-block';
 // Ember's rope run defaults; the width is the offset each side, so the rope is twice as wide.
 export const ropeDefaults={width:.4,length:1.5};
@@ -96,7 +96,7 @@ export const fabrics: Record<Fabric, FabricProfile> = {
 export const underlayNames: Record<Underlay, Key> = {none: 'None', center: 'Center walk', edge: 'Edge walk', zigzag: 'Light zigzag', 'edge-zigzag': 'Edge + zigzag', tatami: 'Light tatami', 'edge-tatami': 'Edge + tatami'};
 export const underlayOptions=(kind:Kind):Underlay[]=>isFillKind(kind)?['none','edge','tatami','edge-tatami']:isSatinKind(kind)?['none','center','edge','zigzag','edge-zigzag']:['none'];
 export const usesSpacing=(kind:Kind)=>isFillKind(kind)||usesSplit(kind);
-export const usesPull=usesSpacing;
+/** @alias */ export const usesPull=usesSpacing;
 export const usesShortStitches=(kind:Kind)=>isSatinKind(kind)||kind==='zigzag';
 // Bites above 7 mm loosen and snag on baby clothes (PR1X sews up to 12.7 mm); width cap 10 mm
 // keeps even an unsplit bite with 1 mm compensation within the machine limit.
@@ -139,7 +139,7 @@ export const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '
 export function object(name: string, rings: Point[][], kind: Kind = 'fill', color = palette[0]): StitchObject {
   return {id: crypto.randomUUID(), name, rings, kind, color, length: 2.5, angle: 35, satinWidth: 2};
 }
-export function ellipse(cx: number, cy: number, rx: number, ry: number): Point[] {
+function ellipse(cx: number, cy: number, rx: number, ry: number): Point[] {
   return Array.from({length: 48}, (_, i) => [cx+Math.cos(i/48*Math.PI*2)*rx, cy+Math.sin(i/48*Math.PI*2)*ry]);
 }
 export function bounds(objects: StitchObject[]) {
@@ -213,7 +213,7 @@ export function ungroupObjects(p:Project,ids:string[]):Project {
   const selected=new Set(ids),objects=p.objects.map(o=>selected.has(o.id)?withGroup(o):o);
   return normalizeGroups(objects.every((o,i)=>o===p.objects[i])?p:{...p,objects});
 }
-export function ungroup(p:Project,groupId:string):Project {
+/** @test */ export function ungroup(p:Project,groupId:string):Project {
   return ungroupObjects(p,p.objects.filter(o=>o.group===groupId).map(o=>o.id));
 }
 export function moveGroup(p:Project,groupId:string,index:number):Project {

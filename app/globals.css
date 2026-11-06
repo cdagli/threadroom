@@ -8,6 +8,8 @@
 /* Layout: the canvas fills the window; controls float over it. The side panel is a column on
    desktop and a drawer on phones. */
 .studio{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) auto}
+.studio[data-loading]{visibility:hidden}
+.studio-loading{position:fixed;inset:0;display:grid;place-items:center}
 .stage{position:relative;min-width:0;overflow:hidden;background:var(--bg-workspace);container-type:size}
 /* Keep canvas overlays, including rulers, below the floating editor controls. */
 .canvas-wrap{position:absolute;inset:0;overflow:hidden;z-index:0}.design-canvas{position:relative;display:block;width:100%;height:100%;touch-action:none;user-select:none}

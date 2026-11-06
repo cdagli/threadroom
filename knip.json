@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["scripts/*.mjs", "tests/*.test.mjs", "tests/editor.mjs"],
+  "project": ["app/**/*.{ts,tsx}", "lib/**/*.ts", "design-system/**/*.{ts,tsx}", "scripts/*.mjs", "tests/*.mjs"],
+  "tags": ["-test"],
+  "ignoreIssues": {
+    "design-system/index.ts": ["types"]
+  }
+}

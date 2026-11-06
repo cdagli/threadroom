@@ -8,7 +8,7 @@ export type Matrix=[number,number,number,number,number,number];
 export type ScaleHandle='nw'|'n'|'ne'|'e'|'se'|'s'|'sw'|'w';
 export const scaleHandles:ScaleHandle[]=['nw','n','ne','e','se','s','sw','w'];
 export const translate=(x:number,y:number):Matrix=>[1,0,0,1,x,y];
-export const mapPoint=(m:Matrix,[x,y]:Point):Point=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
+/** @test */ export const mapPoint=(m:Matrix,[x,y]:Point):Point=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
 export function around(p:Point,sx:number,sy=sx,degrees=0):Matrix{
   const r=degrees*Math.PI/180,c=Math.cos(r),s=Math.sin(r),a=c*sx,b=s*sx,d=c*sy,e=-s*sy;
   return [a,b,e,d,p[0]-a*p[0]-e*p[1],p[1]-b*p[0]-d*p[1]];

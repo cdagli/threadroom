@@ -6,7 +6,7 @@ import type {Matrix, Rect} from './editing';
 export const imageLimits={count:10,size:[.5,2000] as const};
 const imageSrc=/^data:image\/(png|jpeg|webp|svg\+xml);/i;
 const finite=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n);
-export function validImage(i:unknown):i is RefImage{
+function validImage(i:unknown):i is RefImage{
   if(!i||typeof i!=='object')return false;
   const m=i as RefImage;
   return typeof m.id==='string'&&!!m.id&&typeof m.src==='string'&&imageSrc.test(m.src)&&typeof m.name==='string'&&[m.x,m.y].every(n=>finite(n)&&Math.abs(n)<=1000)
@@ -22,7 +22,7 @@ export function migrateImages(p:Project):Project{
   const {artwork,...rest}=p,{src,name,x,y,width,height}=artwork;
   return p.images?.length?rest:{...rest,images:[{id:'image-1',src,name,x,y,width,height,opacity:.5}]};
 }
-export const imageCentre=(i:RefImage):Point=>[i.x+i.width/2,i.y+i.height/2];
+const imageCentre=(i:RefImage):Point=>[i.x+i.width/2,i.y+i.height/2];
 // (u, v) in 0..1 across the unrotated image to millimetres, and back.
 export function imageToWorld(i:Pick<RefImage,'x'|'y'|'width'|'height'|'rotation'>,[u,v]:Point):Point{
   const cx=i.x+i.width/2,cy=i.y+i.height/2,dx=(u-.5)*i.width,dy=(v-.5)*i.height,r=(i.rotation??0)*Math.PI/180,c=Math.cos(r),s=Math.sin(r);

@@ -7,7 +7,7 @@ import {satinTextShapes} from './satin-lettering';
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
 // The compiler receives flattened millimetre geometry; projects retain anchors.
-export function curveSegments(points: Point[], closed: boolean, corners?: boolean[],spline?:'levien'): Point[][] {
+/** @test */ export function curveSegments(points: Point[], closed: boolean, corners?: boolean[],spline?:'levien'): Point[][] {
   if(spline==='levien')return splineBeziers(points,closed,corners).map(c=>sampleCubic(c));
   if(points.length<2)return [];
   if(points.length===2)return [[...points.map(p=>[...p] as Point)]];
@@ -49,7 +49,7 @@ function resampleEqual(path:Point[],n:number):Point[] {
   });
 }
 const pathLength=(p:Point[])=>p.slice(1).reduce((s,q,i)=>s+Math.hypot(q[0]-p[i][0],q[1]-p[i][1]),0);
-export function railSegments(rails:Rails):{left:Point[];right:Point[]}[] {
+/** @test */ export function railSegments(rails:Rails):{left:Point[];right:Point[]}[] {
   const cached=railCache.get(rails);if(cached)return cached;
   const [l,r]=rails.points.map((points,i)=>curveSegments(points,false,rails.corners?.[i],'levien'));
   const value=l.map((left,k)=>{const n=Math.max(8,Math.ceil(Math.max(pathLength(left),pathLength(r[k]))/.3));return {left:resampleEqual(left,n),right:resampleEqual(r[k],n)};});
@@ -61,9 +61,9 @@ export function railSamples(rails:Rails):[Point[],Point[]] {
 }
 const midpoints=(a:Point[],b:Point[])=>a.map((p,i)=>[(p[0]+b[i][0])/2,(p[1]+b[i][1])/2] as Point);
 // The centre line is the block's ring: ends, routing and stitch selection treat it as an open path.
-export const blockCentre=(rails:Rails)=>midpoints(...railSamples(rails));
+/** @test */ export const blockCentre=(rails:Rails)=>midpoints(...railSamples(rails));
 export const blockOutline=(rails:Rails)=>{const [l,r]=railSamples(rails);return [...l,...[...r].reverse()];};
-export const blockWidths=(rails:Rails)=>{const [l,r]=railSamples(rails);return l.map((p,i)=>Math.hypot(r[i][0]-p[0],r[i][1]-p[1]));};
+/** @test */ export const blockWidths=(rails:Rails)=>{const [l,r]=railSamples(rails);return l.map((p,i)=>Math.hypot(r[i][0]-p[0],r[i][1]-p[1]));};
 export const withRails=(o:StitchObject,rails:Rails):StitchObject=>({...o,rails,rings:[blockCentre(rails)]});
 // Drawn block clicks alternate left, right; an unpaired last click is dropped.
 export function draftRails(points:Point[],corners:boolean[]):Rails|null {
@@ -252,7 +252,7 @@ export function withEnd(o:StitchObject,key:'entry'|'exit',p:Point|undefined):Sti
 // Line kinds need each outline closed (first point repeated); fills don't.
 export const reclose=(rings:Point[][],closed:boolean)=>rings.map(r=>{const shut=r.length>1&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1];return closed&&!shut?[...r,r[0]]:!closed&&shut?r.slice(0,-1):r;});
 
-export function samplePath(points:Point[], length:number,t:Translator=createT('en')):Point[] {
+/** @test */ export function samplePath(points:Point[], length:number,t:Translator=createT('en')):Point[] {
   if(!Number.isFinite(length)||length<=0)throw new TranslationError(t,'Choose a positive stitch length.');
   if(points.length<2)return points;
   const result:Point[]=[[...points[0]]];let remaining=length;

@@ -817,6 +817,7 @@ export const en={
   "Realistic view": "Realistic view",
   "Toggle realistic view: how the stitches will look on your fabric": "Toggle realistic view: how the stitches will look on your fabric",
   "Working…": "Working…",
+  "Opening your studio…": "Opening your studio…",
   "Realistic": "Realistic",
   "Zoom in": "Zoom in",
   "Zoom in (+)": "Zoom in (+)",
@@ -2096,6 +2097,7 @@ export const tr={
   "Realistic view": "Gerçekçi görünüm",
   "Toggle realistic view: how the stitches will look on your fabric": "Gerçekçi görünümü aç/kapat: dikişlerin kumaşınızda nasıl görüneceği",
   "Working…": "İşleniyor…",
+  "Opening your studio…": "Atölyeniz açılıyor…",
   "Realistic": "Gerçekçi",
   "Zoom in": "Yakınlaştır",
   "Zoom in (+)": "Yakınlaştır (+)",
@@ -2557,12 +2559,12 @@ export const tr={
   "started a new design": "yeni bir tasarım başlattı",
   "edited the points of “{v0}”": "“{v0}” noktalarını düzenledi",
 } satisfies Record<Key,string>;
-export const dictionaries={en,tr};
+const dictionaries={en,tr};
 export type Values=Record<string,string|number>;
 export type Translator=((key:Key,values?:Values)=>string)&{lang:Lang};
 export function formatNumber(value:number,lang:Lang='tr',digits?:number):string {return new Intl.NumberFormat(lang==='tr'?'tr-TR':'en-US',digits===undefined?{maximumFractionDigits:3}:{minimumFractionDigits:digits,maximumFractionDigits:digits}).format(value);}
 export const formatMm=(value:number,lang:Lang='tr',digits=1)=>formatNumber(value,lang,digits)+' mm';
-export function t(key:Key,values:Values={},lang:Lang='tr'):string {
+/** @test */ export function t(key:Key,values:Values={},lang:Lang='tr'):string {
   const plural=key.endsWith('.other')&&values.count===1?key.replace(/\.other$/,'.one') as Key:key;
   return dictionaries[lang][plural].replace(/\{(\w+)\}/g,(match,name)=>values[name]===undefined?match:typeof values[name]==='number'?formatNumber(values[name],lang):String(values[name]));
 }

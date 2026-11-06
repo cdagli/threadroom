@@ -28,14 +28,14 @@ export const satinLetteringDefaults={font:'simplex' as SatinFontId,columnWidth:1
 export const columnLimits=[5,40] as const;
 // One millimetre is the design check's reliable minimum; cap at the satin width limit.
 export const columnWidth=(spec:TextSpec)=>Math.max(1,Math.min(10,spec.size*(spec.satin?.columnWidth??14)/100));
-export type SatinColumn={rails:Rails;character:number};
+type SatinColumn={rails:Rails;character:number};
 const distance=(a:Point,b:Point)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const round=(v:number)=>Math.round(v*1000)/1000;
 const midpoint=(a:Point,b:Point):Point=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
 
 // Split turns above 65 degrees: short bevelled columns meet at their centres rather than
 // making long mitres or crossed rails. Dense curves are reduced before offsetting.
-export function strokeRails(source:Point[],width:number):Rails[] {
+/** @test */ export function strokeRails(source:Point[],width:number):Rails[] {
   let points=source.filter((p,i)=>!i||distance(p,source[i-1])>1e-7);
   if(!points.length)return [];
   const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]),dx=Math.max(...xs)-Math.min(...xs),dy=Math.max(...ys)-Math.min(...ys);

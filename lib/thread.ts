@@ -1,14 +1,14 @@
 import type {Command, Fabric} from './project';
 // Thread preview: each sewn stitch is a lit cylinder about 0.4 mm wide (40 wt embroidery thread).
-export const threadWidth=.4;
+/** @test */ export const threadWidth=.4;
 type RGB=[number,number,number];
-export function rgb(colour:string):RGB{
+/** @test */ export function rgb(colour:string):RGB{
   let h=colour.replace('#','');if(h.length===3)h=[...h].map(c=>c+c).join('');
   return [0,2,4].map(i=>{const v=parseInt(h.slice(i,i+2),16);return Number.isFinite(v)?v:0;}) as RGB;
 }
 const hex=(c:RGB)=>'#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
 const mix=(a:RGB,b:RGB,t:number)=>a.map((v,i)=>v+(b[i]-v)*t) as RGB;
-export function luminance(colour:string){const [r,g,b]=rgb(colour).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;}
+/** @test */ export function luminance(colour:string){const [r,g,b]=rgb(colour).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;}
 // Dark flanks (edge), the dyed body and a specular sheen along the thread; dark threads get a stronger sheen.
 export function threadShades(colour:string){
   const c=rgb(colour),l=luminance(colour);
@@ -22,7 +22,7 @@ export function threadStyle(pxPerMm:number):ThreadStyle{
   return {width,body:width*.74,sheen:width*(px>=3.5?.22:.28),shadow:[off*.7,off],detail:px<1.4?0:px<3.5?1:2};
 }
 // The sheen sits on the lit side (light from the top left) and stops short of both needle holes.
-export function sheenSegment(ax:number,ay:number,bx:number,by:number,width:number):[number,number,number,number]|null{
+/** @test */ export function sheenSegment(ax:number,ay:number,bx:number,by:number,width:number):[number,number,number,number]|null{
   const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);if(len<width*.9)return null;
   let nx=-dy/len,ny=dx/len;if(nx+ny>0){nx=-nx;ny=-ny;}
   const inset=Math.min(len*.3,width*.55),ux=dx/len*inset,uy=dy/len*inset,o=width*.12;
@@ -30,7 +30,7 @@ export function sheenSegment(ax:number,ay:number,bx:number,by:number,width:numbe
 }
 export type FabricPattern='plain'|'gauze'|'knit'|'rib'|'fleece'|'terry'|'twill';
 // Light baby-fabric colours so thread stays readable; period is the texture repeat in mm.
-export const fabricLooks:Record<Fabric,{base:string;yarn:string;pattern:FabricPattern;period:number}>={
+/** @test */ export const fabricLooks:Record<Fabric,{base:string;yarn:string;pattern:FabricPattern;period:number}>={
   woven:{base:'#f7f2e6',yarn:'#d9ccb2',pattern:'plain',period:.5},
   gauze:{base:'#f4eddc',yarn:'#d3c5a6',pattern:'gauze',period:.9},
   jersey:{base:'#eef0f1',yarn:'#c4c9cf',pattern:'knit',period:.9},
@@ -73,13 +73,13 @@ export function drawFabric(c:Ctx,fabric:Fabric,hoop:{width:number;height:number}
 const orient=(ax:number,ay:number,bx:number,by:number,cx:number,cy:number)=>(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
 const opposite=(p:number,q:number)=>(p>1e-9&&q<-1e-9)||(p<-1e-9&&q>1e-9);
 // Two stitches cross strictly; sharing a needle hole or running alongside is not a crossing.
-export function crosses(ax:number,ay:number,bx:number,by:number,cx:number,cy:number,dx:number,dy:number){
+/** @test */ export function crosses(ax:number,ay:number,bx:number,by:number,cx:number,cy:number,dx:number,dy:number){
   return opposite(orient(cx,cy,dx,dy,ax,ay),orient(cx,cy,dx,dy,bx,by))&&opposite(orient(ax,ay,bx,by,cx,cy),orient(ax,ay,bx,by,dx,dy));
 }
 // Stitches of one thread share a stroke per shading pass (shadow, edge, body, sheen) until one crosses
 // a stitch already in the batch, e.g. satin over its centre walk: then the batch is painted first so
 // the later stitch lies on top. add() returns false when the caller must flush.
-export function stitchBatch(limit=240){
+/** @test */ export function stitchBatch(limit=240){
   const segs:number[]=[],box=new Float64Array(limit*4);
   return {segs,clear(){segs.length=0;},add(ax:number,ay:number,bx:number,by:number){
     const n=segs.length/4;if(n>=limit)return false;
@@ -89,7 +89,7 @@ export function stitchBatch(limit=240){
 }
 // Batch starts per command (1 = paint what came before first); independent of the view, so cached.
 const breakCache=new WeakMap<Command[],Uint8Array>();
-export function batchBreaks(commands:Command[]){
+/** @test */ export function batchBreaks(commands:Command[]){
   let breaks=breakCache.get(commands);if(breaks)return breaks;
   breaks=new Uint8Array(commands.length);const batch=stitchBatch();let block=-1;
   commands.forEach((k,i)=>{if(k.type!=='stitch')return;if(k.block!==block||!batch.add(k.fromX,k.fromY,k.x,k.y)){breaks![i]=1;block=k.block;batch.clear();batch.add(k.fromX,k.fromY,k.x,k.y);}});

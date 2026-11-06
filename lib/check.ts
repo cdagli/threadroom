@@ -18,11 +18,11 @@ export const severityNames: Record<Severity, Key> = {fail: 'Will likely fail', c
 // when Split above is raised past 7 mm.
 // Text: fill letters 6 mm (as the Text panel advises), satin 5 mm, outlines 4 mm; fail at two-thirds.
 // Objects within 3 mm of the sewing field edge are worth checking.
-export const limits = {fillArea: [3, 6], fillWidth: [1, 2], thinArea: 1, textThin: .05, satinWidth: 1, satinWide: satinDefaults.splitLength, edge: 3,
+/** @test */ export const limits = {fillArea: [3, 6], fillWidth: [1, 2], thinArea: 1, textThin: .05, satinWidth: 1, satinWide: satinDefaults.splitLength, edge: 3,
   text: {fill: 6, wide: 5, line: 4} as Record<'fill'|'wide'|'line', number>};
 
 const round = (n: number, d = 1) => Math.round(n*10**d)/10**d;
-export function box(points: Point[], pad = 0): Box {
+function box(points: Point[], pad = 0): Box {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of points) {x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);}
   return [x0-pad, y0-pad, x1+pad, y1+pad];
@@ -34,7 +34,7 @@ const textGroup = (kind: Kind) => isFillKind(kind) ? 'fill' : isWideKind(kind) ?
 // limits.fillWidth[0] (cells outside the morphological opening by half that width). Cached per rings.
 type Raster = {area: number; thickness: number; thin: {area: number; bounds: Box} | null};
 const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Raster>>>();
-export function raster(rings: Point[][], rule: 'evenodd' | 'nonzero' = 'evenodd'): Raster {
+/** @test */ export function raster(rings: Point[][], rule: 'evenodd' | 'nonzero' = 'evenodd'): Raster {
   const cached = rasterCache.get(rings); if (cached?.[rule]) return cached[rule];
   const [minX, minY, maxX, maxY] = box(rings.flat());
   const cell = Math.max(.06, Math.sqrt((maxX-minX)*(maxY-minY)/150000)), x0 = minX-cell, y0 = minY-cell;

@@ -8,10 +8,10 @@ export function guideMode(o:StitchObject):GuideMode|null {
   if(o.kind!=='fill'||o.fillPattern==='circular'||o.fillPattern==='crossStitchFill')return null;
   return o.fillPattern==='streamlines'?'flow':'angles';
 }
-export const guideAngle=(g:AngleGuide)=>Math.atan2(g.b[1]-g.a[1],g.b[0]-g.a[0])*180/Math.PI;
+/** @test */ export const guideAngle=(g:AngleGuide)=>Math.atan2(g.b[1]-g.a[1],g.b[0]-g.a[0])*180/Math.PI;
 const distance=(p:Point,a:Point,b:Point)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l)):0;return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);};
 // Crossing or touching guides (T-junctions too) are invalid, as in Ember; the compiler then follows the first.
-export function crosses(g:AngleGuide,h:AngleGuide):boolean {
+function crosses(g:AngleGuide,h:AngleGuide):boolean {
   if(Math.min(distance(g.a,h.a,h.b),distance(g.b,h.a,h.b),distance(h.a,g.a,g.b),distance(h.b,g.a,g.b))<1e-6)return true;
   const side=(a:Point,b:Point,c:Point)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
   return (side(h.a,h.b,g.a)>0)!==(side(h.a,h.b,g.b)>0)&&(side(g.a,g.b,h.a)>0)!==(side(g.a,g.b,h.b)>0);

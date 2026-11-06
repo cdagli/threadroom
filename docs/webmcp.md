@@ -6,7 +6,8 @@ the check panel shows them, digitise artwork, edit, fix and export, without scra
 goes through the editor's normal commit path: one undo step, the same validation as the UI, and an
 "AI agent: …" toast so you can see what happened.
 
-The tools live in `app/agent-tools.tsx` (registration, via [`use-webmcp-tool`](https://www.npmjs.com/package/use-webmcp-tool))
+The tools live in `app/agent-tools.tsx` (registration, via `lib/use-webmcp.ts`, a local backport of
+[`use-webmcp-tool`](https://github.com/GoogleChromeLabs/use-webmcp-tool)'s async registration fix)
 and `lib/agent-tools.ts` (pure summaries, issue reports and validated edits, tested in `tests/agent-tools.test.mjs`).
 Where `document.modelContext` doesn't exist, registration does nothing.
 

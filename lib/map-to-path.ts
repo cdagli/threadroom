@@ -1,6 +1,6 @@
 import {curveRing,moveGeometry,openPath} from './curves';
 import {designBounds} from './editor-render';
-import {hoops,normalizeGroups,validProject,type Point,type Project,type StitchObject} from './project';
+import {hoops,normalizeGroups,validProject,type Project,type StitchObject} from './project';
 import {validPathSettings,type PathBinding,type PathSettings} from './path-binding';
 export {defaultPathSettings} from './path-binding';
 export const canMapPath=(o:StitchObject)=>!o.locked&&!o.text&&!o.rails&&o.rings.length===1&&openPath(o)&&o.rings[0].length>=2;

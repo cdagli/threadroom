@@ -1,7 +1,7 @@
 import {createT,type Translator} from './i18n';
 import {curveRing,isClosedShape,openPath,reclose} from './curves';
 import {hoops,isFillKind,validProject,type Point,type Project,type StitchObject} from './project';
-import {difference,insideRegion,intersection,offsetRegion,regionArea,regionFromRings,regionRings,splitPolyline,splitRegion,union,type Region} from './polygon';
+import {difference,intersection,offsetRegion,regionArea,regionFromRings,regionRings,splitPolyline,splitRegion,union,type Region} from './polygon';
 
 // Shape operations on whole objects: cut holes, flatten overlaps, union/subtract/intersect, offset and knife.
 // Each returns one new project (one undo step) or a translated error. Results drop curve anchors and become
@@ -13,18 +13,18 @@ import {difference,insideRegion,intersection,offsetRegion,regionArea,regionFromR
 // Angle guides are world-space directions, so every result (knife pieces included) keeps them as they are.
 export type ShapeResult={project:Project;ids:string[];message:string}|{error:string};
 export type Combine='union'|'subtract'|'intersect';
-export const flattenOverlap=.4,minOverlap=.1;
+const flattenOverlap=.4,minOverlap=.1;
 
 export function shapeRegion(o:StitchObject):Region|null{
   if(o.text||o.rails||o.kind==='satin-block'||!isClosedShape(o)||!o.rings.length)return null;
   const g=regionFromRings(o.curve?[curveRing(o.curve)]:o.rings);return g.length?g:null;
 }
-export function withRegion(o:StitchObject,g:Region):StitchObject{
+function withRegion(o:StitchObject,g:Region):StitchObject{
   const rings=regionRings(g),next:StitchObject={...o,rings:isFillKind(o.kind)?rings:reclose(rings,true)};
   delete next.curve;delete next.fillRule;return next;
 }
 const piece=(o:StitchObject,rings:Point[][],name:string,id:string):StitchObject=>{const next={...o,id,name:name.slice(0,40),rings};for(const k of ['curve','fillRule','entry','exit','center'] as const)delete next[k];return next;};
-export const shapeable=(o:StitchObject)=>!o.hidden&&!o.locked&&!o.rails&&o.kind!=='satin-block'&&o.kind!=='redwork';
+/** @test */ export const shapeable=(o:StitchObject)=>!o.hidden&&!o.locked&&!o.rails&&o.kind!=='satin-block'&&o.kind!=='redwork';
 const chosen=(p:Project,ids:readonly string[])=>p.objects.filter(o=>ids.includes(o.id)&&shapeable(o));
 type Box=[number,number,number,number];
 const boxOf=(g:Region):Box=>{let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const [x,y] of g.flat(2)){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}return [x0,y0,x1,y1];};
@@ -130,4 +130,3 @@ export function knifeShapes(p:Project,ids:readonly string[]|null,a:Point,b:Point
   const objects=p.objects.flatMap(o=>split.get(o.id)??[o]);
   return done(p,{...p,objects},[...split.values()].flat().map(o=>o.id),t('knifeSplit.other',{count:split.size}),t);
 }
-export const insideShape=(o:StitchObject,pt:Point)=>{const g=shapeRegion(o);return !!g&&insideRegion(g,pt);};

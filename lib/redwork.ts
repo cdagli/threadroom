@@ -4,7 +4,7 @@ import {curveRing,reclose} from './curves';
 // Ember's Convert to redwork: the selected outlines merge into one redwork object whose lines the
 // compiler sews out and back with no trims (embroidery/redwork.py). It keeps its sources, which
 // move with it, so Break apart restores them. Fills contribute their outlines; text is excluded.
-export const redworkLength=2;
+const redworkLength=2;
 const convertible=(o:StitchObject)=>!o.locked&&!o.text&&o.rings.length>0;
 export function canConvertToRedwork(p:Project,ids:readonly string[]):boolean {
   const chosen=p.objects.filter(o=>ids.includes(o.id));
@@ -12,7 +12,7 @@ export function canConvertToRedwork(p:Project,ids:readonly string[]):boolean {
 }
 export const canBreakApart=(p:Project,ids:readonly string[])=>ids.length===1&&p.objects.some(o=>o.id===ids[0]&&o.kind==='redwork'&&!o.locked);
 // Each source's lines as open or closed (first point repeated) paths.
-export function redworkLines(o:StitchObject):Point[][] {
+function redworkLines(o:StitchObject):Point[][] {
   if(o.kind==='redwork'||o.rails)return o.rings;
   if(o.curve)return [curveRing(o.curve,true)];
   return isFillKind(o.kind)?reclose(o.rings,true):o.rings;
