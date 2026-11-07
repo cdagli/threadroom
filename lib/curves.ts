@@ -103,7 +103,10 @@ export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGr
   const line:Kind[]=['running','bean','backstitch','double-rope','triple-rope','satin','zigzag','e-stitch','underlay'];
   if(o.rails||o.text?.satin)return [{label:t("Blocks"),kinds:['satin-block']}];
   if(o.kind==='redwork')return [{label:t("Redwork"),kinds:['redwork']}];
-  return isClosedShape(o)?[{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}]:[{label:t("Line"),kinds:[...line,'manual']}];
+  if(!isClosedShape(o))return [{label:t("Line"),kinds:[...line,'manual']}];
+  if(o.text)return [{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}];
+  // A closed shape offers only area stitches; an outline kind it already has (e.g. imported) stays listed.
+  return isFillKind(o.kind)?[{label:t("Fill"),kinds:['fill','cross']}]:[{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:[o.kind]}];
 }
 // Text is relaid out by the editor; manual curves become their anchor stitches.
 // Blocks keep their rails and kind; a rope run starts at Ember's 1.5 mm stitch length.

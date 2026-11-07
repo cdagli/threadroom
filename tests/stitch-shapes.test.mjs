@@ -12,11 +12,11 @@ test('Shape closure follows curve metadata, text, fill rings and repeated outlin
   for(const o of [curve(false),{...curve(false),kind:'fill'},object('Freehand',[square],'running'),object('Points',[square],'manual'),object('Closed points',reclose([square],true),'manual'),object('Mixed',[...reclose([square],true),hole],'running'),object('Empty',[],'running'),object('Degenerate',[[[1,1],[2,2],[1,1]]],'running')])assert.equal(isClosedShape(o),false);
 });
 
-test('Closed shapes group fills and outlines; open paths offer line styles and manual',()=>{
-  const closed=[{label:'Fill',kinds:['fill','cross']},{label:'Outline',kinds:lines}],open=[{label:'Line',kinds:[...lines,'manual']}];
-  assert.deepEqual(stitchGroups(curve(true)),closed);
-  assert.deepEqual(stitchGroups(object('Outline',reclose([square],true),'running')),closed);
-  assert.deepEqual(stitchGroups({...object('Text',[]),text:{}}),closed);
+test('Closed shapes offer only area stitches; open paths offer line styles and manual',()=>{
+  const fills={label:'Fill',kinds:['fill','cross']},open=[{label:'Line',kinds:[...lines,'manual']}];
+  assert.deepEqual(stitchGroups(curve(true)),[fills]);
+  assert.deepEqual(stitchGroups(object('Outline',reclose([square],true),'running')),[fills,{label:'Outline',kinds:['running']}],'an existing outline kind stays listed');
+  assert.deepEqual(stitchGroups({...object('Text',[]),text:{}}),[fills,{label:'Outline',kinds:lines}]);
   assert.deepEqual(stitchGroups(curve(false)),open);
   assert.deepEqual(stitchGroups(object('Manual',[square],'manual')),open);
   assert.deepEqual(stitchGroups({...curve(false),kind:'fill'}),open);

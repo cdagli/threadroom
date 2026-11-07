@@ -16,7 +16,7 @@ test('Rope runs are line styles with Ember defaults, validation and export',()=>
   for(const kind of ['double-rope','triple-rope']){assert.ok(en[kindNames[kind]]&&tr[kindNames[kind]]&&tr[kindHints[kind]]);}
   assert.equal(tr[kindNames['double-rope']],'Çift halat dikişi');assert.equal(tr[kindNames['triple-rope']],'Üçlü halat dikişi');
   const line={...object('Line',[[[10,10],[40,10]]],'running')};
-  for(const groups of [stitchGroups(line),stitchGroups(object('Outline',[[[10,10],[30,10],[30,30],[10,10]]],'running'))])
+  for(const groups of [stitchGroups(line)])
     assert.ok(groups.at(-1).kinds.includes('double-rope')&&groups.at(-1).kinds.includes('triple-rope'));
   const rope=changeStitchKind(line,'double-rope');assert.equal(rope.length,ropeDefaults.length);assert.deepEqual(rope.rings,line.rings);
   assert.equal(changeStitchKind({...rope,length:2.2},'triple-rope').length,2.2,'rope to rope keeps the length');

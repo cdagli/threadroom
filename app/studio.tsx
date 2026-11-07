@@ -23,7 +23,7 @@ import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
 import {Fragment, Profiler, useEffect, useLayoutEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent} from 'react';
 
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
-import {bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {layoutObject as layoutTextObject, curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
@@ -360,6 +360,14 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       if(copyEditor)saveRef.current.saved=current.current;
       window.location.href=`/projects/${id}`;
     }catch{setError(t('The project could not be duplicated.'));}
+  }
+  async function newProject(){
+    try{
+      await settleSave();
+      const data=blankProject(t('Untitled embroidery'));
+      const {id}=await createProject(data,projectThumbnail(data));
+      window.location.href=`/projects/${id}`;
+    }catch{setError(t('The project could not be created.'));}
   }
   function restoredVersion(data:Project,revision:number){
     // A restore is already saved on the server; load it as the new baseline without another save.
@@ -1058,15 +1066,15 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     <Input ref={file} type="file" tabIndex={-1} className="visually-hidden" aria-label={t("Import artwork or project")} accept=".png,.jpg,.jpeg,.webp,.svg,.pes,.pec,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/>
     <MenuPopover id="project-menu" className="project-popover" aria-label={t("Project")}>
       <MenuGroup label={t('Project')}>
-        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');file.current?.click();}}><Icon name="upload" size={16}/>{t("Import file…")}</MenuItem>
+        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');void newProject();}}><Icon name="plus" size={16}/>{t('New project')}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" onClick={()=>{closePanel('project-menu');window.location.href='/';}}><Icon name="layers" size={16}/>{t('All projects')}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');setHistoryOpen(true);}}><Icon name="undo" size={16}/>{t('Version history…')}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');void duplicateCurrent();}}><Icon name="duplicate" size={16}/>{t('Duplicate project')}</MenuItem>
-        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Download project file")}</MenuItem>
-        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{commit({...initial,name:t("Untitled embroidery"),objects:[]});setSelected(null);setDraft([]);fit();closePanel('project-menu');}}><Icon name="plus" size={16}/>{t("Blank canvas")}</MenuItem>
+        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');file.current?.click();}}><Icon name="upload" size={16}/>{t("Import file…")}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{const p=demo(t);commit(p);setSelected(p.objects[0].id);fit();closePanel('project-menu');}}><Icon name="needle" size={16}/>{t("Bear sample")}</MenuItem>
       </MenuGroup>
       <MenuGroup label={t('Export')}>
+        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Download project file")}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft||!project.objects.length} onClick={()=>{closePanel('project-menu');download(new Blob([exportSVG(project)],{type:'image/svg+xml'}),'threadroom-artwork.svg');}}><Icon name="code" size={16}/>{t("Export editable SVG")}</MenuItem>
         <ExportImageButton project={project} compiled={compileFresh?compiled:null} disabled={hasDraft}/>
         <WorksheetButton menu project={project} compiled={compileFresh?compiled:null} units={viewSettings.units} disabled={hasDraft}/>
@@ -1173,6 +1181,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         {!settingsCollapsed&&<div className="overlay-body">
         {selectedIssue&&<div className={`selection-issue ${selectedIssue.severity}`}><Icon name="alert" size={14}/><Button variant="link" className="selection-issue-title" title={explain(selectedIssue,project,checkError,t).title} onClick={()=>focusIssue(selectedIssue)}>{explain(selectedIssue,project,checkError,t).title}</Button>{selectedIssueFix&&<Button variant="link" className="selection-issue-fix" title={selectedIssueFix.title} onClick={()=>applyFix(selectedIssue)}>{t("Fix")}</Button>}</div>}
         {items.some(o=>o.locked)&&<div className="lock-notice" role="status"><Icon name="lock" size={15}/><span>{allLocked?t(multi?'Locked objects: settings are read-only.':'Locked object: settings are read-only.'):t('Locked objects in the selection are not changed.')}</span><Button variant="secondary" type="button" disabled={hasDraft} onClick={()=>lockSelection(items.filter(o=>o.locked).map(o=>o.id))}>{t('Unlock')}</Button></div>}
+        {!multi&&<fieldset disabled={hasDraft||allLocked} className="tool-section object-name"><label><span className="field-heading">{t("Object name")}</span><Input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label></fieldset>}
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} size={`${displayLength(selectionBox.width)} × ${displayLength(selectionBox.height)}`} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected} onUseTextPath={useTextPath} onDrawPath={drawMapPath}/>
         <ShapeTools focusOffset={focusOffset} project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
@@ -1182,7 +1191,6 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
         <fieldset disabled={hasDraft||allLocked} className="panel-section settings object-settings">
           <Section id="object" title={item.text?t("Stitches"):t("Object & stitch type")} defaultOpen summaryExtra={t(kindNames[item.kind])}>
-          <label><span className="field-heading">{t("Object name")}</span><Input value={item.name} maxLength={40} onChange={e=>updateObject({name:e.target.value})}/></label>
           <StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>
           <RedworkAction project={project} selection={selection} onRun={redwork}/>
           </Section>

@@ -154,6 +154,10 @@
   .ds-input[type=range] {min-height:var(--control-height-sm);cursor:pointer}
   .ds-input[type=checkbox],.ds-input[type=radio] {width:14px;height:14px;cursor:pointer}
   .ds-textarea {resize:vertical}
+  .ds-input-unit {position:relative;display:block;min-width:0}
+  .ds-input-unit>.ds-input {width:100%}
+  .ds-input.ds-input--with-unit {padding-right:34px}
+  .ds-input-unit-label {position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:var(--control-font-sm,11px);color:var(--text-muted);pointer-events:none}
   .ds-toolbar {
     align-items:center;
     gap:4px;
