@@ -67,16 +67,18 @@ test('Ply grooves: equal whole repeats, diagonal flank crossings, contained with
   assert.deepEqual(plyGrooves(1,1,1,1,.36,.7),[]);
 });
 
-test('Thread painting: butt ends, dark holes at every zoom, bounded width and batch-only strokes',()=>{
+test('Thread painting: pinched butt holes, round-blended inner tones, dark holes at every zoom, bounded width and batch-only strokes',()=>{
   const commands=[{type:'stitch',fromX:0,fromY:0,x:4,y:0,block:0},{type:'stitch',fromX:0,fromY:1,x:4,y:1,block:0}],shade=threadShades('#c4453a');
   for(const px of [1,5,40]){
     const c=record(),style=threadStyle(px);drawThreads(c,commands,[shade],0,2,style,[-1,-1,5,2]);
     assert.deepEqual(c.strokes[0].path,[0,0,4,0,0,1,4,1]);assert.equal(c.strokes[0].colour,shade.end);
     assert.equal(c.strokes.length,style.detail===0?2:style.detail===1?5:6,'one stroke per shading pass for the whole batch');
-    for(const s of c.strokes){assert.equal(s.cap,'butt');assert.ok(s.width<=style.width,'no widened shadow');}
+    assert.equal(c.strokes[0].cap,'butt','the sunken end stops at the needle hole');assert.ok(Math.abs(c.strokes[0].width-style.width*(style.detail?.86:1))<1e-9,'thread pinches into the hole');
+    for(const s of c.strokes.slice(1))assert.equal(s.cap,s.colour.startsWith('rgba')?'butt':'round','inner tones blend; grooves stay crisp');
+    for(const s of c.strokes)assert.ok(s.width<=style.width,'no widened shadow');
     const variants=lustreShades(shade.body,style.detail?6:3),body=c.strokes.find(s=>s.colour===variants[Math.round((variants.length-1)/2)].body),inset=holeInset(0,0,4,0,style.detail?.75:.5);
     assert.deepEqual(body.path.slice(0,4),inset,'body stays clear of the dark holes');
-    if(style.detail===2){assert.match(c.strokes.at(-1).colour,/^rgba\(\d+,\d+,\d+,\.45\)$/);assert.equal(c.strokes.at(-1).path.length,2*Math.round(4/.7)*4);}
+    if(style.detail===2){assert.match(c.strokes.at(-1).colour,/^rgba\(\d+,\d+,\d+,\.6\)$/);assert.equal(c.strokes.at(-1).path.length,2*Math.round(4/.7)*4);}
     else assert.ok(c.strokes.every(s=>s.colour.startsWith('#')),'no shadow or ply pass');
   }
   const c=record(),style=threadStyle(1);drawThreads(c,commands,[shade],0,1,style,[-1,-1,5,2]);drawThreads(c,commands,[shade],1,2,style,[-1,-1,5,2]);
@@ -100,10 +102,10 @@ test('Repeated painting: widened once per batch, scaled shading and grooves, inc
   for(const px of [1,5,40]){
     const c=record(),style=threadStyle(px);drawThreads(c,bean,[shade],0,3,style,view);
     assert.equal(c.strokes.length,style.detail===0?2:style.detail===1?5:6);assert.deepEqual(c.strokes[0].path,[0,0,4,0]);
-    assert.ok(Math.abs(c.strokes[0].width-style.width*1.5)<1e-9,'minimum pixel width scales too');
+    assert.ok(Math.abs(c.strokes[0].width-style.width*1.5*(style.detail?.86:1))<1e-9,'minimum pixel width scales too');
     const variants=lustreShades(shade.body,style.detail?6:3),body=c.strokes.find(s=>s.colour===variants[Math.round((variants.length-1)/2)].body);assert.deepEqual(body.path,holeInset(0,0,4,0,style.detail?.75:.5),'hole length does not scale');
     if(style.detail){assert.ok(Math.abs(body.width-style.body*1.5)<1e-9);assert.deepEqual(c.strokes[4].path,sheenSegment(0,0,4,0,style.width*1.5));assert.equal(c.strokes[4].width,style.sheen*1.5);}
-    if(style.detail===2){assert.equal(c.strokes[5].width,style.width*1.5*.12);assert.deepEqual(c.strokes[5].path,plyGrooves(0,0,4,0,style.width*1.5,.7));assert.ok(Math.abs(c.strokes[5].path[2]-c.strokes[5].path[0]-.35*1.5)<1e-9);}
+    if(style.detail===2){assert.equal(c.strokes[5].width,style.width*1.5*.15);assert.deepEqual(c.strokes[5].path,plyGrooves(0,0,4,0,style.width*1.5,.7));assert.ok(Math.abs(c.strokes[5].path[2]-c.strokes[5].path[0]-.35*1.5)<1e-9);}
     const playback=record();for(let i=0;i<3;i++)drawThreads(playback,bean,[shade],i,i+1,style,view);assert.deepEqual(playback.strokes,c.strokes,'playback skips repeats already painted in this batch');
   }
   const mixed=[st(0,0,4,0),...bean.map(k=>({...k,fromY:1,y:1})),st(0,2,4,2),st(4,2,0,2)],c=record(),style=threadStyle(1);

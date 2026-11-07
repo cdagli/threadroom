@@ -20,7 +20,7 @@ const lustreCache=new Map<string,(ReturnType<typeof threadShades>&{groove:string
 // Cache colour strings for every direction bucket, including the cheaper three-tone distant view.
 /** @test */ export function lustreShades(colour:string,steps:3|6=6){
   const key=`${colour}:${steps}`,cached=lustreCache.get(key);if(cached)return cached;
-  const shade=threadShades(colour),body=rgb(shade.body),mid=rgb(shade.mid),sheen=rgb(shade.sheen),groove=`rgba(${rgb(shade.edge).join(',')},.45)`;
+  const shade=threadShades(colour),body=rgb(shade.body),mid=rgb(shade.mid),sheen=rgb(shade.sheen),groove=`rgba(${rgb(shade.edge).join(',')},.6)`;
   const variants=Array.from({length:steps},(_,i)=>{const l=i/(steps-1),scale=.94+.10*l,c=body.map(v=>v*scale) as RGB;return {...shade,body:hex(c),mid:hex(mid.map(v=>v*scale) as RGB),sheen:hex(mix(c,sheen,.55+.45*l)),groove};});
   lustreCache.set(key,variants);return variants;
 }
@@ -35,6 +35,13 @@ export function threadStyle(pxPerMm:number):ThreadStyle{
 /** @test */ export function holeInset(ax:number,ay:number,bx:number,by:number,t:number):[number,number,number,number]|null{
   const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),inset=t*Math.min(.35*len,1.8);if(len<=0||2*inset>=len)return null;
   const ux=dx/len*inset,uy=dy/len*inset;return [ax+ux,ay+uy,bx-ux,by-uy];
+}
+// Like holeInset, for round-capped strokes: pulled back at least the cap radius; a stitch too short
+// for that becomes a dot at its centre, or nothing when shorter than the cap itself.
+function roundInset(ax:number,ay:number,bx:number,by:number,t:number,r:number):[number,number,number,number]|null{
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),inset=Math.max(t*Math.min(.35*len,1.8),r);
+  if(2*inset<len){const ux=dx/len*inset,uy=dy/len*inset;return [ax+ux,ay+uy,bx-ux,by-uy];}
+  if(len<2*r)return null;const mx=(ax+bx)/2,my=(ay+by)/2;return [mx,my,mx,my];
 }
 // The sheen sits on the lit side (light from the top left) and stops short of both needle holes.
 /** @test */ export function sheenSegment(ax:number,ay:number,bx:number,by:number,width:number):[number,number,number,number]|null{
@@ -132,15 +139,17 @@ const breakCache=new WeakMap<Command[],Uint8Array>();
 export function drawThreads(c:Ctx,commands:Command[],shades:ReturnType<typeof threadShades>[],from:number,to:number,style:ThreadStyle,view:[number,number,number,number]){
   const breaks=batchBreaks(commands),widths=passWidths(commands),repeats=repeatCache.get(commands)!,levels=style.detail?6:3,buckets:number[][]=Array.from({length:3*levels},()=>[]),active:number[]=[],multipliers=[1.5,1.3,1],[x0,y0,x1,y1]=view,m=style.width*1.5;let block=-1,fresh=false;
   c.lineCap='butt';c.lineJoin='round';
-  const pass=(segs:number[],colour:string,width:number,t=0)=>{c.strokeStyle=colour;c.lineWidth=width;c.beginPath();for(let j=0;j<segs.length;j+=4){const s=holeInset(segs[j],segs[j+1],segs[j+2],segs[j+3],t);if(s){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}}c.stroke();};
+  // Inner passes get round caps pulled back by half their width, so tones blend instead of banding
+  // and no cap pokes past a needle hole.
+  const pass=(segs:number[],colour:string,width:number,t=0)=>{const round=t>0;c.lineCap=round?'round':'butt';c.strokeStyle=colour;c.lineWidth=width;c.beginPath();for(let j=0;j<segs.length;j+=4){const s=round?roundInset(segs[j],segs[j+1],segs[j+2],segs[j+3],t,width/2):holeInset(segs[j],segs[j+1],segs[j+2],segs[j+3],t);if(s){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}}c.stroke();};
   const flush=()=>{
     if(!active.length)return;const variants=shades[block]&&lustreShades(shades[block].body,levels);
     for(const b of active.sort((a,b)=>a-b)){const segs=buckets[b],scale=multipliers[Math.floor(b/levels)],width=style.width*scale,shade=variants?.[b%levels];if(shade){
-      pass(segs,shade.end,width);
+      pass(segs,shade.end,style.detail?width*.86:width);
       if(!style.detail)pass(segs,shade.body,width,.5);
       else{pass(segs,shade.mid,width,.35);pass(segs,shade.edge,width,.75);pass(segs,shade.body,style.body*scale,.75);c.strokeStyle=shade.sheen;c.lineWidth=style.sheen*scale;c.beginPath();
         for(let j=0;j<segs.length;j+=4){const s=sheenSegment(segs[j],segs[j+1],segs[j+2],segs[j+3],width);if(s){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}}c.stroke();
-        if(style.detail===2){c.strokeStyle=shade.groove;c.lineWidth=width*.12;c.beginPath();
+        if(style.detail===2){c.lineCap='butt';c.strokeStyle=shade.groove;c.lineWidth=width*.15;c.beginPath();
           for(let j=0;j<segs.length;j+=4){const grooves=plyGrooves(segs[j],segs[j+1],segs[j+2],segs[j+3],width,.7);for(let k=0;k<grooves.length;k+=4){c.moveTo(grooves[k],grooves[k+1]);c.lineTo(grooves[k+2],grooves[k+3]);}}c.stroke();}}}
       segs.length=0;}active.length=0;
   };
