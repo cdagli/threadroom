@@ -1,7 +1,11 @@
 'use client';
-import {StatusBar,type StatusTone,Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
+import {StatusBar,type StatusTone,Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Modal,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
 import dynamic from 'next/dynamic';
 import {authClient} from '@/lib/auth-client';
+import {projectThumbnail} from '@/lib/project-thumbnail';
+import {relativeTime} from '@/lib/project-diff';
+import {createProject,duplicateProject,saveProject} from './project-api';
+const ProjectHistory=dynamic(()=>import('./project-history'),{loading:Loading});
 import {flushSync} from 'react-dom';
 import {Loading} from './panel-loading';
 import StudioLoading from './studio-loading';
@@ -85,10 +89,11 @@ const extent=(o:StitchObject)=>o.rails?[blockOutline(o.rails)]:o.rings;
 const initial: Project={version:1,name:'Sleepy little bear',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:defaultLocks,trimJump:defaultTrimJump,objects:[]};
 
 // NEXT_PUBLIC_EDITOR_PERF=1 records complete editor subtree timings in development only.
+type StudioProps={projectId:string;initialProject:Project;initialRevision:number};
 export default process.env.NODE_ENV==='development'&&process.env.NEXT_PUBLIC_EDITOR_PERF==='1'?ProfiledStudio:StudioEditor;
-function ProfiledStudio(){return <Profiler id="Studio" onRender={recordRender}><StudioEditor/></Profiler>;}
+function ProfiledStudio(props:StudioProps){return <Profiler id="Studio" onRender={recordRender}><StudioEditor {...props}/></Profiler>;}
 function recordRender(id:string,phase:string,ms:number){performance.measure(`${id}:${phase}`,{start:performance.now()-ms,duration:ms});}
-function StudioEditor() {
+function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const {t,lang,setLang,formatNumber}=useT();
   const pathHint=t("Left click: corner · Right/double-click: smooth · Ctrl / ⌘: 15° snap · Enter: finish");
   const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
@@ -109,7 +114,11 @@ function StudioEditor() {
 
   const textName=(content:string)=>content.trim().split('\n')[0].slice(0,30)||t("Text");
   const [project,setProject]=useState<Project>(()=>({...initial,name:t('Sleepy little bear')}));
-  const [ready,setReady]=useState(false), [saved,setSaved]=useState(true);
+  const [ready,setReady]=useState(false);
+  // Autosave: `saved` is the last project the server accepted; edits replace `project` and are sent after a pause.
+  const saveRef=useRef({saved:initialProject,revision:initialRevision,inFlight:false});
+  const [saveState,setSaveState]=useState<'saved'|'saving'|'unsaved'|'error'|'too-large'>('saved');
+  const [conflict,setConflict]=useState<{name:string;updatedAt:string;dismissed?:boolean}|null>(null),[historyOpen,setHistoryOpen]=useState(false);
   const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>('select');
   const [lastDraw,setLastDraw]=useState<Tool>('open');
   useEffect(()=>{if(drawTool(tool))setLastDraw(tool);},[tool]);
@@ -301,19 +310,63 @@ function StudioEditor() {
   useEffect(()=>{
     let initialT=t;try{if(localStorage.getItem('threadroom-lang')==='en')initialT=createT('en');}catch{/* Storage is optional. */}
     try{setViewSettings(readViewSettings(localStorage.getItem('threadroom-view-v1')));clipboard.current=readClipboard(localStorage.getItem('threadroom-clipboard-v1'));}catch{/* Storage is optional. */}
-    let p:Project=demo(initialT);
-    try {const text=localStorage.getItem('threadroom-project-v1');if(text){const value=JSON.parse(text);if(validProject(value))p=normalizeGroups(value);}}catch{/* Storage is optional. */}
+    let p:Project=initialProject;
     let live=true;
-    const restore=()=>{if(!live)return;try{p=syncPathBindings(migrateImages(normalizeGroups(p)));}catch{p=migrateImages(demo(initialT));}current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);};
+    // Normalising on load is not an edit, so it becomes the saved baseline.
+    const restore=()=>{if(!live)return;try{p=syncPathBindings(migrateImages(normalizeGroups(p)));}catch{p=migrateImages(normalizeGroups(initialProject));}saveRef.current.saved=p;current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);};
     if(p.objects.some(o=>o.text?.satin))void ensureSatinFonts().then(restore).catch(e=>{if(!live)return;restore();setError(errorText(e,initialT,'The font could not be loaded.'));});else restore();
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
     return()=>{live=false;};
   },[]);
+  const conflictRef=useRef(false),saveRetry=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  async function flushSave(keepalive=false){
+    const state=saveRef.current;
+    if(state.inFlight||conflictRef.current)return;
+    const data=current.current;
+    if(data===state.saved){setSaveState('saved');return;}
+    state.inFlight=true;setSaveState('saving');
+    const result=await saveProject(projectId,data,projectThumbnail(data),state.revision,keepalive);
+    state.inFlight=false;
+    if(result.status==='saved'){state.saved=data;state.revision=result.revision;}
+    else if(result.status==='conflict'){conflictRef.current=true;setConflict({name:result.updatedBy.name,updatedAt:result.updatedAt});setSaveState('unsaved');return;}
+    else if(result.status==='too-large'){setSaveState('too-large');return;}
+    else{setSaveState('error');saveRetry.current=setTimeout(()=>void flushSave(),5000);return;}
+    // Edits made while the request was in flight are saved next.
+    if(current.current!==state.saved)void flushSave();else setSaveState('saved');
+  }
+  async function settleSave(){
+    for(let i=0;i<20&&current.current!==saveRef.current.saved&&!conflictRef.current;i++){
+      if(saveRef.current.inFlight)await new Promise(r=>setTimeout(r,150));else{clearTimeout(saveRetry.current);await flushSave();}
+    }
+    return current.current===saveRef.current.saved;
+  }
   useEffect(()=>{
-    if(!ready)return;
-    const timer=setTimeout(()=>{try{localStorage.setItem('threadroom-project-v1',JSON.stringify(project));setSaved(true);}catch{setSaved(false);}},500);
+    if(!ready||project===saveRef.current.saved||conflictRef.current)return;
+    setSaveState(s=>s==='too-large'?s:'unsaved');clearTimeout(saveRetry.current);
+    const timer=setTimeout(()=>void flushSave(),1200);
     return()=>clearTimeout(timer);
   },[project,ready]);
+  useEffect(()=>{
+    const warn=(e:BeforeUnloadEvent)=>{if(current.current!==saveRef.current.saved&&!conflictRef.current){void flushSave(true);e.preventDefault();}};
+    window.addEventListener('beforeunload',warn);
+    return()=>window.removeEventListener('beforeunload',warn);
+  },[]);
+  async function duplicateCurrent(version?:number){
+    const name=t('Copy of {name}',{name:current.current.name}).slice(0,40);
+    try{
+      // Pending edits are saved to this project first; edits that cannot be saved (a conflict) go into the copy instead.
+      const copyEditor=version===undefined&&(conflictRef.current||!await settleSave());
+      const {id}=copyEditor?await createProject({...current.current,name},projectThumbnail(current.current)):await duplicateProject(projectId,name,version);
+      if(copyEditor)saveRef.current.saved=current.current;
+      window.location.href=`/projects/${id}`;
+    }catch{setError(t('The project could not be duplicated.'));}
+  }
+  function restoredVersion(data:Project,revision:number){
+    // A restore is already saved on the server; load it as the new baseline without another save.
+    const p=syncPathBindings(migrateImages(normalizeGroups(data)));
+    setHistory(h=>[...h,current.current]);setFuture([]);
+    saveRef.current.saved=p;saveRef.current.revision=revision;current.current=p;setProject(p);restoreSelection(p);invalidate();setSaveState('saved');setHistoryOpen(false);fit();
+  }
   useEffect(()=>{if(ready)try{localStorage.setItem('threadroom-view-v1',JSON.stringify(viewSettings));}catch{/* Storage is optional. */}},[viewSettings,ready]);
   // Design check: geometry checks shortly after each change; stitch checks from a background compile.
   useEffect(()=>{if(!ready)return;const timer=setTimeout(()=>setDesignIssues(checkProject(project)),250);return()=>clearTimeout(timer);},[project,ready]);
@@ -357,7 +410,7 @@ function StudioEditor() {
     lastMerge.current=merge?{key:merge,time:now}:null;
     // Read the previous state now: the updater may run after current.current changes.
     const previous=current.current;if(next===previous)return;if(!same){setHistory(h=>[...h.slice(-29),previous]);setFuture([]);}
-    current.current=next;setProject(next);setSelection(ids=>ids.filter(id=>next.objects.some(o=>o.id===id)));invalidate();setSaved(false);if(label)setMessage(label);
+    current.current=next;setProject(next);setSelection(ids=>ids.filter(id=>next.objects.some(o=>o.id===id)));invalidate();if(label)setMessage(label);
   }
   function stopPlayback(){playRequest.current++;setPlaying(false);setProgress(1);}
   function invalidate(){revision.current++;traceTask.cancel();svgTask.cancel();hoverTask.cancel();clickTask.cancel();lastStitch.current=null;setStitchHover(null);compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
@@ -370,7 +423,7 @@ function StudioEditor() {
   function relayout(id:string){
     const p=current.current,o=p.objects.find(x=>x.id===id);if(!o?.text)return;
     const next=layoutObject(o);if(next===o)return;
-    current.current=syncPathBindings({...p,objects:p.objects.map(x=>x.id===id?next:x)},p);setProject(current.current);invalidate();setSaved(false);
+    current.current=syncPathBindings({...p,objects:p.objects.map(x=>x.id===id?next:x)},p);setProject(current.current);invalidate();
   }
   // A newly placed text that would leave the hoop shrinks and moves inside it once its font is laid out.
   function fitPlacedText(id:string){
@@ -535,7 +588,7 @@ function StudioEditor() {
   }
   function cancelTransform(){
     moveQueue.current?.cancel();setSelectionDragging(false);const before=dragUndo.current.cancel();transformDrag.current=null;drag.current=null;setSnapGuides([]);
-    if(before){current.current=before;setProject(before);invalidate();setSaved(false);}
+    if(before){current.current=before;setProject(before);invalidate();}
   }
   function deleteSelected(){if(!selected){if(selImage&&!selImage.locked)deleteImage(selImage.id);return;}const ids=editableSelection();if(!ids.length)return;commit({...project,objects:project.objects.filter(o=>!ids.includes(o.id))});setSelection(selection.filter(id=>!ids.includes(id)));}
   function lockSelection(ids=selection){if(!ids.length){if(selImage)changeImage(selImage.id,{locked:selImage.locked?undefined:true});return;}const next=toggleLock(current.current,ids),locked=next.objects.some(o=>ids.includes(o.id)&&o.locked);commit(next,t(locked?'locked.other':'unlocked.other',{count:ids.length}));if(locked)setEditPoints(false);}
@@ -632,7 +685,7 @@ function StudioEditor() {
   function startDrag(d:Omit<NonNullable<typeof drag.current>,'before'>,e:ReactPointerEvent<SVGSVGElement>){endDrag();setSelectionDragging(true);drag.current={...d,before:current.current};dragUndo.current.begin(current.current);capture(e);}
   function endDrag(){moveQueue.current?.flush();setSelectionDragging(false);drag.current=null;transformDrag.current=null;setSnapGuides(g=>g.length?[]:g);lastMerge.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
   endDragRef.current=endDrag;
-  function dragTo(next:Project){try{next=syncPathBindings(normalizeGroups(next),drag.current?.before??transformDrag.current?.before??current.current);}catch{return;}dragUndo.current.update(next);current.current=next;setProject(next);invalidate();setSaved(false);}
+  function dragTo(next:Project){try{next=syncPathBindings(normalizeGroups(next),drag.current?.before??transformDrag.current?.before??current.current);}catch{return;}dragUndo.current.update(next);current.current=next;setProject(next);invalidate();}
   function pointerDown(e:ReactPointerEvent<SVGSVGElement>){
     closePanel('draw-tools');closePanel('shape-tools');
     e.currentTarget.focus({preventScroll:true});
@@ -998,6 +1051,7 @@ function StudioEditor() {
     changeImage:(id,patch)=>changeImage(id,patch),deleteImage,setViewSettings:patch=>setViewSettings(v=>({...v,...patch})),setDensity,setLook,setShowImage,
     openPanel:tab=>{setPanelTab(tab);setPanelOpen(true);},play,download,
   };
+  const saveLabel=saveState==='saved'?t('Saved'):saveState==='saving'?t('Saving…'):saveState==='error'?t('Could not save. Retrying…'):saveState==='too-large'?t('This project is too large to save. Remove or shrink reference images.'):t('Unsaved');
   // Keep the canvas mounted for measurement, but hide placeholder content until restoration
   // and the layout-phase viewport fit have completed. Inert also blocks keyboard focus.
   return <>{!ready&&<StudioLoading/>}<main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} data-loading={!ready||undefined} inert={!ready} aria-hidden={!ready||undefined} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
@@ -1005,7 +1059,10 @@ function StudioEditor() {
     <MenuPopover id="project-menu" className="project-popover" aria-label={t("Project")}>
       <MenuGroup label={t('Project')}>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');file.current?.click();}}><Icon name="upload" size={16}/>{t("Import file…")}</MenuItem>
-        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="save" size={16}/>{t("Save project")}</MenuItem>
+        <MenuItem variant="ghost" size="lg" role="menuitem" onClick={()=>{closePanel('project-menu');window.location.href='/';}}><Icon name="layers" size={16}/>{t('All projects')}</MenuItem>
+        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');setHistoryOpen(true);}}><Icon name="undo" size={16}/>{t('Version history…')}</MenuItem>
+        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{closePanel('project-menu');void duplicateCurrent();}}><Icon name="duplicate" size={16}/>{t('Duplicate project')}</MenuItem>
+        <MenuItem variant="ghost" size="lg" role="menuitem" disabled={imported||hasDraft} onClick={()=>{closePanel('project-menu');download(new Blob([JSON.stringify(project,null,2)],{type:'application/json'}),'threadroom-project.json');}}><Icon name="download" size={16}/>{t("Download project file")}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{commit({...initial,name:t("Untitled embroidery"),objects:[]});setSelected(null);setDraft([]);fit();closePanel('project-menu');}}><Icon name="plus" size={16}/>{t("Blank canvas")}</MenuItem>
         <MenuItem variant="ghost" size="lg" role="menuitem" disabled={hasDraft} onClick={()=>{const p=demo(t);commit(p);setSelected(p.objects[0].id);fit();closePanel('project-menu');}}><Icon name="needle" size={16}/>{t("Bear sample")}</MenuItem>
       </MenuGroup>
@@ -1077,7 +1134,7 @@ function StudioEditor() {
       <div className="canvas-top-row">
       <header className="project-chip" style={{anchorName:'--project-chip'}}>
         <a className="brand" href="/" aria-label={t("Threadroom home")}>t<span className="brand-dot">.</span></a>
-        <Input aria-label={t("Project name")} value={project.name} maxLength={40} onChange={e=>commit({...project,name:e.target.value})}/><span className={`save-indicator ${saved?'':'unsaved'}`} role="status" aria-label={saved?t("Saved locally"):t("Unsaved")} title={saved?t("Saved locally"):t("Unsaved")}/>
+        <Input aria-label={t("Project name")} value={project.name} maxLength={40} onChange={e=>commit({...project,name:e.target.value})}/><span className={`save-indicator ${saveState==='saved'?'':saveState==='error'||saveState==='too-large'||conflict?'failed':'unsaved'}`} role="status" aria-label={saveLabel} title={saveLabel}/>
         <IconButton variant="ghost" className="icon-button" aria-label={t("Project menu")} title={t("Import, samples, save and SVG export")} aria-haspopup="menu" popoverTarget="project-menu" onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();document.getElementById('project-menu')?.showPopover();}}}><Icon name="chevron" size={16}/></IconButton>
       </header>
       <div className="top-actions"><SegmentedControl className="view-modes" role="group" aria-label={t("View modes")}>
@@ -1242,5 +1299,10 @@ function StudioEditor() {
     {pendingSVG&&<SVGImportChoice file={pendingSVG} onClose={()=>setPendingSVG(null)} onChoose={shapes=>{const f=pendingSVG;setPendingSVG(null);void importFile(f,shapes);}}/>}
     <AgentTools api={agentApi}/>
     {shortcutHelp&&<ShortcutHelp tools={tools} onClose={()=>{setShortcutHelp(false);requestAnimationFrame(()=>svg.current?.focus());}}/>}
+    {historyOpen&&<ProjectHistory projectId={projectId} revision={saveRef.current.revision} canRestore={saveState==='saved'&&!conflict} onRestored={restoredVersion} onDuplicate={version=>void duplicateCurrent(version)} onClose={()=>setHistoryOpen(false)}/>}
+    {conflict&&!conflict.dismissed&&<Modal title={t('Someone else changed this project')} onClose={()=>{setConflict(c=>c&&{...c,dismissed:true});setError(t('Someone else changed this project'));}}>
+      <p>{t('{name} saved changes {time}. Reload to continue from their version, or keep your edits as a new project.',{name:conflict.name,time:relativeTime(conflict.updatedAt,lang)})}</p>
+      <div className="io-actions"><Button variant="secondary" onClick={()=>void duplicateCurrent()}><Icon name="duplicate" size={16}/>{t('Save my edits as a copy')}</Button><Button variant="primary" onClick={()=>{saveRef.current.saved=current.current;window.location.reload();}}>{t('Reload')}</Button></div>
+    </Modal>}
   </main></>;
 }

@@ -268,6 +268,47 @@ button.order{border:0;background:transparent;padding:2px 0;border-radius:3px;tex
 .canvas-rulers .ruler-in-hoop path{stroke:var(--text-muted)}
 .ruler-corner{position:absolute;top:0;left:0;width:var(--canvas-ruler-size);height:var(--canvas-ruler-size);display:grid;place-items:center;background:var(--surface-sunken);color:var(--text-muted);font-size:8px;border-right:1px solid var(--border-control);border-bottom:1px solid var(--border-control)}
 
+/* Projects list and version history. */
+.save-indicator.failed{background:var(--danger)}
+.projects-page{height:100%;overflow:auto;padding:24px 32px 48px;max-width:1440px;margin:0 auto}
+.projects-header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.projects-header h1{margin:0 auto 0 0;font-family:Georgia,serif;font-size:28px;font-weight:600;letter-spacing:-.8px}
+.projects-header .brand{font-size:28px}
+.projects-user{color:var(--text-muted);font-size:12px}
+.projects-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.projects-search{width:260px}
+.projects-spacer{flex:1}
+.projects-error{color:var(--danger);margin:0 0 16px}
+.projects-empty{display:grid;place-items:center;padding:64px 0}
+.projects-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
+.project-card{position:relative;display:flex;flex-direction:column;background:var(--surface-raised);border:1px solid var(--border-strong);border-radius:12px;overflow:hidden;transition:box-shadow .15s,transform .15s}
+.project-card:hover,.project-card:focus-within{box-shadow:var(--shadow-overlay);transform:translateY(-1px)}
+.project-card[aria-busy]{opacity:.6}
+.project-card-link{display:flex;flex-direction:column;color:inherit;text-decoration:none;border-radius:12px}
+.project-card-link:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.project-thumb,.history-thumb{display:grid;place-items:center;aspect-ratio:4/3;background:var(--surface-sunken);border-bottom:1px solid var(--border)}
+.project-thumb img{width:82%;height:82%;object-fit:contain}
+.project-thumb-empty{color:var(--text-muted);font-size:12px}
+.project-card-body{display:flex;flex-direction:column;gap:3px;padding:12px 14px 14px;font-size:12px;color:var(--text-muted);min-width:0}
+.project-card-body strong{color:var(--text);font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px}
+.project-card-actions{position:absolute;top:8px;right:8px;display:flex;gap:2px;padding:2px;background:var(--surface-raised);border:1px solid var(--border);border-radius:8px;opacity:0;transition:opacity .15s}
+.project-card:is(:hover,:focus-within) .project-card-actions{opacity:1}
+.history-layout{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:20px;height:min(560px,62vh)}
+.history-list{list-style:none;margin:0;padding:0 4px 0 0;overflow:auto;display:flex;flex-direction:column;gap:4px;scrollbar-width:thin}
+.history-row{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:3px;text-align:left;height:auto;padding:10px 12px}
+.history-row-head{display:flex;align-items:center;gap:8px}
+.history-row-head time{margin-left:auto;color:var(--text-muted);font-size:11px;font-weight:400}
+.history-badge{font-size:10px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:1px 7px}
+.history-author{font-size:12px;color:var(--text-muted)}
+.history-changes{display:flex;flex-direction:column;gap:1px;font-size:12px;font-weight:400}
+.history-changes span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-preview{margin:0;display:flex;flex-direction:column;gap:12px;min-height:0}
+.history-thumb{flex:1;aspect-ratio:auto;min-height:0;border:1px solid var(--border);border-radius:10px}
+.history-thumb img{max-width:90%;max-height:90%;width:90%;height:90%;object-fit:contain}
+.history-preview figcaption{font-size:12px;color:var(--text-muted)}
+.history-preview .io-actions{justify-content:flex-end;margin:0}
+.history-hint{color:var(--text-muted);font-size:11px}
+
 }
 .login-page{height:100%;display:grid;place-items:center;padding:var(--gap);overflow:auto}
 .login-card{width:min(360px,100%);display:flex;flex-direction:column;gap:12px;padding:28px;background:var(--surface-raised);border:1px solid var(--border-strong);border-radius:10px;box-shadow:var(--shadow-overlay)}

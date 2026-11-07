@@ -808,6 +808,17 @@ checked-in configuration. This POC deliberately uses:
   `vercel env pull` and add `BETTER_AUTH_SECRET` and
   `BETTER_AUTH_URL=http://localhost:3000` to `.env.local`. Create or update the
   auth tables with `npx @better-auth/cli migrate --config lib/auth.ts`.
+- Projects: after the auth tables exist, create the project tables with
+  `npm run db:migrate` (applies `db/schema.sql`; safe to re-run). `/` lists every
+  project with a preview, creator and last editor; any signed-in user can open,
+  edit or duplicate a project, and only its creator can delete it. The editor
+  autosaves about a second after each change. Saves by the same person within
+  10 minutes are grouped into one version, and each version records who made it
+  and which objects changed. **Version history…** in the project menu previews
+  every version and can restore one (as a new version) or copy it into a new
+  project. If someone else saved first, the editor offers to reload or to keep your
+  edits as a copy. Bodies over 4 MB are refused (Vercel's limit is 4.5 MB), so
+  very large reference images can block saving.
 
 For a Git deployment, set the Vercel project's **Root Directory** to
 `threadroom-poc`; `vercel.json` selects the Next.js preset.

@@ -152,6 +152,7 @@ export function bounds(objects: StitchObject[]) {
   const x = Math.min(...xs), y = Math.min(...ys);
   return {x, y, width: Math.max(...xs)-x, height: Math.max(...ys)-y};
 }
+export const blankProject=(name:string):Project=>({version:1,name,machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{...defaultLocks},trimJump:defaultTrimJump,objects:[]});
 export function demo(t:Translator=createT('en')): Project {
   // A simple teddy face with holes for the muzzle and inner ears, avoiding
   // stacked top fills. This is a new editable POC sample.
