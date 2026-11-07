@@ -797,17 +797,20 @@ vercel
 The CLI will ask you to choose your account/team and a new project. Keep the
 checked-in configuration. This POC deliberately uses:
 
-- `framework: null`, `npm run build`, and output directory `.next-build`:
-  Next.js exports the static application there; Vercel serves its assets.
+- `framework: nextjs` and `npm run build`: a normal server-rendered Next.js app
+  (needed for sign-in), built into `.next-build`.
 - `api/export.py`: a separate Vercel Python Function at `/api/export`.
 - `requirements.txt`: installs `pystitch==1.0.1`; `.python-version`: Python 3.12.
 - `includeFiles`: bundles `embroidery/` for the Python Function.
-- No external service, API key, account system, database, Docker, or Ink/Stitch
-  installation is needed for the POC runtime.
+- Sign-in: Better Auth (email + password) on Neon Postgres from the Vercel
+  Marketplace. The project needs `DATABASE_URL` (added by the Neon integration)
+  and `BETTER_AUTH_SECRET` (`openssl rand -base64 32`). Locally, run
+  `vercel env pull` and add `BETTER_AUTH_SECRET` and
+  `BETTER_AUTH_URL=http://localhost:3000` to `.env.local`. Create or update the
+  auth tables with `npx @better-auth/cli migrate --config lib/auth.ts`.
 
 For a Git deployment, set the Vercel project's **Root Directory** to
-`threadroom-poc` and **Framework Preset** to **Other**. Do not override it to
-Next.js: the static build plus the Python Function are intentional.
+`threadroom-poc`; `vercel.json` selects the Next.js preset.
 
 After the preview deployment is ready:
 

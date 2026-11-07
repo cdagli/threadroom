@@ -269,3 +269,9 @@ button.order{border:0;background:transparent;padding:2px 0;border-radius:3px;tex
 .ruler-corner{position:absolute;top:0;left:0;width:var(--canvas-ruler-size);height:var(--canvas-ruler-size);display:grid;place-items:center;background:var(--surface-sunken);color:var(--text-muted);font-size:8px;border-right:1px solid var(--border-control);border-bottom:1px solid var(--border-control)}
 
 }
+.login-page{height:100%;display:grid;place-items:center;padding:var(--gap);overflow:auto}
+.login-card{width:min(360px,100%);display:flex;flex-direction:column;gap:12px;padding:28px;background:var(--surface-raised);border:1px solid var(--border-strong);border-radius:10px;box-shadow:var(--shadow-overlay)}
+.login-card h1{margin:0;font-family:Georgia,serif;font-size:26px;font-weight:600;letter-spacing:-.8px}
+.login-card p{margin:0;color:var(--text-muted)}
+.login-card label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:12px}
+.login-card .login-error{color:var(--danger)}

@@ -41,6 +41,7 @@ const icons: Record<string,string> = {
   panel:'M3 4h18v16H3V4m12 0v16',
   ruler:'M3 8h18v8H3V8m4 0v3m4-3v4m4-4v3m4-3v4',
   open:'M4 18 9 7l6 9 5-10M4 18h0M9 7h0M15 16h0M20 6h0',
+  'sign-out':'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   closed:'m12 3 9 7-3.5 10h-11L3 10l9-7',
   blocks:'M4 7l2 10 2-10 2 10 2-10 2 10 2-10 2 10 2-10',
   shapes:'M8 3 12.5 10.5h-9L8 3m9 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8M3 14h7v7H3v-7',

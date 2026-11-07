@@ -1,8 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
+  "framework": "nextjs",
   "buildCommand": "npm run build",
-  "outputDirectory": ".next-build",
   "functions": {
     "api/export.py": {
       "maxDuration": 60,

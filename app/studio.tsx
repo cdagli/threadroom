@@ -1,6 +1,7 @@
 'use client';
 import {StatusBar,type StatusTone,Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Popover,Section,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
 import dynamic from 'next/dynamic';
+import {authClient} from '@/lib/auth-client';
 import {flushSync} from 'react-dom';
 import {Loading} from './panel-loading';
 import StudioLoading from './studio-loading';
@@ -1015,6 +1016,9 @@ function StudioEditor() {
       </MenuGroup>
       <MenuGroup label={t('Language')} inline>
         {(['tr','en'] as const).map(value=><MenuItem variant="ghost" size="lg" key={value} role="menuitemradio" lang={value} aria-checked={lang===value} onClick={()=>{setLang(value);closePanel('project-menu');}}>{t(value==='tr'?'Türkçe':'English')}<span className="ds-menu-check">{lang===value&&<Icon name="check" size={16}/>}</span></MenuItem>)}
+      </MenuGroup>
+      <MenuGroup label={t('Account')}>
+        <MenuItem variant="ghost" size="lg" role="menuitem" onClick={()=>{closePanel('project-menu');void authClient.signOut().then(()=>{window.location.href='/login';});}}><Icon name="sign-out" size={16}/>{t('Sign out')}</MenuItem>
       </MenuGroup>
     </MenuPopover>
     <section ref={stage} className="stage" aria-label={t("Embroidery editor")}>

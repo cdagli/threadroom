@@ -4,7 +4,6 @@ import type { NextConfig } from 'next';
 const localAPI = process.env.THREADROOM_LOCAL_API
   ? `http://127.0.0.1:${process.env.THREADROOM_API_PORT || '8001'}` : undefined;
 const config: NextConfig = {
-  output: localAPI ? undefined : 'export',
   distDir: localAPI ? '.next' : '.next-build',
   devIndicators: { position: 'bottom-right' },
   images: { unoptimized: true },
