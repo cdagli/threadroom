@@ -45,6 +45,62 @@
       for (let i = 0; i < n; i++) { const p = ring[(start + i) % n]; if (!keep(p)) break; out.push(p); }
       return out;
     },
+    // Even samples every `step` mm along a closed ring (pair with runWhere-style filtering).
+    resampleClosed: (ring, step = 1.1) => {
+      const P = [...ring, ring[0]], out = [];
+      let carry = 0;
+      for (let i = 1; i < P.length; i++) {
+        const [ax, ay] = P[i - 1], [bx, by] = P[i], L = Math.hypot(bx - ax, by - ay);
+        let t = i === 1 ? 0 : step - carry;
+        for (; t <= L; t += step) out.push([ax + (bx - ax) * t / L, ay + (by - ay) * t / L]);
+        carry = L - (t - step);
+      }
+      return out;
+    },
+    inPoly: (P, [x, y]) => {
+      let c = false;
+      for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+        const [xi, yi] = P[i], [xj, yj] = P[j];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    },
+    // Fuzzy fur edge: for each sample of an outline run, a stroke across the edge on the local normal,
+    // retraced in→out→in. One open running path (length ≈ 1.2) in the fill colour. Keep ≤ ~35 samples per
+    // path (add_path rejects ~270 points); chain chunks end to start.
+    fuzzEdge: (run, poly, {inMin = 1.3, inVar = 1.2, outMin = 0.5, outVar = 1.1, seed = 23} = {}) => {
+      let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      const out = [];
+      run.forEach((p, i) => {
+        const a = run[Math.max(0, i - 1)], b = run[Math.min(run.length - 1, i + 1)];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+        if (paths.inPoly(poly, [p[0] + nx * 0.6, p[1] + ny * 0.6])) { nx = -nx; ny = -ny; }
+        const i1 = inMin + rnd() * inVar, o1 = outMin + rnd() * outVar;
+        const pin = [r2(p[0] - nx * i1), r2(p[1] - ny * i1)];
+        out.push(pin, [r2(p[0] + nx * o1), r2(p[1] + ny * o1)], pin);
+      });
+      return out;
+    },
+    // Tapered highlight: rails for add_path mode:'blocks', kind:'satin-block', inset `d` mm inside `poly`
+    // along an outline run. Width peaks at wmax mid-way (min 0.7).
+    satinCrescent: (run, poly, d = 3, wmax = 1.5, every = 2) => {
+      const c = run.map((p, i) => {
+        const a = run[Math.max(0, i - 1)], b = run[Math.min(run.length - 1, i + 1)];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+        if (!paths.inPoly(poly, [p[0] + nx * 0.6, p[1] + ny * 0.6])) { nx = -nx; ny = -ny; }
+        return [p[0] + nx * d, p[1] + ny * d];
+      }).filter((_, i) => i % every === 0);
+      const out = [];
+      c.forEach((p, i) => {
+        const a = c[Math.max(0, i - 1)], b = c[Math.min(c.length - 1, i + 1)];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+        const w = Math.max(0.7, wmax * Math.sin(Math.PI * i / (c.length - 1 || 1))) / 2;
+        out.push([r2(p[0] - nx * w), r2(p[1] - ny * w)], [r2(p[0] + nx * w), r2(p[1] + ny * w)]);
+      });
+      return out;
+    },
   };
   if (typeof window !== 'undefined') window.__paths = paths;
   if (typeof module !== 'undefined') module.exports = paths;

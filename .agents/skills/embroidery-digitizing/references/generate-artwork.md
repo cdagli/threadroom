@@ -78,6 +78,10 @@ After generating, copy the final PNG to [ABSOLUTE PROJECT PATH]/agent-out/[slug]
      2. Interior regions: raw trace `offset` +0.3, so neighbours overlap instead of leaving gaps.
      3. Base cutters: copies of every region made *before* clipping, including enclosed ones. Then do
         SKILL.md step 9: `union`, `offset` +0.6 / −1.0, `subtract`.
+   - **Scene without outlines (no shared base): fastest path.** Add one closed fill per flood-traced
+     colour region, in layer order, then `offset` +0.3 on every region that sits on top of a neighbour.
+     The cats-and-pothos scene (14 regions) reached 0 fail and 4 checks with no base cutting. Use the
+     180×130 hoop for scenes; leaves at 100×100 get too small.
    - Small panels with motifs inside (a 137 mm² saddle with a tulip): don't punch holes for the motifs.
      Keep the panel whole with `underlay:'none'` and lay the details on top, also with `underlay:'none'`.
 4. Tell the user the image path (`agent-out/<slug>.png`) and that it is a generated reference.

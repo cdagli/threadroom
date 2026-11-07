@@ -1,6 +1,6 @@
 ---
 name: embroidery-digitizing
-description: Hand-digitise a reference image into a clean, sewable Threadroom embroidery design through the editor's WebMCP tools — trace the silhouette, build layered fills and line details, choose Brother threads, order the sewing, and clear every check warning. Can first generate digitise-ready artwork from a text description with Codex imagegen when the user asks. Use when the user asks to digitise, trace, "turn this image into embroidery", or create an embroidery design from a description in Threadroom, or to clean up a design's issues, thread colours or sew order.
+description: Hand-digitise a reference image into a clean, sewable Threadroom embroidery design through the editor's WebMCP tools — trace the silhouette, build layered fills and line details, choose Brother threads, order the sewing, add artistic stitch work (direction zones, fishbone leaves, fuzzy fur, rope and hand-stitch accents), and clear every check warning. Can first generate digitise-ready artwork from a text description with Codex imagegen when the user asks. Use when the user asks to digitise, trace, "turn this image into embroidery", or create an embroidery design from a description in Threadroom, or to clean up a design's issues, thread colours or sew order.
 ---
 
 # Embroidery digitising in Threadroom
@@ -22,7 +22,18 @@ photo-like PNG. Read `references/lessons.md` before starting; it explains *why* 
   (`__save` / `__load` for data).
 - Keep ordered lists in arrays. A JS object keyed by Brother code reorders numeric keys and silently
   scrambles a `set_sew_order` list.
-- Load `scripts/path-helpers.js` the same way for ellipse / mirror / paw-and-toe / retraced-line builders.
+- Load `scripts/path-helpers.js` the same way for ellipse / mirror / paw-and-toe / retraced-line /
+  fuzzy-edge / satin-crescent builders.
+- **A background tab stalls the editor.** Chrome reports `visibilityState:'hidden'` and tool calls hang until
+  the tab is painted, which shows up as 45 s CDP timeouts. The edits usually still apply, so check with
+  `get_design` before retrying. Pattern: start work without awaiting it (`runQ([...])` that pushes results into
+  `window.LOG`), take a small screenshot (`scale` 0.2) to wake the tab, then read `LOG`.
+- Variables declared with `const` don't survive between `javascript_tool` calls. Put helpers on `window`.
+- `add_path` rejects about 270 points as "invalid design"; ~110 works. Split long paths into chunks
+  that sew end to start.
+- `knife` needs `from` and `to` outside the shape. Extend the line 3–5 mm past both ends and retry with
+  longer extensions.
+- Object names show in the layers panel. Name objects in the user's UI language.
 
 Keep the user informed: call `set_status` with one short sentence (in the UI language) at the start of each
 phase below, and `tone:'done'` at the end.
@@ -68,9 +79,12 @@ workflow below. Ask before generating if the user only described a design withou
 11. **Threads.** `update_objects` with `settings.threadCode` per colour group.
 12. **Sew order.** `set_sew_order` with the full id list: colour blocks in layer order; inside a block,
     put neighbours next to each other and orient chains so one ends where the next starts.
-13. **Check and fix** — `list_issues` (wait for stitches) until 0 fail / 0 check; see the fix table in
+13. **Stitch-art pass.** A trace isn't artwork yet. Before fixing warnings, add direction zones, fishbone
+    leaves, fuzzy fur edges, rope cords and hand-stitch accents, then check coverage gaps. Follow
+    `references/stitch-art.md`. Do it when the user wants a "nicer/cozier" result, or offer it.
+14. **Check and fix** — `list_issues` (wait for stitches) until 0 fail / 0 check; see the fix table in
     `references/lessons.md`. `trimJump` 3–4 mm is a fine project setting; don't go higher to hide trims.
-14. **Look.** `capture_preview` (stitches) and a screenshot; hide the reference image when done.
+15. **Look.** `capture_preview` (stitches) and a screenshot; hide the reference image when done.
 
 ## Rules of thumb
 

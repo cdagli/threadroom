@@ -74,3 +74,14 @@ make them running/satin lines.
 - `view_reference` grids are the ground truth. Reading coordinates off a plain screenshot was off by 3–4 mm.
 - Read features at 20–35 px/mm. Record them as lists of points before any drawing call.
 - A 0.25 mm alpha grid + Douglas–Peucker 0.3 mm gave an 85-point silhouette that matched the artwork.
+
+## Third run: cats-and-pothos scene, stitch-art pass (Nov 2026)
+
+A generated flat scene (14 colour regions, 180×130 hoop) was traced region by region with no base cutting:
+0 fail and 4 checks in minutes. The user then asked for "artwork, not a trace". What helped, and what
+didn't, is in `stitch-art.md`. Key lessons:
+
+- A trace with 0 warnings can still look flat and have see-through fills. Look at a zoomed `capture_preview`.
+- Knife-split parts need `offset` +0.3, or the seams open.
+- Background Chrome tab = stalled tools and 45 s timeouts. Run work in a background queue and wake the tab with a screenshot (SKILL.md).
+- The light-leaf block had one unavoidable 30.2 mm jump: the nearest same-colour leaves sat on either side of the pot. Report it rather than distorting the art.
