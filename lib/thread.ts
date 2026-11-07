@@ -1,6 +1,6 @@
 import type {Command, Fabric} from './project';
-// Thread preview: each sewn stitch is a lit cylinder about 0.4 mm wide (40 wt embroidery thread).
-/** @test */ export const threadWidth=.4;
+// Thread preview: each sewn stitch is a lit cylinder about 0.36 mm wide (40 wt embroidery thread).
+/** @test */ export const threadWidth=.36;
 type RGB=[number,number,number];
 /** @test */ export function rgb(colour:string):RGB{
   let h=colour.replace('#','');if(h.length===3)h=[...h].map(c=>c+c).join('');
@@ -9,24 +9,45 @@ type RGB=[number,number,number];
 const hex=(c:RGB)=>'#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
 const mix=(a:RGB,b:RGB,t:number)=>a.map((v,i)=>v+(b[i]-v)*t) as RGB;
 /** @test */ export function luminance(colour:string){const [r,g,b]=rgb(colour).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;}
-// Dark flanks (edge), the dyed body and a specular sheen along the thread; dark threads get a stronger sheen.
+// Sunken ends, dark flanks and the dyed body; dark threads get a stronger sheen.
 export function threadShades(colour:string){
   const c=rgb(colour),l=luminance(colour);
-  return {edge:hex(mix(c,[20,14,8],l>.5?.24:.34)),body:hex(c),sheen:hex(mix(c,[255,255,255],.22+.26*(1-l)))};
+  return {end:hex(mix(c,[0,0,0],.30)),mid:hex(mix(c,[0,0,0],.15)),edge:hex(mix(c,[20,14,8],l>.5?.24:.34)),body:hex(c),sheen:hex(mix(c,[255,255,255],.22+.26*(1-l)))};
+}
+// Squared projection across the top-left light: perpendicular axes catch the most light.
+/** @test */ export function lustre(ax:number,ay:number,bx:number,by:number){const dx=bx-ax,dy=by-ay,d=dx*dx+dy*dy;return d?Math.min(1,(dx-dy)**2/(2*d)):0;}
+const lustreCache=new Map<string,(ReturnType<typeof threadShades>&{groove:string})[]>();
+// Cache colour strings for every direction bucket, including the cheaper three-tone distant view.
+/** @test */ export function lustreShades(colour:string,steps:3|6=6){
+  const key=`${colour}:${steps}`,cached=lustreCache.get(key);if(cached)return cached;
+  const shade=threadShades(colour),body=rgb(shade.body),mid=rgb(shade.mid),sheen=rgb(shade.sheen),groove=`rgba(${rgb(shade.edge).join(',')},.45)`;
+  const variants=Array.from({length:steps},(_,i)=>{const l=i/(steps-1),scale=.94+.10*l,c=body.map(v=>v*scale) as RGB;return {...shade,body:hex(c),mid:hex(mid.map(v=>v*scale) as RGB),sheen:hex(mix(c,sheen,.55+.45*l)),groove};});
+  lustreCache.set(key,variants);return variants;
 }
 export type ThreadStyle={width:number;body:number;sheen:number;shadow:[number,number];detail:0|1|2};
 // Sizes in mm for a zoom of pxPerMm device pixels per mm. Below ~1.4 px a thread has no visible
-// shading, so detail drops to a flat stroke at least 0.7 px wide; shadows stay at least 0.6 px.
+// cylinder shading, but keeps dark holes and a minimum 0.7 px width. No coverage-widening shadow.
 export function threadStyle(pxPerMm:number):ThreadStyle{
-  const px=threadWidth*pxPerMm,width=Math.max(.7,px)/pxPerMm,off=Math.max(.06,.6/pxPerMm);
-  return {width,body:width*.74,sheen:width*(px>=3.5?.22:.28),shadow:[off*.7,off],detail:px<1.4?0:px<3.5?1:2};
+  const px=threadWidth*pxPerMm,width=Math.max(.7,px)/pxPerMm;
+  return {width,body:width*.74,sheen:width*(px>=3.5?.22:.28),shadow:[0,0],detail:px<1.4?0:px<3.5?1:2};
+}
+// Step into the lit body from each needle hole; long stitches cap the sunken region at 1.8 mm.
+/** @test */ export function holeInset(ax:number,ay:number,bx:number,by:number,t:number):[number,number,number,number]|null{
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),inset=t*Math.min(.35*len,1.8);if(len<=0||2*inset>=len)return null;
+  const ux=dx/len*inset,uy=dy/len*inset;return [ax+ux,ay+uy,bx-ux,by-uy];
 }
 // The sheen sits on the lit side (light from the top left) and stops short of both needle holes.
 /** @test */ export function sheenSegment(ax:number,ay:number,bx:number,by:number,width:number):[number,number,number,number]|null{
-  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy);if(len<width*.9)return null;
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),s=holeInset(ax,ay,bx,by,.75);if(len<width*.9||!s)return null;
   let nx=-dy/len,ny=dx/len;if(nx+ny>0){nx=-nx;ny=-ny;}
-  const inset=Math.min(len*.3,width*.55),ux=dx/len*inset,uy=dy/len*inset,o=width*.12;
-  return [ax+ux+nx*o,ay+uy+ny*o,bx-ux+nx*o,by-uy+ny*o];
+  const o=width*.12;return [s[0]+nx*o,s[1]+ny*o,s[2]+nx*o,s[3]+ny*o];
+}
+// One diagonal ply groove per equal repeat; keep its stroke inside the thread and needle holes.
+/** @test */ export function plyGrooves(ax:number,ay:number,bx:number,by:number,width:number,period:number):number[]{
+  const dx=bx-ax,dy=by-ay,len=Math.hypot(dx,dy),segs:number[]=[];if(len<=0||width<=0||period<=0)return segs;
+  const n=Math.max(1,Math.round(len/period)),step=len/n,ux=dx/len,uy=dy/len,flank=width*.44,skew=Math.min(.35*width/threadWidth,step*.8)/2;
+  for(let i=0;i<n;i++){const d=(i+.5)*step,x=ax+ux*d,y=ay+uy*d;segs.push(x-ux*skew-uy*flank,y-uy*skew+ux*flank,x+ux*skew+uy*flank,y+uy*skew-ux*flank);}
+  return segs;
 }
 export type FabricPattern='plain'|'gauze'|'knit'|'rib'|'fleece'|'terry'|'twill';
 // Light baby-fabric colours so thread stays readable; period is the texture repeat in mm.
@@ -70,13 +91,24 @@ export function drawFabric(c:Ctx,fabric:Fabric,hoop:{width:number;height:number}
   c.lineWidth=1.6;c.strokeStyle='rgba(90,75,50,.08)';roundRect(c,0,0,w,h,3);c.stroke();c.restore();
   c.lineWidth=.35;c.strokeStyle=theme.getPropertyValue('--hoop-border').trim();roundRect(c,0,0,w,h,3);c.stroke();
 }
+const segmentKey=(k:Command)=>{const a=`${Math.round(k.fromX*20)},${Math.round(k.fromY*20)}`,b=`${Math.round(k.x*20)},${Math.round(k.y*20)}`;return a<b?`${a}:${b}`:`${b}:${a}`;};
+const widthCache=new WeakMap<Command[],Float32Array>(),repeatCache=new WeakMap<Command[],Uint8Array>();
+// Count undirected 0.05 mm segments per colour block; collapse repeats only within a paint batch.
+/** @test */ export function passWidths(commands:Command[]){
+  let widths=widthCache.get(commands);if(widths)return widths;
+  widths=new Float32Array(commands.length).fill(1);const repeats=new Uint8Array(commands.length),breaks=batchBreaks(commands),counts=new Map<string,number[]>(),seen=new Set<string>();let block=-1;
+  const flush=()=>{for(const indices of counts.values()){const m=indices.length>=3?1.5:indices.length===2?1.3:1;for(const i of indices)widths![i]=m;}counts.clear();};
+  commands.forEach((k,i)=>{if(k.type!=='stitch')return;if(k.block!==block){flush();block=k.block;}if(breaks[i])seen.clear();if(Math.hypot(k.x-k.fromX,k.y-k.fromY)<.1)return;
+    const key=segmentKey(k),indices=counts.get(key);if(indices)indices.push(i);else counts.set(key,[i]);repeats[i]=seen.has(key)?1:0;seen.add(key);});
+  flush();widthCache.set(commands,widths);repeatCache.set(commands,repeats);return widths;
+}
 const orient=(ax:number,ay:number,bx:number,by:number,cx:number,cy:number)=>(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
 const opposite=(p:number,q:number)=>(p>1e-9&&q<-1e-9)||(p<-1e-9&&q>1e-9);
 // Two stitches cross strictly; sharing a needle hole or running alongside is not a crossing.
 /** @test */ export function crosses(ax:number,ay:number,bx:number,by:number,cx:number,cy:number,dx:number,dy:number){
   return opposite(orient(cx,cy,dx,dy,ax,ay),orient(cx,cy,dx,dy,bx,by))&&opposite(orient(ax,ay,bx,by,cx,cy),orient(ax,ay,bx,by,dx,dy));
 }
-// Stitches of one thread share a stroke per shading pass (shadow, edge, body, sheen) until one crosses
+// Stitches of one thread share a stroke per shading pass until one crosses
 // a stitch already in the batch, e.g. satin over its centre walk: then the batch is painted first so
 // the later stitch lies on top. add() returns false when the caller must flush.
 /** @test */ export function stitchBatch(limit=240){
@@ -98,22 +130,25 @@ const breakCache=new WeakMap<Command[],Uint8Array>();
 // Sews commands [from, to) in order, batch by batch; later batches paint over earlier ones, so later
 // stitches lie on top. Jumps are not drawn.
 export function drawThreads(c:Ctx,commands:Command[],shades:ReturnType<typeof threadShades>[],from:number,to:number,style:ThreadStyle,view:[number,number,number,number]){
-  const breaks=batchBreaks(commands),segs:number[]=[],[x0,y0,x1,y1]=view,m=style.width;let block=-1,fresh=false;
-  c.lineCap='round';c.lineJoin='round';
-  const pass=(colour:string,width:number,dx=0,dy=0)=>{c.strokeStyle=colour;c.lineWidth=width;c.beginPath();for(let j=0;j<segs.length;j+=4){c.moveTo(segs[j]+dx,segs[j+1]+dy);c.lineTo(segs[j+2]+dx,segs[j+3]+dy);}c.stroke();};
+  const breaks=batchBreaks(commands),widths=passWidths(commands),repeats=repeatCache.get(commands)!,levels=style.detail?6:3,buckets:number[][]=Array.from({length:3*levels},()=>[]),active:number[]=[],multipliers=[1.5,1.3,1],[x0,y0,x1,y1]=view,m=style.width*1.5;let block=-1,fresh=false;
+  c.lineCap='butt';c.lineJoin='round';
+  const pass=(segs:number[],colour:string,width:number,t=0)=>{c.strokeStyle=colour;c.lineWidth=width;c.beginPath();for(let j=0;j<segs.length;j+=4){const s=holeInset(segs[j],segs[j+1],segs[j+2],segs[j+3],t);if(s){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}}c.stroke();};
   const flush=()=>{
-    const shade=shades[block];if(segs.length&&shade){
-      pass('rgba(50,38,24,.22)',style.width*1.1,...style.shadow);
-      if(!style.detail)pass(shade.body,style.width);
-      else{pass(shade.edge,style.width);pass(shade.body,style.body);c.strokeStyle=shade.sheen;c.lineWidth=style.sheen;c.beginPath();
-        for(let j=0;j<segs.length;j+=4){const s=sheenSegment(segs[j],segs[j+1],segs[j+2],segs[j+3],style.width);if(s){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}}c.stroke();}}
-    segs.length=0;
+    if(!active.length)return;const variants=shades[block]&&lustreShades(shades[block].body,levels);
+    for(const b of active.sort((a,b)=>a-b)){const segs=buckets[b],scale=multipliers[Math.floor(b/levels)],width=style.width*scale,shade=variants?.[b%levels];if(shade){
+      pass(segs,shade.end,width);
+      if(!style.detail)pass(segs,shade.body,width,.5);
+      else{pass(segs,shade.mid,width,.35);pass(segs,shade.edge,width,.75);pass(segs,shade.body,style.body*scale,.75);c.strokeStyle=shade.sheen;c.lineWidth=style.sheen*scale;c.beginPath();
+        for(let j=0;j<segs.length;j+=4){const s=sheenSegment(segs[j],segs[j+1],segs[j+2],segs[j+3],width);if(s){c.moveTo(s[0],s[1]);c.lineTo(s[2],s[3]);}}c.stroke();
+        if(style.detail===2){c.strokeStyle=shade.groove;c.lineWidth=width*.12;c.beginPath();
+          for(let j=0;j<segs.length;j+=4){const grooves=plyGrooves(segs[j],segs[j+1],segs[j+2],segs[j+3],width,.7);for(let k=0;k<grooves.length;k+=4){c.moveTo(grooves[k],grooves[k+1]);c.lineTo(grooves[k+2],grooves[k+3]);}}c.stroke();}}}
+      segs.length=0;}active.length=0;
   };
   for(let i=from;i<to;i++){
-    const k=commands[i];if(k.type!=='stitch')continue;if(breaks[i])fresh=true;
+    const k=commands[i];if(k.type!=='stitch')continue;if(breaks[i])fresh=true;if(repeats[i])continue;
     if(Math.max(k.x,k.fromX)<x0-m||Math.min(k.x,k.fromX)>x1+m||Math.max(k.y,k.fromY)<y0-m||Math.min(k.y,k.fromY)>y1+m)continue;
     if(fresh||k.block!==block){flush();block=k.block;fresh=false;}
-    segs.push(k.fromX,k.fromY,k.x,k.y);
+    const b=(widths[i]>1.4?0:widths[i]>1?1:2)*levels+Math.round(lustre(k.fromX,k.fromY,k.x,k.y)*(levels-1));if(!buckets[b].length)active.push(b);buckets[b].push(k.fromX,k.fromY,k.x,k.y);
   }
   flush();
 }
