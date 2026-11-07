@@ -235,3 +235,168 @@ def route_circular(obj, at, entry, target):
     paths = [clean(C.tolerant_path(line,length,min(.2,obj["spacing"]/2)),region,minimum=.5) for line in lines]
     pieces = [[(p,min(length,C.SATIN_MAX-.15))] for p in paths if len(p)>1]
     return route_pieces(obj,pieces,at,entry,target)
+
+
+# Satin fill that follows each stroke (fill text). A direction field gives, inside the
+# outline, the direction of the shortest chord through each point: across the stroke.
+# The outline is cut into scan-line sections at the fill angle; a section whose rows
+# stray from the field is cut again at the field's mean direction over it (and once
+# more inside the result), so diagonal and horizontal strokes get bites across them.
+# Each section's row ends become two rails; bites pair the rails by arc length where
+# that turns them with a curving stroke, otherwise they keep the rows.
+TURN_LIMIT, CHORD_DIRECTIONS = 15, 12
+
+
+def simplified(ring, tolerance):
+    """Ramer-Douglas-Peucker on a closed ring (for the direction field only)."""
+    def rdp(points):
+        if len(points) < 3:
+            return points
+        a, b = points[0], points[-1]
+        k, far = max(((i, C.segment_distance(p, a, b)) for i, p in enumerate(points[1:-1], 1)), key=lambda v: v[1])
+        return rdp(points[:k+1])[:-1]+rdp(points[k:]) if far > tolerance else [a, b]
+    if len(ring) < 4:
+        return ring
+    k = max(range(len(ring)), key=lambda i: math.dist(ring[0], ring[i]))
+    return rdp(ring[:k+1])[:-1]+rdp(ring[k:]+[ring[0]])[:-1]
+
+
+class StrokeField:
+    """Across-stroke direction (degrees, mod 180) on a grid: the shortest of
+    CHORD_DIRECTIONS chords through each cell centre, chords capped at reach."""
+
+    def __init__(self, rings, rule, reach):
+        edges = [(a, b) for r in (simplified(r, .03) for r in rings) for a, b in zip(r, r[1:]+r[:1]) if a != b]
+        xs, ys = [p[0] for r in rings for p in r], [p[1] for r in rings for p in r]
+        self.cell = cell = max(.2, min(.6, reach/8))
+        self.x0, self.y0 = min(xs), min(ys)
+        self.nx, self.ny = int((max(xs)-self.x0)/cell)+1, int((max(ys)-self.y0)/cell)+1
+        size = max(reach, .5)
+        buckets = {}
+        for e, (a, b) in enumerate(edges):
+            for j in range(int((min(a[1], b[1])-self.y0)//size), int((max(a[1], b[1])-self.y0)//size)+1):
+                for i in range(int((min(a[0], b[0])-self.x0)//size), int((max(a[0], b[0])-self.x0)//size)+1):
+                    buckets.setdefault((i, j), []).append(e)
+        directions = [(math.cos(k*math.pi/CHORD_DIRECTIONS), math.sin(k*math.pi/CHORD_DIRECTIONS)) for k in range(CHORD_DIRECTIONS)]
+        self.angle = {}
+        for j in range(self.ny):
+            y = self.y0+(j+.5)*cell
+            spans = C.scan_spans(rings, y, rule)
+            for i in range(self.nx):
+                x = self.x0+(i+.5)*cell
+                if not any(a <= x <= b for a, b in spans):
+                    continue
+                bi, bj = int((x-self.x0)//size), int((y-self.y0)//size)
+                near = {e for di in (-1, 0, 1) for dj in (-1, 0, 1) for e in buckets.get((bi+di, bj+dj), ())}
+                chords = []
+                for dx, dy in directions:
+                    lo = hi = reach
+                    for e in near:
+                        (ax, ay), (bx, by) = edges[e]
+                        ex, ey = bx-ax, by-ay
+                        den = dx*ey-dy*ex
+                        if abs(den) < 1e-12:
+                            continue
+                        t, u = ((ax-x)*ey-(ay-y)*ex)/den, ((ax-x)*dy-(ay-y)*dx)/den
+                        if 0 <= u <= 1:
+                            if t >= 0:
+                                lo = min(lo, t)
+                            else:
+                                hi = min(hi, -t)
+                    chords.append(lo+hi)
+                k = min(range(CHORD_DIRECTIONS), key=chords.__getitem__)
+                # Parabolic refinement between the neighbouring directions.
+                a, b, c = chords[k-1], chords[k], chords[(k+1) % CHORD_DIRECTIONS]
+                shift = (a-c)/(2*(a-2*b+c)) if a-2*b+c > 1e-9 else 0
+                self.angle[(i, j)] = ((k+max(-.5, min(.5, shift)))*180/CHORD_DIRECTIONS) % 180
+
+    def at(self, p):
+        return self.angle.get((int((p[0]-self.x0)/self.cell), int((p[1]-self.y0)/self.cell)))
+
+    def mean(self, rows, angle):
+        """Length-weighted mean field direction over a section's rows (doubled angles)."""
+        sx = sy = 0.0
+        for y, a, b in rows:
+            n = max(1, round((b-a)/self.cell))
+            for q in C.rotate([[a+(b-a)*(k+.5)/n, y] for k in range(n)], angle, True):
+                v = self.at(q)
+                if v is not None:
+                    sx, sy = sx+math.cos(math.radians(2*v)), sy+math.sin(math.radians(2*v))
+        return None if sx == sy == 0 else math.degrees(math.atan2(sy, sx))/2
+
+
+def section_outline(rows, spacing, angle):
+    """Polygon of a scan-line section, its first and last rows pushed out half a row
+    so neighbouring sections meet."""
+    rows = [(rows[0][0]-spacing/2, *rows[0][1:])]+list(rows)+[(rows[-1][0]+spacing/2, *rows[-1][1:])]
+    return C.rotate([[a, y] for y, a, _ in rows]+[[b, y] for y, _, b in rows[::-1]], angle, True)
+
+
+def stroke_sections(rings, rule, spacing, angle, field, depth=2):
+    """[(angle, rows)] covering the outline with rows across its strokes."""
+    out = []
+    for rows in C.fill_sections([C.rotate(r, angle) for r in rings], spacing, rule):
+        target = field.mean(rows, angle) if depth and len(rows) > 1 else None
+        if target is not None and abs((target-angle+90) % 180-90) > TURN_LIMIT:
+            out.extend(stroke_sections([section_outline(rows, spacing, angle)], 'evenodd', spacing, target, field, depth-1))
+        else:
+            out.append((angle, rows))
+    return out
+
+
+def arc_resample(points, n):
+    cumulative = [0]
+    for a, b in zip(points, points[1:]):
+        cumulative.append(cumulative[-1]+math.dist(a, b))
+    total, out, k = cumulative[-1], [], 0
+    for j in range(n+1):
+        d = total*j/n
+        while k < len(points)-2 and cumulative[k+1] < d:
+            k += 1
+        span = cumulative[k+1]-cumulative[k]
+        out.append(C.lerp(points[k], points[k+1], min(1, max(0, (d-cumulative[k])/span)) if span > 1e-12 else 0))
+    return out
+
+
+def stroke_rails(obj, region, angle, rows):
+    """Left and right rails of one section: the row ends, or the outline sides paired by
+    arc length when that shortens the bites and every bite stays inside."""
+    left = C.rotate([[a, y] for y, a, _ in rows], angle, True)
+    right = C.rotate([[b, y] for y, _, b in rows], angle, True)
+    if len(rows) < 3:
+        return left, right
+    n = max(len(rows), math.ceil(max(sum(math.dist(a, b) for a, b in zip(r, r[1:])) for r in (left, right))/.2))
+    l2, r2 = arc_resample(left, n), arc_resample(right, n)
+    mean = lambda ls, rs: sum(math.dist(a, b) for a, b in zip(ls, rs))/len(ls)
+    if mean(l2, r2) < mean(left, right)*.97 and all(region.contains(p, .05) for a, b in zip(l2, r2) for p in C.interpolate(a, b, .3)[:-1]):
+        return l2, r2
+    return left, right
+
+
+def route_stroke_satin(obj, at, entry, target):
+    spacing, pull, underlay = obj['spacing'], obj['pullCompensation'], obj['underlay']
+    rule, region = obj.get('fillRule', 'evenodd'), C.Region(obj['rings'], obj.get('fillRule', 'evenodd'))
+    field = StrokeField(obj['rings'], rule, 6)
+    pieces = []
+    for angle, rows in stroke_sections(obj['rings'], rule, spacing, obj.get('angle', 0), field):
+        left, right = stroke_rails(obj, region, angle, rows)
+        widths = [math.dist(a, b) for a, b in zip(left, right)]
+        passes = []
+        if underlay == 'center' and len(left) > 1:
+            passes.append((C.tolerant_path([C.lerp(a, b, .5) for a, b in zip(left, right)], 1.5, .1), 3))
+        if 'edge' in underlay:
+            for rail in C.inset_rails([a for a, w in zip(left, widths) if w >= 1], [b for b, w in zip(right, widths) if w >= 1], .5):
+                if len(rail) > 1:
+                    passes.append((C.tolerant_path(rail, 1.5, .1), 3))
+        if 'zigzag' in underlay:
+            edges = C.inset_rails(left, right, .5)
+            zig = [edges[i % 2][j] for i, j in enumerate(range(0, len(left), max(1, round(1.5/spacing)))) if widths[j] >= 1]
+            if len(zig) > 1:
+                passes.append((C.line_path(zig, 1.5), 3))
+        cover = C.block_path(left, right, spacing, pull, 0, obj.get('shortStitches', True), dots=False) if len(left) > 1 else [left[0], right[0]]
+        if passes and math.dist(passes[-1][0][-1], cover[-1]) < math.dist(passes[-1][0][-1], cover[0]):
+            cover.reverse()
+        cover = clean(C.split_bites(cover, obj.get('splitLength', 7)))
+        if len(cover) > 1:
+            pieces.append(passes+[(cover, C.SATIN_MAX-.15)])
+    return route_pieces(obj, pieces, at, entry, target)

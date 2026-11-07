@@ -1177,13 +1177,13 @@ def block_rungs(left, right, spacing):
 MIN_BITES, MIN_DOT_SPACING = 4, .18
 
 
-def block_path(left, right, spacing, pull=0, split=0, short=False):
+def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True):
     """Satin between paired rails: penetrations alternate left/right on successive rungs, each end
     pushed out by half the pull compensation; short stitches and splitting as in satin_path."""
     # A short column (a diacritic dot, a comma) at the normal spacing gets two or three
     # bites, which sew as a chevron. Give it at least MIN_BITES so it reads as a satin dot.
     total = sum(math.dist(a, b) for a, b in zip(left, left[1:]))+sum(math.dist(a, b) for a, b in zip(right, right[1:]))
-    if total/2 < MIN_BITES*spacing:
+    if dots and total/2 < MIN_BITES*spacing:
         spacing = max(MIN_DOT_SPACING, total/2/MIN_BITES)
     rungs = block_rungs(left, right, spacing)
     def end(j, side, inset=0):
@@ -1612,8 +1612,8 @@ def plan_object(obj, at, target):
                 return sweep.route(obj, guides, at, entry, exit or target)
             obj = {**obj, "angle": round(sweep.guide_angle(guides[0]), 1)}  # as the editor stores it
         if kind == "fill" and obj.get("fillPattern") == "sweepSatin":
-            from .engines import route_satin
-            return route_satin(obj, at, entry, exit or target)
+            from .engines import route_satin, route_stroke_satin
+            return (route_stroke_satin if obj.get("followStroke") else route_satin)(obj, at, entry, exit or target)
         if kind == "fill" and obj.get("fillPattern") == "circular":
             from .engines import route_circular
             return route_circular(obj, at, entry, exit or target)

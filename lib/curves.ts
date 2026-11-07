@@ -303,7 +303,8 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'images'
     if(o.rails)return [{...o,rings:[blockCentre(o.rails)],railPaths:railSamples(o.rails)}];
     if(!o.text){const rings=o.curve?[curveRing(o.curve,!isFillKind(o.kind))]:o.rings;return [o.curve&&line(o.kind)&&!tolerant(o)?{...o,rings:rings.map(r=>samplePath(r,o.length))}:rings!==o.rings?{...o,rings}:o];}
     const {text,...plain}=o,closedRings=o.rings.map(r=>r.length&&Math.hypot(r[0][0]-r[r.length-1][0],r[0][1]-r[r.length-1][1])>1e-9?[...r,r[0]]:r);
-    const letters:Resolved={...plain,fillRule:'nonzero',rings:line(o.kind)?tolerant(o)?closedRings:closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
+    // Satin fill text turns its bites across each stroke (embroidery/engines.py route_stroke_satin).
+    const letters:Resolved={...plain,fillRule:'nonzero',...(o.kind==='fill'&&o.fillPattern==='sweepSatin'?{followStroke:true}:{}),rings:line(o.kind)?tolerant(o)?closedRings:closedRings.map(r=>samplePath(r,o.length)):o.rings,...(o.kind==='manual'?{kind:'running'}:{})};
     if(!text.border||!(o.kind==='fill'||o.kind==='cross'))return [letters];
     const b=text.border,outline=mergedOutline(o.rings);
     return [letters,{...plain,tolerance:undefined,entry:undefined,exit:undefined,id:`${o.id}-border`,name:`${o.name} border`,kind:b.kind,color:b.color,thread:b.thread??(b.color.toLowerCase()===o.color.toLowerCase()?o.thread:undefined),satinWidth:b.width,spacing:fabrics[fabric].satin,underlay:'none',splitLength:Number(profileDefault(b.kind,fabric,'splitLength')??0),shortStitches:profileDefault(b.kind,fabric,'shortStitches')===true,rings:b.kind==='satin'?outline:outline.map(r=>samplePath(r,o.length))}];

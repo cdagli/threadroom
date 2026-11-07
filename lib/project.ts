@@ -127,7 +127,7 @@ export function profileDefault(kind:Kind, fabric:Fabric, key:Exclude<Setting,key
 export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPull(kind):key!=='splitLength'&&key!=='shortStitches'&&!isLockSetting(key)&&(kind==='fill'||isSatinKind(kind));
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
 // railPaths: the compile payload's sampled block rails, equal length and paired by index.
-export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]; satinColumns?: {railPaths:[Point[],Point[]];character:number}[]};
+export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]; satinColumns?: {railPaths:[Point[],Point[]];character:number}[]; followStroke?: boolean};
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
   const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin';
   const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults,splitLength:sweepSatinSplit};
