@@ -29,7 +29,8 @@
       }
       return out;
     },
-    // Several strokes from (nearly) one root as a single retraced path, e.g. whiskers:
+    // Several strokes from (nearly) one root as a single retraced path.
+    // Use only within one editable detail; keep individual whiskers as separate objects.
     // strokes = [[root, mid, tip], ...]; travels root→root between strokes.
     fan: strokes => strokes.flatMap((s, i) => {
       const out = i === 0 ? [...s].reverse() : [...s, ...[...s].reverse().slice(1)];
@@ -67,7 +68,7 @@
     },
     // Fuzzy fur edge: for each sample of an outline run, a stroke across the edge on the local normal,
     // retraced in→out→in. One open running path (length ≈ 1.2) in the fill colour. Keep ≤ ~35 samples per
-    // path (add_path rejects ~270 points); chain chunks end to start.
+    // curve path (200-anchor limit); manual paths permit 2,000 input points. Budget the whole project.
     fuzzEdge: (run, poly, {inMin = 1.3, inVar = 1.2, outMin = 0.5, outVar = 1.1, seed = 23} = {}) => {
       let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
       const out = [];

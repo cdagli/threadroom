@@ -30,10 +30,10 @@ cotton. Result: 25 objects, 7 Brother threads, 6 colour changes, ~3,700 stitches
 - **Blunt corners.** A region boundary meeting the outline at a shallow angle makes a thin wedge. End inner
   regions where they are ≥ 2 mm wide (the inner ear stops 2 mm below the tip and at the ear base) and run
   head lines roughly perpendicular to the outline.
-- **Trims are object transitions.** 27 objects ≈ 30 trims; the check allows 25. Chain lines that are close
-  (leg + paw top + toes in one path, all whiskers per side in one retraced path, mouth as one path), merge
-  touching same-colour fills, and drop low-value decorative objects before raising `trimJump`.
-  Raising `trimJump` from 3 to 4 mm saved two more trims; 6–7 mm hides trims as visible floats.
+- **Trims are sewing transitions, not a reason to merge editable parts.** An object can contain multiple
+  trimmed runs; grouping does not alter them. Optimize ends and nearby sew order first. Keep whiskers
+  individually removable, even if an older design chained them. Raising `trimJump` from 3 to 4 mm saved
+  two cuts; 6–7 mm hides cuts as visible floats.
 - **Colour order.** Build objects in final sew order and use one block per thread. Layering only matters
   where regions overlap; after the base is cut, most inner pieces don't overlap, so blocks can be reordered
   freely. Inside a block, order by proximity (a 33 mm jump from the paws back up to the muzzle is a warning).
@@ -58,7 +58,7 @@ cotton. Result: 25 objects, 7 Brother threads, 6 colour changes, ~3,700 stitches
 | `dense` | Fill + underlay + highlight stacked | Cut the base under small fills; `underlay:'none'` on small fills (eyes). |
 | `colour-order` | Same thread in two blocks | `set_sew_order` into one block per colour. |
 | `long-jump` | Same-colour objects far apart in sequence | Reorder inside the colour block by proximity. |
-| `many-trims` | Too many separate objects | Chain lines, union touching fills, drop decorations, then `trimJump` 3–4. Multi-element scenes can stay above 25: report the count and ask the user. |
+| `many-trims` | Many disconnected sewing runs | Optimize entry/exit and order; use `trimJump` 3–4. Preserve separately editable parts and report unavoidable cuts. |
 
 ## Second run: generated Scandinavian winter motif (Nov 2026)
 

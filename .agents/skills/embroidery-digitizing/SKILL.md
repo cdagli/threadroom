@@ -1,6 +1,6 @@
 ---
 name: embroidery-digitizing
-description: Hand-digitise a reference image into a clean, sewable Threadroom embroidery design through the editor's WebMCP tools — trace the silhouette, build layered fills and line details, choose Brother threads, order the sewing, add artistic stitch work (direction zones, fishbone leaves, fuzzy fur, rope and hand-stitch accents), and clear every check warning. Can first generate digitise-ready artwork from a text description with Codex imagegen when the user asks. Use when the user asks to digitise, trace, "turn this image into embroidery", or create an embroidery design from a description in Threadroom, or to clean up a design's issues, thread colours or sew order.
+description: Hand-digitise a reference image into an editable, sewable Threadroom embroidery design through the editor's WebMCP tools — trace the silhouette, build layered fills and line details, choose threads, order the sewing, add artistic stitch work, and review visual fidelity and stitch issues. Can first generate digitise-ready artwork from a text description with Codex imagegen when the user asks. Use when the user asks to digitise, trace, "turn this image into embroidery", or create an embroidery design from a description in Threadroom, or to clean up a design's issues, thread colours or sew order.
 ---
 
 # Embroidery digitising in Threadroom
@@ -12,6 +12,8 @@ photo-like PNG. Read `references/lessons.md` before starting; it explains *why* 
 ## Calling the tools
 
 - **Native WebMCP client:** call the tools directly.
+- **agent-browser:** use `scripts/webmcp-call.py --session SESSION TOOL --args @params.json --output result.json`.
+  Read the tool schema first; the helper also handles large parameters and image exports.
 - **Claude in Chrome:** run `scripts/webmcp-bridge.js` once with `javascript_tool`, then `await __J('tool', {...})`.
   The bridge stores itself in `localStorage`, so after an HMR reload run
   `eval(localStorage.getItem('__claude_bridge')); await __setup()`.
@@ -29,14 +31,20 @@ photo-like PNG. Read `references/lessons.md` before starting; it explains *why* 
   `get_design` before retrying. Pattern: start work without awaiting it (`runQ([...])` that pushes results into
   `window.LOG`), take a small screenshot (`scale` 0.2) to wake the tab, then read `LOG`.
 - Variables declared with `const` don't survive between `javascript_tool` calls. Put helpers on `window`.
-- `add_path` rejects about 270 points as "invalid design"; ~110 works. Split long paths into chunks
-  that sew end to start.
+- Budget the whole project: 80 objects and 12,000 ring points. Curve paths allow 200 anchors;
+  manual `points` paths allow 2,000 input points. Sampled curves and satin rails can exhaust the
+  compiler's point budget before the anchor count suggests it. Keep some headroom.
 - `knife` needs `from` and `to` outside the shape. Extend the line 3–5 mm past both ends and retry with
   longer extensions.
 - Object names show in the layers panel. Name objects in the user's UI language.
 
 Keep the user informed: call `set_status` with one short sentence (in the UI language) at the start of each
 phase below, and `tone:'done'` at the end.
+
+**Preserve editability.** Keep independently editable parts as separate, named objects: one whisker
+per path, separate eyes, highlights, spots and logical fur regions. Group related paths with `group`;
+do not union, concatenate or convert distinct parts into one redwork object just to reduce trims.
+Temporary cutter copies may be combined. Merge final parts only when the user explicitly requests it.
 
 ## No image yet? Generate one (on request)
 
@@ -59,13 +67,13 @@ workflow below. Ask before generating if the user only described a design withou
 5. **Plan layers and colours** (bottom → top) and one thread block per colour, e.g.
    base fill → inner details (pink) → light areas (beige) → shadows → accent fills + accent lines (rust) →
    dark details (eyes, nose, mouth, outline) → white highlights/whiskers. `sample_colors` + `find_threads`
-   pick Brother codes; merge near-identical shades (fewer colour changes beats a perfect match).
+   pick Brother codes; consolidate near-identical shades only when the visual match permits it.
 6. **Build the base.** `add_path` closed with the silhouette, `kind:'fill'`, a fur-direction `angle`.
 7. **Build edge regions with "extend and clip".** Any region touching the outline (ears, paws, sides,
    tail, shadows) is drawn *past* the silhouette and then clipped:
    `shape_operation intersect [region, silhouetteCopy]` (the first object in sew order keeps its settings;
    add the copy right after). Inner regions limited by another region (inner ear inside ear) intersect with
-   that region's raw polygon too. Same-colour regions that touch → `union` into one object.
+   that region's raw polygon too. Keep final editable parts separate, even when their colours match.
 8. **Interior regions** (chest, muzzle, eyes, nose) as smooth closed paths.
 9. **Cut the base cleanly** — don't rely on flatten for the base. Re-create the base from the silhouette,
    add temp copies of *all* raw region polygons, `union` them, `offset` +0.6 then −1.0 (closes slivers and
@@ -73,18 +81,22 @@ workflow below. Ask before generating if the user only described a design withou
    including regions enclosed by other regions (a panel inside a border). Base left under a region stacks
    layers and triggers `dense`. Flatten only the inner pieces among themselves
    (`shape_operation flatten` with explicit ids).
-10. **Lines.** Running/bean on top. Chain nearby lines into one path (leg line → paw top → toes, retraced
-    down-and-back) and retrace whiskers from a shared root: every separate object costs a trim.
-    Use `length` ≈ 1.1 mm on short detail lines.
+10. **Lines.** Running/bean on top. Keep each whisker and other independently removable detail as its
+    own path. A whisker may sew root → tip → root within that one object. Group related objects; use
+    entry/exit and sew order to reduce travel. Use `length` ≈ 1.1 mm on short detail lines.
 11. **Threads.** `update_objects` with `settings.threadCode` per colour group.
 12. **Sew order.** `set_sew_order` with the full id list: colour blocks in layer order; inside a block,
     put neighbours next to each other and orient chains so one ends where the next starts.
 13. **Stitch-art pass.** A trace isn't artwork yet. Before fixing warnings, add direction zones, fishbone
     leaves, fuzzy fur edges, rope cords and hand-stitch accents, then check coverage gaps. Follow
     `references/stitch-art.md`. Do it when the user wants a "nicer/cozier" result, or offer it.
-14. **Check and fix** — `list_issues` (wait for stitches) until 0 fail / 0 check; see the fix table in
-    `references/lessons.md`. `trimJump` 3–4 mm is a fine project setting; don't go higher to hide trims.
-15. **Look.** `capture_preview` (stitches) and a screenshot; hide the reference image when done.
+14. **Check and fix** — `list_issues` (wait for stitches), fix failures and reduce advisories while
+    preserving fidelity and editable parts; see `references/lessons.md`. Report unresolved advisories.
+    `trimJump` 3–4 mm is a fine project setting; don't go higher to hide trims.
+15. **Compare and look.** Compare the reference and stitch render at the same millimetre bounds, then
+    inspect proportions, coverage, negative space, colours and fur direction. Zero check warnings do
+    not establish fidelity. Hide the source image when done. For detailed matching, export safeguards
+    and grouped-child verification, read [references/fidelity-and-editability.md](references/fidelity-and-editability.md).
 
 ## Rules of thumb
 
@@ -95,9 +107,9 @@ workflow below. Ask before generating if the user only described a design withou
   below that; a 2.4 mm satin "dot" looks like a zigzag.
 - Don't set satin `spacing` below the fabric default. It produced "invalid design", and once froze the
   renderer for 45 s inside a batch.
-- Budget: ≤ 80 objects, colour changes = colours − 1, no jump > 30 mm, ≤ 25 trims. 25 trims is realistic
-  for a single figure. A multi-element scene (wreath + animals + snowflakes ≈ 35) may not get under it:
-  chain and merge first, then tell the user the count and ask whether it's acceptable. Don't decide for
-  them. The limit can't be changed with `update_project`.
+- Budget: ≤ 80 objects. Aim for colour changes = colours − 1, no jump > 30 mm and ≤ 25 trims while
+  preserving the artwork and separate editable parts. Grouping organizes objects; it does not itself
+  reduce cuts. Report remaining travel/cut advisories and their cost rather than merging parts or
+  deleting requested detail to obtain a clean counter. The check limit cannot be changed by `update_project`.
 - Edit in one script per phase, but keep the raw polygons (in `localStorage` or a file) so a phase can be
   rebuilt from scratch instead of patched — rebuilding was always faster than patching slivers.
