@@ -38,7 +38,7 @@ test('Each editor check is triggered by a minimal project and absent on a clean 
     const w=codes(list[i])[code];
     assert.ok(w,`${code} #${i/2}`);assert.equal(w.severity,list[i+1],`${code} #${i/2}`);
     assert.equal(w.source,'design');assert.ok(w.bounds[0]<=w.bounds[2]&&w.bounds[1]<=w.bounds[3]);
-    assert.ok(Object.values(w.values).every(Number.isFinite),code);
+    assert.ok(Object.entries(w.values).filter(([key])=>key!=='parts').every(([,v])=>Number.isFinite(v)),code);
   }
   assert.equal(codes(project(satin(1)))['satin-narrow'],undefined);
   assert.equal(codes(project(object('Corner',[rect(3,40,20,20)])))['near-edge'],undefined);

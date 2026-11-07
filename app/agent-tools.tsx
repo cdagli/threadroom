@@ -211,7 +211,7 @@ const tools:Tool[]=[
     }},
   {name:'get_editor_state',annotations:readOnly,inputSchema:obj({}),
     description:'What the user currently sees: active tool, selection, panel, zoom, view toggles, undo/redo depth, stitch engine status, busy flag and the last message or error shown.',
-    run:api=>{const a=now(api);return {tool:a.tool,tools:a.tools,selection:a.selection,selectedImage:a.imageSelection,drawingInProgress:a.hasDraft,busy:a.busy,history:a.history,stitchEngine:a.apiState,stitchesCurrent:a.compileFresh,message:a.message,error:a.error,
+    run:api=>{const a=now(api);return {uiLanguage:a.t.lang,tool:a.tool,tools:a.tools,selection:a.selection,selectedImage:a.imageSelection,drawingInProgress:a.hasDraft,busy:a.busy,history:a.history,stitchEngine:a.apiState,stitchesCurrent:a.compileFresh,message:a.message,error:a.error,
       view:{...a.view,settings:a.view.settings}};}},
   {name:'capture_preview',annotations:readOnly,inputSchema:obj({mode:{type:'string',enum:['auto','stitches','shapes'],description:'stitches: realistic thread render (generates stitches); shapes: object shapes on the whole hoop; auto: stitches if current'},size:{type:'number',description:'longest side in px, 128–1024 (default 512)'},includeImages:{type:'boolean',description:'paint reference images underneath'}}),
     description:'Returns a PNG picture of the design so you can look at it (check composition, colours, coverage) before and after changes.',

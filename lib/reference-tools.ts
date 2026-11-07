@@ -9,9 +9,19 @@ type Box=[number,number,number,number];
 const round=(n:number)=>Math.round(n*100)/100;
 const boundsOf=(points:Point[]):Box=>{const b:Box=[Infinity,Infinity,-Infinity,-Infinity];for(const [x,y] of points){b[0]=Math.min(b[0],x);b[1]=Math.min(b[1],y);b[2]=Math.max(b[2],x);b[3]=Math.max(b[3],y);}return b;};
 
+// The stitch-region simplifier may discard tiny rings under its point budget. Outline tracing
+// retains each requested ring instead: restore a non-collinear triangle if DP removes both arcs.
+function closedRing(ring:Point[],eps:number):Point[]{
+  const result=simplifyRing(ring,eps);
+  if(result.length>=3&&Math.abs(ringArea(result))>1e-10)return result;
+  let split=0,far=0;ring.forEach((p,i)=>{const d=Math.hypot(p[0]-ring[0][0],p[1]-ring[0][1]);if(d>far){far=d;split=i;}});
+  let third=-1,area=0;for(let i=1;i<ring.length;i++){const a=Math.abs(ringArea([ring[0],ring[split],ring[i]]));if(a>area){area=a;third=i;}}
+  return third<0?ring:[0,split,third].sort((a,b)=>a-b).map(i=>ring[i]);
+}
+
 // Grid boundaries are implicit closed rings (the first point is not repeated). Split-ring DP keeps
 // both halves of the closing edge; never replace a valid ring with a line at high tolerances.
-export function traceMask(mask:Uint8Array,width:number,height:number,{origin=[0,0],step=1,simplify=.3,largestOnly=true,holes=false,maxPoints=400,hoop}:{origin?:Point;step?:number;simplify?:number;largestOnly?:boolean;holes?:boolean;maxPoints?:number;hoop?:{width:number;height:number}}={}){
+/** @test */ export function traceMask(mask:Uint8Array,width:number,height:number,{origin=[0,0],step=1,simplify=.3,largestOnly=true,holes=false,maxPoints=400,hoop}:{origin?:Point;step?:number;simplify?:number;largestOnly?:boolean;holes?:boolean;maxPoints?:number;hoop?:{width:number;height:number}}={}){
   const parts=maskComponents(mask,width),chosen=largestOnly?parts.slice(0,1):parts;
   const selected=new Uint8Array(mask.length);for(const part of chosen)for(const k of part)selected[k]=1;
   const raw=traceRegion({mask:selected,width,height,count:0,box:[0,0,width-1,height-1],color:''})
@@ -19,7 +29,7 @@ export function traceMask(mask:Uint8Array,width:number,height:number,{origin=[0,
     .map(r=>({hole:ringArea(r)<0,points:r.map(([x,y]):Point=>[round(Math.max(0,Math.min(hoop?.width??Infinity,origin[0]+x*step))),round(Math.max(0,Math.min(hoop?.height??Infinity,origin[1]+y*step)))])}))
     .filter(r=>Math.abs(ringArea(r.points))>0);
   if(raw.length*3>maxPoints)throw new Error('maxPoints is too small to retain all rings. Increase it or use largestOnly / holes:false.');
-  const reduce=(eps:number)=>raw.map(r=>({...r,points:simplifyRing(r.points,eps)}));
+  const reduce=(eps:number)=>raw.map(r=>({...r,points:closedRing(r.points,eps)}));
   let result=reduce(simplify),eps=Math.max(.01,simplify);
   for(let n=0;result.reduce((s,r)=>s+r.points.length,0)>maxPoints&&n<40;n++){eps*=1.5;result=reduce(eps);}
   if(result.reduce((s,r)=>s+r.points.length,0)>maxPoints)throw new Error('Cannot simplify within maxPoints without collapsing a ring. Increase maxPoints.');

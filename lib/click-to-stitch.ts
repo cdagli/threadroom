@@ -100,11 +100,7 @@ export function simplifyRing(ring:Point[],eps:number):Point[]{
   let far=0,split=0;ring.forEach((p,i)=>{const d=Math.hypot(p[0]-ring[0][0],p[1]-ring[0][1]);if(d>far){far=d;split=i;}});
   const pts=[...ring,ring[0]],keep=new Uint8Array(pts.length);keep[0]=keep[split]=keep[pts.length-1]=1;
   rdp(pts,0,split,eps,keep);rdp(pts,split,pts.length-1,eps,keep);
-  const result=pts.slice(0,-1).filter((_,i)=>keep[i]);
-  if(result.length>=3&&Math.abs(ringArea(result))>1e-10)return result;
-  // Keep a third, non-collinear vertex when a large tolerance removes both arcs.
-  let third=-1,area=0;for(let i=1;i<ring.length;i++){const a=Math.abs(ringArea([ring[0],ring[split],ring[i]]));if(a>area){area=a;third=i;}}
-  return third<0?ring:[0,split,third].sort((a,b)=>a-b).map(i=>ring[i]);
+  return pts.slice(0,-1).filter((_,i)=>keep[i]);
 }
 // Outer ring first, then holes, each larger than minArea px²; simplification coarsens until the
 // region fits maxPoints.

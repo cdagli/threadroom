@@ -46,7 +46,9 @@ cotton. Result: 25 objects, 7 Brother threads, 6 colour changes, ~3,700 stitches
 | Warning | Typical cause | Fix |
 | --- | --- | --- |
 | `fill-thin-part` on the base | Slivers between regions and the outline | Extend-and-clip regions; rebuild the base with union + close + subtract (step 9). Locate parts via `values.parts` when available. |
-| `fill-thin-part` on a region | Pointed tips, notches, shallow-angle corners | Blunt the corner, move the shared edge onto the notch point, end inner regions where they are ≥ 2 mm wide. |
+| `fill-thin-part` on a region | Pointed tips, notches, shallow-angle corners | Blunt the corner, move the shared edge onto the notch point, end inner regions where they are ≥ 2 mm wide. For traced shapes, open them: `offset` −0.35 then +0.35 (base: −0.5 / +0.5). `values.parts` gives each sliver's bounds. |
+| `short-stitches` at an acute notch | A narrow gap such as between legs | Close the shape: `offset` +0.4 then −0.4, before cutting. |
+| `dense` under an enclosed panel | Base not cut under a region enclosed by another region | Include enclosed regions in the base cutter union. For small panels with motifs, keep the panel whole and put the motifs on top, all with `underlay:'none'`. |
 | `fill-small` / `fill-narrow` (fail) | Tiny fills (highlights, < 6 mm² or < 1 mm wide) | Satin dot (`kind:'satin'` 0.3 mm open path, `satinWidth` 1.0, `underlay:'none'`) or running stitch. |
 | `fill-narrow` (check) | 1–2 mm fills (eye rings, small nose) | Enlarge to ≥ 2 mm (nose base 5 mm × 3.2 mm) or switch to a line. |
 | `satin-narrow` | Satin < 1 mm | `satinWidth` ≥ 1.0. |
@@ -56,7 +58,16 @@ cotton. Result: 25 objects, 7 Brother threads, 6 colour changes, ~3,700 stitches
 | `dense` | Fill + underlay + highlight stacked | Cut the base under small fills; `underlay:'none'` on small fills (eyes). |
 | `colour-order` | Same thread in two blocks | `set_sew_order` into one block per colour. |
 | `long-jump` | Same-colour objects far apart in sequence | Reorder inside the colour block by proximity. |
-| `many-trims` | Too many separate objects | Chain lines, union touching fills, drop decorations, then `trimJump` 3–4. |
+| `many-trims` | Too many separate objects | Chain lines, union touching fills, drop decorations, then `trimJump` 3–4. Multi-element scenes can stay above 25: report the count and ask the user. |
+
+## Second run: generated Scandinavian winter motif (Nov 2026)
+
+A subagent ran the skill cold: Codex imagegen, then digitising. The result was 40 objects, 5 Brother
+threads, 4 colour changes, ~6,400 stitches, 0 fail. One check remained: 35 trims. The fixes above under
+"thin part", "acute notch" and "enclosed panel" come from this run. The first image had a navy outline
+around every shape, so it was regenerated without outlines (see generate-artwork.md). In the preview,
+~2 mm pine needles and snowflake arms read as rounded blobs: draw thin decorative elements at ≥ 3 mm, or
+make them running/satin lines.
 
 ## Coordinates and reading the image
 

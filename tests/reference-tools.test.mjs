@@ -24,7 +24,7 @@ test('Hole rings are marked and winding is preserved',()=>{
 test('Closed-ring DP preserves the closing arc, tolerates zero epsilon and never collapses to a line',()=>{
   const ring=[[0,0],[1,0],[2,0],[2,1],[2,2],[1,2],[0,2],[0,1]];
   assert.equal(simplifyRing(ring,0).length,4);assert.equal(ringArea(simplifyRing(ring,.3)),4);
-  const coarse=simplifyRing(ring,100);assert.ok(coarse.length>=3);assert.ok(Math.abs(ringArea(coarse))>0);
+  const coarse=trace(['##','##'],{simplify:100}).rings[0];assert.ok(coarse.length>=3);assert.ok(Math.abs(ringArea(coarse))>0);
   const r=trace(['#####','#####','##...','#####'],{simplify:0,maxPoints:4});assert.ok(r.pointCounts[0]<=4);assert.ok(r.pointCounts[0]>=3);
   assert.throws(()=>trace(['#.#.#'],{largestOnly:false,maxPoints:3}),/maxPoints/);
 });
@@ -56,7 +56,7 @@ test('Sampling returns exact threads, transparent/outside null, rotation and cir
 });
 test('View mapping preserves axes and longest side with useful automatic grids',()=>{
   for(const [span,grid] of [[25,1],[80,5],[81,10]]){
-    const m=referenceMapping(image,[0,0,span,span/2],768);assert.equal(m.grid,grid);assert.equal(m.width,768);assert.equal(m.scale*span+2*m.margin,768);
+    const m=referenceMapping(image,[0,0,span,span/2],768);assert.equal(m.grid,grid);assert.equal(m.width,768);assert.ok(Math.abs(m.scale*span+2*m.margin-768)<1e-9);
   }
   assert.deepEqual(referenceMapping({...image,rotation:90}).region,[10.5,19.5,13.5,23.5]);
   assert.throws(()=>referenceMapping(image,[1,0,0,2]),/positive/);

@@ -1,6 +1,6 @@
 import type {Pixels} from '@/lib/click-to-stitch';
 import type {Project,RefImage} from '@/lib/project';
-import {blockOutline,curveRing} from '@/lib/curves';
+import {blockOutline,curveRing,isClosedShape} from '@/lib/curves';
 import {referenceMapping} from '@/lib/reference-tools';
 
 // The shared artwork decoder supplies the original pixels, without another image decode or fetch.
@@ -17,7 +17,7 @@ export async function referencePNG(pixels:Pixels,image:RefImage,project:Project,
   c.drawImage(source,-image.width/2,-image.height/2,image.width,image.height);c.restore();
   if(objects)for(const o of project.objects){
     if(o.hidden)continue;const rings=o.rails?[blockOutline(o.rails)]:o.curve?[curveRing(o.curve)]:o.rings;
-    c.beginPath();for(const r of rings){r.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));if(!o.curve||o.curve.closed)c.closePath();}
+    c.beginPath();for(const r of rings){r.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));if(o.rails||isClosedShape(o))c.closePath();}
     c.strokeStyle=o.color;c.lineWidth=1.5/scale;c.stroke();
   }
   c.restore();

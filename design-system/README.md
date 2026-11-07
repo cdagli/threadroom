@@ -37,6 +37,7 @@ import {Button, Icon, IconButton, Input, Toolbar} from '@/design-system';
 | `Section` | Collapsible section with remembered expansion |
 | `Icon` | Shared 24-unit stroke icons; accepts a named icon or custom `path` |
 | `ToolGroupButton` | Dock tool with a native popover of alternatives |
+| `StatusBar` | Plain-text polite live status with a label and working/done/error tones; the caller owns expiry |
 | `LoadingState` | Accessible loading indicator with an optional title; respects reduced motion |
 | `EmptyState` | Introductory surface with an icon, title, description, actions and optional hint |
 

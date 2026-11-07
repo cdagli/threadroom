@@ -49,7 +49,7 @@ test('Flatten removes later fills from earlier ones with a 0.4 mm overlap and de
   const p=project(lower,hidden,upper,line),r=ok(S.flattenOverlaps(p,null));
   assert.deepEqual(r.project.objects.map(o=>o.id),['lower','upper','line']);
   const flat=r.project.objects[0],kept=P.regionArea(P.intersection(S.shapeRegion(flat),S.shapeRegion(upper)));
-  assert.ok(Math.abs(kept-(2*20*.4-.16))<.05,kept);assert.equal(r.project.objects[1],upper);
+  assert.ok(Math.abs(kept-(2*19.6*.4-.16))<.05,kept);assert.equal(r.project.objects[1],upper);
   assert.match(r.message,/1 fill flattened, 1 fully hidden/);
   assert.ok(S.flattenOverlaps(project(named('a',[sq(0,0,5)]),named('b',[sq(10,10,5)])),null).error);
   // Design check: a dense stack offers Flatten overlaps.
@@ -142,6 +142,6 @@ test('Flatten removes the earlier rim at a shared outer edge and retains interio
   assert.equal(r.project.objects[1],b);
   assert.equal(P.regionArea(P.intersection(flat,P.regionFromRings([sq(39,20,1,20)]))),0,'no rim along the right boundary');
   const overlap=P.regionArea(P.intersection(flat,S.shapeRegion(b)));
-  assert.ok(Math.abs(overlap-8)<.2,overlap);
+  assert.ok(Math.abs(overlap-19.2*.4)<.01,overlap);
   assert.ok(Math.abs(P.regionArea(P.intersection(flat,P.regionFromRings([sq(30,21,.4,18)])))-7.2)<.01,'interior edge overlaps by 0.4 mm');
 });

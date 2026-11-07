@@ -16,6 +16,12 @@ photo-like PNG. Read `references/lessons.md` before starting; it explains *why* 
   The bridge stores itself in `localStorage`, so after an HMR reload run
   `eval(localStorage.getItem('__claude_bridge')); await __setup()`.
 - Keep each `javascript_tool` call short (< ~30 s). Long loops or pixel scans freeze the renderer and time out.
+- `javascript_tool` truncates results at about 1,000 characters. Return compact summaries, e.g. issue
+  `code / object name / bounds`, not whole objects.
+- HMR reloads wipe your own helpers too. Store them in `localStorage` the way the bridge stores itself
+  (`__save` / `__load` for data).
+- Keep ordered lists in arrays. A JS object keyed by Brother code reorders numeric keys and silently
+  scrambles a `set_sew_order` list.
 - Load `scripts/path-helpers.js` the same way for ellipse / mirror / paw-and-toe / retraced-line builders.
 
 Keep the user informed: call `set_status` with one short sentence (in the UI language) at the start of each
@@ -52,7 +58,9 @@ workflow below. Ask before generating if the user only described a design withou
 8. **Interior regions** (chest, muzzle, eyes, nose) as smooth closed paths.
 9. **Cut the base cleanly** — don't rely on flatten for the base. Re-create the base from the silhouette,
    add temp copies of *all* raw region polygons, `union` them, `offset` +0.6 then −1.0 (closes slivers and
-   leaves a 0.4 mm interlock), then `subtract [base, union]`. Flatten only the inner pieces among themselves
+   leaves a 0.4 mm interlock), then `subtract [base, union]`. Include every region that sits on the base,
+   including regions enclosed by other regions (a panel inside a border). Base left under a region stacks
+   layers and triggers `dense`. Flatten only the inner pieces among themselves
    (`shape_operation flatten` with explicit ids).
 10. **Lines.** Running/bean on top. Chain nearby lines into one path (leg line → paw top → toes, retraced
     down-and-back) and retrace whiskers from a shared root: every separate object costs a trim.
@@ -69,6 +77,13 @@ workflow below. Ask before generating if the user only described a design withou
 - Fills ≥ 2 mm wide and ≥ 6 mm²; satin 1–7 mm wide; anything smaller becomes a line or a satin dot.
 - Never stack small fills on the base: cut them out (step 9) or the density check fires.
 - Satin on tight closed curves (rings around eyes) makes short stitches; avoid or use a bean outline.
-- Budget: ≤ 25 trims, ≤ 80 objects, colour changes = colours − 1, no jump > 30 mm.
+- Eyes and dots: ≥ 2.8 mm across → a small fill with `underlay:'none'` (≥ 6 mm²). Use a satin dot only
+  below that; a 2.4 mm satin "dot" looks like a zigzag.
+- Don't set satin `spacing` below the fabric default. It produced "invalid design", and once froze the
+  renderer for 45 s inside a batch.
+- Budget: ≤ 80 objects, colour changes = colours − 1, no jump > 30 mm, ≤ 25 trims. 25 trims is realistic
+  for a single figure. A multi-element scene (wreath + animals + snowflakes ≈ 35) may not get under it:
+  chain and merge first, then tell the user the count and ask whether it's acceptable. Don't decide for
+  them. The limit can't be changed with `update_project`.
 - Edit in one script per phase, but keep the raw polygons (in `localStorage` or a file) so a phase can be
   rebuilt from scratch instead of patched — rebuilding was always faster than patching slivers.

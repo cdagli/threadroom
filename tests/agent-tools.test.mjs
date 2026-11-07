@@ -1,4 +1,7 @@
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
+import ts from 'typescript';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
 const {designSummary,objectDetail,issueReport,issueCounts,reference,findThreads,setSewOrder,patchObject,makeShape,makePath,checked,validateArgs,englishMessage,editablePoints,editPoints}=load('agent-tools');
@@ -156,4 +159,43 @@ test('Point editing mirrors the point editor and is one atomic change',()=>{
   const poly={...object('Poly',[[[10,10],[30,10],[30,30]]]),kind:'fill'};
   assert.equal(editablePoints(poly,blank([poly])).structure,'polyline');
   assert.match(editPoints(poly,[{op:'set_corner',index:0,corner:true}],hoop).error,/polyline/);
+});
+
+// Exercise the shipped tool definitions without mounting the editor. Only browser pixel loading
+// and PNG rendering are replaced; execution and schema validation use the production code.
+function toolHarness(name='agent-tools'){
+  const nodeRequire=createRequire(import.meta.url),module={exports:{}},calls=[];
+  const pixels={width:2,height:2,data:new Uint8ClampedArray(Array.from({length:4},()=>[10,85,163,255]).flat())};
+  const source=readFileSync(new URL(`../app/${name}.tsx`,import.meta.url),'utf8')+'\nexport const testTools=tools;';
+  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
+  const require=id=>{
+    if(id==='@/lib/artwork-color')return {artworkPixels:async src=>{calls.push(src);return pixels;}};
+    if(id==='./reference-view')return {};
+    if(id==='./context-menu')return {menuLabels:{}};
+    if(id.startsWith('@/lib/'))return load(id.slice(6));
+    return nodeRequire(id);
+  };
+  new Function('module','exports','require',code)(module,module.exports,require);
+  const tools=module.exports.testTools;
+  const invoke=(name,api,args)=>{const tool=tools.find(t=>t.name===name),error=validateArgs(tool.inputSchema,args);if(error)throw new Error(error);return tool.run({current:api},args);};
+  return {tools,invoke,calls};
+}
+test('Reference tools expose strict schemas, read-only hints, and a status tool without hints',async()=>{
+  const {tools,invoke}=toolHarness();
+  for(const name of ['trace_outline','view_reference','sample_colors'])assert.equal(tools.find(t=>t.name===name).annotations.readOnlyHint,true,name);
+  assert.equal(tools.find(t=>t.name==='set_status').annotations,undefined);
+  const updates=[],api={setStatus:(...args)=>updates.push(args)};
+  assert.deepEqual(invoke('set_status',api,{text:'Tracing…'}),{ok:true});invoke('set_status',api,{text:''});
+  assert.deepEqual(updates,[['Tracing…','working'],['','working']]);
+  for(const [name,args] of [['set_status',{text:'x'.repeat(141)}],['set_status',{text:'ok',tone:'bad'}],['trace_outline',{resolution:.01}],['trace_outline',{simplify:6}],['sample_colors',{points:[]}],['sample_colors',{points:Array(51).fill([1,1])}],['view_reference',{size:1025}],['view_reference',{region:[1,2]}],['trace_outline',{typo:true}]])assert.throws(()=>invoke(name,api,args),undefined,name);
+  await assert.rejects(invoke('trace_outline',api,{mode:'colour'}),/point is required/);
+});
+test('Read-only reference tools resolve selection before the top image and never select or commit',async()=>{
+  const {invoke,calls}=toolHarness(),base={id:'selected',name:'Selected',src:'selected-pixels',x:10,y:10,width:2,height:2,opacity:.1},top={...base,id:'top',src:'top-pixels'};
+  const p={...blank([]),images:[base,top]},api={project:()=>p,imageSelection:'selected'};
+  const r=await invoke('trace_outline',api,{});assert.equal(r.area,4);assert.equal(calls.at(-1),'selected-pixels');
+  api.imageSelection=null;await invoke('trace_outline',api,{});assert.equal(calls.at(-1),'top-pixels');
+  const samples=await invoke('sample_colors',api,{imageId:'selected',points:[[11,11]]});assert.equal(samples[0].nearest.code,'2');assert.equal(calls.at(-1),'selected-pixels');
+  await assert.rejects(invoke('sample_colors',api,{imageId:'missing',points:[[11,11]]}),/Unknown reference image/);
+  assert.equal(p.objects.length,0);assert.equal(p.images[0],base);
 });
