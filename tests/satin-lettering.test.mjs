@@ -87,10 +87,11 @@ test('Six millimetre Turkish names have a quiet geometry and actual PES design c
     const run=spawnSync(process.env.THREADROOM_PYTHON||'.venv/bin/python',['-c',code],{input:JSON.stringify(geometryPayload(p)),encoding:'utf8'});
     assert.equal(run.status,0,run.stderr);const out=JSON.parse(run.stdout);assert.deepEqual(out.warnings,[]);
     assert.ok(out.stats.stitches>100);assert.ok(out.commands.every(c=>c.objectId==='lettering'));
-    // Strokes of a letter connect under sewn columns; separate letters and diacritics trim
-    // (a connector over bare fabric would float), so trims stay well below one per block.
+    // Touching strokes connect under their columns (sewn or still to sew), so only separate
+    // letters and diacritics trim (a connector over bare fabric would float): "Ayşe İpek"
+    // has 4 to 11 separate parts, so at most one trim per two blocks.
     const blocks=geometryPayload(p).objects[0].satinColumns.length;
-    assert.ok(out.stats.trims<=blocks*.7,`nearby strokes connect rather than cutting every block (${font}: ${out.stats.trims}/${blocks})`);
+    assert.ok(out.stats.trims<10&&out.stats.trims<=blocks*.5,`nearby strokes connect rather than cutting every block (${font}: ${out.stats.trims}/${blocks})`);
   }
 });
 

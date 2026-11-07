@@ -141,23 +141,23 @@ descriptors `{rowOffsetMm, rowPatternMm[]}` (`5729` module 21068, list `a`).
 - Patterns with `usesStitchSpacing:false` hide Stitch Length and define their own spacing.
 - **Penetrations are never randomised by the pattern.** Only Hand Stitch adds randomness.
 
-Fill Pattern list in order (36 entries). Offsets are given as fractions of stitch length L unless
-noted:
+Fill Pattern list in order (32 entries; Threadroom leaves out Ember's Original, which aligns every
+penetration in columns, and the large 12 mm Hearts, Diamond and Circles tiles, whose long floats
+snag). Offsets are given as fractions of stitch length L unless noted:
 
 | # | id | name | free? | row cycle |
 |---|---|---|---|---|
 | 1 | tatami | Tatami | free | 4 rows, offsets L/4, L/2, 3L/4, L (quarter-step stagger) |
 | 2 | sweepSatin | Satin | free | Not row-based. Satin across the shape at the fill angle using satin settings. Fill settings panel hidden, satin panel shown |
 | 3 | partitionLine | Walk | free | 7 rows, offsets 1/7…7/7 L (digit seed "1234567") |
-| 4 | original | Original | free | 1 row, offset 0 (penetrations aligned in columns) |
 | 5 | triangle | Triangle | free | 6 rows: 2/5, 3/5, 4/5, 1, 4/5, 3/5 L |
 | 6 | waves | Waves | free | `steps` rows (20, 1–100), offset `(sin(2πi/steps)+1)/2 * amplitude` (2 mm, 0–10) |
 | 7 | columns | Columns | free | 2 rows: L/4, L/2 |
 | 8 | offset-columns | Offset Columns | free | 6 rows at 0, then 6 rows at +6 mm (absolute) |
-| 9–11 | small/medium/largeHearts | Hearts (sm/md/lg) | free | Tile size 4 / 8 / 12 mm, `round(size/rowSpacing)` rows. Penetrations sit where each row crosses a heart curve. Ignores L |
-| 12–14 | small/medium/largeDiamond | Diamonds (sm/md/lg) | paid | Width 2 / 6 / 12 mm, rows trace a diamond outline. Ignores L |
+| 9–10 | small/mediumHearts | Hearts (sm/md) | free | Tile size 4 / 8 mm, `round(size/rowSpacing)` rows. Penetrations sit where each row crosses a heart curve. Ignores L |
+| 12–13 | small/mediumDiamond | Diamonds (sm/md) | paid | Width 2 / 6 mm, rows trace a diamond outline. Ignores L |
 | 15 | zigzag | Zig-Zag | paid | Offset rises over 2L of rows |
-| 16–18 | small/medium/largeCircles | Circles (sm/md/lg) | paid | Diameter 4 / 8 / 12. Ignores L |
+| 16–17 | small/mediumCircles | Circles (sm/md) | paid | Diameter 4 / 8. Ignores L |
 | 19 | heartbeat | Heartbeat | paid | 21-row ECG profile × intensity (3, 1–8) |
 | 20 | spiral | Spiral | paid | tightness 3 (1–8), rotations 2 (1–5) |
 | 21 | staircase | Staircase | paid | stepHeight 1.5 (0.5–4), steps 5 (2–10) |
@@ -172,8 +172,8 @@ noted:
 | 35 | circularFill | Circular Fill | paid | Concentric rows around a draggable centre (`5729` 61505) |
 | 36 | crossStitchFill | Cross Stitch | paid | Separate engine. Style cross / upright / double / smyrna / half, flipped, dense, size 3, threads 2, coverage 50% |
 
-Free: 11 (Tatami, Satin, Walk, Original, Triangle, Waves, Columns, Offset Columns, 3 × Hearts).
-Paid: 25.
+Free: 9 (Tatami, Satin, Walk, Triangle, Waves, Columns, Offset Columns, 2 × Hearts).
+Paid: 23.
 
 ### 2.3 Stitch Angle and Edit angles
 - **Stitch Angle** (default 135): the direction of the rows. Typed values are normalised to the
@@ -369,7 +369,7 @@ stay stable.
   higher tolerance gives fewer or equal stitches, and no stitch exceeds `length`.
 
 ### Step 3: Fill patterns, row offsets only (free set)
-- Model: `fillPattern?: 'tatami'|'original'|'columns'|'offset-columns'|'triangle'|'walk'|'waves'`,
+- Model: `fillPattern?: 'tatami'|'columns'|'offset-columns'|'triangle'|'walk'|'waves'`,
   plus `patternParams?` for waves (steps 1–100, amplitude 0–10). Unset keeps today's even division
   (call it "Even").
 - Compiler: `Rows.paths` places penetrations at `anchor + offset[k mod n] + j*L` along each row in
@@ -379,7 +379,6 @@ stay stable.
 - UI: "Fill pattern" select with small preview thumbnails, under Fill direction.
 - Tests:
   - Tatami: penetrations in row k+4 repeat row k's along-row coordinates (mod L)
-  - Original: columns align
   - no stitch > L + ε; no new short-stitch warnings on the demo bear
 
 Hearts and the paid patterns can follow as data-only additions to the pattern table.

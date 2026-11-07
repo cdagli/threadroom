@@ -1146,9 +1146,13 @@ def rope_passes(obj, ring):
     length, width = obj.get("length", 2.5), obj.get("ropeWidth", ROPE_WIDTH)
     rope, travel = tolerant_path(ring, length, ROPE_TOLERANCE), tolerant_path(ring, TRAVEL_LENGTH, TRAVEL_TOLERANCE)
     limit = max(3, length+2*width+.01)  # a rope stitch never exceeds L + 2w, so it is never split
-    passes = [(travel, 3), (travel[::-1], 3), (rope_points(rope, width), limit)]
+    # The base run back ends on the rope's first point (and the last base run starts on the
+    # mirrored rope's end), not on the line beside it: a 0.4 mm join stitch would fray.
+    first = rope_points(rope, width)
+    passes = [(travel, 3), (travel[::-1][:-1]+[first[0]], 3), (first, limit)]
     if obj["kind"] == "triple-rope":
-        passes += [(rope_points(rope, width, -1)[::-1], limit), (travel, 3)]
+        mirrored = rope_points(rope, width, -1)[::-1]
+        passes += [(mirrored, limit), ([mirrored[-1]]+travel[1:], 3)]
     return passes
 
 
@@ -1177,15 +1181,16 @@ def block_rungs(left, right, spacing):
 MIN_BITES, MIN_DOT_SPACING = 4, .18
 
 
-def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True):
+def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True, short_min=0, paired=False):
     """Satin between paired rails: penetrations alternate left/right on successive rungs, each end
-    pushed out by half the pull compensation; short stitches and splitting as in satin_path."""
+    pushed out by half the pull compensation; short stitches and splitting as in satin_path.
+    paired: the rail points are the rungs already (one bite each)."""
     # A short column (a diacritic dot, a comma) at the normal spacing gets two or three
     # bites, which sew as a chevron. Give it at least MIN_BITES so it reads as a satin dot.
     total = sum(math.dist(a, b) for a, b in zip(left, left[1:]))+sum(math.dist(a, b) for a, b in zip(right, right[1:]))
     if dots and total/2 < MIN_BITES*spacing:
         spacing = max(MIN_DOT_SPACING, total/2/MIN_BITES)
-    rungs = block_rungs(left, right, spacing)
+    rungs = list(zip(left, right)) if paired else block_rungs(left, right, spacing)
     def end(j, side, inset=0):
         a, b = rungs[j]
         w, mid = math.dist(a, b), lerp(a, b, .5)
@@ -1199,7 +1204,8 @@ def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True):
     for j in range(len(rungs)):
         side = 1 if j % 2 else -1
         ratio = compression(j, side) if short and (j//2) % 2 else 1
-        result.append(end(j, side, SHORT_INSET) if ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else end(j, side))
+        wide = math.dist(*rungs[j])+pull >= short_min
+        result.append(end(j, side, SHORT_INSET) if wide and ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else end(j, side))
     return split_bites(result, split)
 
 
@@ -1573,27 +1579,85 @@ def redundant_column(block, centre, others):
 
 
 def lettering_plan(obj):
-    """Reading order, nearby strokes connected under already sewn columns when possible.
-    Disconnected strokes use the ordinary short connector / trim policy. Ownership
-    stays with the live text, including all hidden travel and its diagnostics.
+    """Satin lettering in reading order with as few trims as the strokes allow. Columns whose
+    satin bands touch form a group (a letter, or a joined script word); its diacritics are
+    separate groups and follow it. Inside a group the next column is the one, sewn from
+    either end, reached most cheaply: under columns already sewn (covered_column_travel),
+    by a short stitch, or by a connector that its own satin and the group's unsewn columns
+    cover. Only a connector over bare fabric becomes a trim. Ownership stays with the live
+    text, including all hidden travel and its diagnostics.
     """
-    plan, covered, character, at = [], [], None, None
     pairs = list(zip(obj["satinColumns"], obj["rings"]))
+    blocks = []
     for column, centre in pairs:
-        if column["character"] != character:
-            covered, character = [], column["character"]
         block = {**obj, "railPaths": column["railPaths"], "rings": [centre]}
-        if redundant_column(block, centre, [(c, r) for c, r in pairs if c is not column and c["character"] == column["character"]]):
-            continue
-        passes = block_passes(block, centre)
-        if at is not None and covered:
-            hidden = covered_column_travel(at, passes[0][0][0], covered, block_width(block))
+        if not redundant_column(block, centre, [(c, r) for c, r in pairs if c is not column and c["character"] == column["character"]]):
+            blocks.append((column["character"], block, centre, block_width(block)))
+    n = len(blocks)
+    parent = list(range(n))
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i, (_, _, a, wa) in enumerate(blocks):
+        for j in range(i+1, n):
+            b, wb = blocks[j][2], blocks[j][3]
+            if column_distance(a, b) <= (wa+wb)/2:
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    # Reading order: a group's first character, then its leftmost point.
+    order = sorted(groups.values(), key=lambda g: (min(blocks[i][0] for i in g), min(p[0] for i in g for p in blocks[i][2])))
+    plan, at = [], None
+    lines = [sample_path(centre, .3) for _, _, centre, _ in blocks]
+    for group in order:
+        # Travel may run along any column of the group: one sewn already hides it, and
+        # one still to sew covers it.
+        covered, pending = [lines[i] for i in group], list(group)
+        while pending:
+            best = None
+            for i in pending:
+                _, block, centre, width = blocks[i]
+                for ring in (centre, centre[::-1]):
+                    start = ring[0]
+                    if at is None:
+                        cost, hidden = start[0]*1e-3, None
+                    else:
+                        hidden = covered_column_travel(at, start, covered, width)
+                        d = math.dist(at, start)
+                        if hidden:
+                            cost = sum(math.dist(u, v) for u, v in zip(hidden, hidden[1:]))
+                        elif d <= FLOAT_LIMIT or covered_by([at, start], [blocks[k] for k in pending]):
+                            cost = d
+                        else:
+                            cost = 100+d
+                    if best is None or cost < best[0]:
+                        best = (cost, i, ring, hidden)
+            _, i, ring, hidden = best
+            pending.remove(i)
+            passes = block_passes(blocks[i][1], ring)
             if hidden:
-                passes.insert(0, (hidden, 3))
-        plan.append(passes)
-        at = passes[-1][0][-1]
-        covered.append(centre)
+                passes.insert(0, (merge_short(hidden, minimum=.6), 3))
+            plan.append(passes)
+            at = passes[-1][0][-1]
     return plan
+
+
+def column_distance(a, b):
+    """Shortest distance between two centre lines."""
+    if len(a) < 2 or len(b) < 2:
+        return min(math.dist(p, q) for p in a for q in b)
+    return min(min(segment_distance(p, u, v) for p in a for u, v in zip(b, b[1:])),
+               min(segment_distance(p, u, v) for p in b for u, v in zip(a, a[1:])))
+
+
+def covered_by(line, blocks):
+    """True when every point of the segment lies inside one of the blocks' satin bands."""
+    a, b = line
+    samples = [a]+interpolate(a, b, .25)
+    return all(any(min(segment_distance(p, u, v) for u, v in zip(centre, centre[1:])) <= width/2-.05 for _, _, centre, width in blocks if len(centre) > 1) for p in samples)
 
 
 def plan_object(obj, at, target):

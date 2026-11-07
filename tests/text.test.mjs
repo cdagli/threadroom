@@ -194,3 +194,12 @@ test('A font whose declared cap height is far below its capitals is sized by its
   const swash=Object.create(latin);swash.tables={...latin.tables,os2:{...os2,sCapHeight:Math.round(os2.sCapHeight*1.2)}};
   assert.ok(height(swash)<height(latin)*.9,'a declared value within range is still trusted');
 });
+
+test('Satin fill text asks the compiler to turn bites across each stroke',()=>{
+  const {demo}=load('project');
+  const letters=fillPattern=>{const o=layoutObject({...object('HI',[]),id:'t',fillPattern,text:spec({size:8})},[latin]);return geometryPayload({...demo(),objects:[o]}).objects[0];};
+  assert.equal(letters('sweepSatin').followStroke,true);
+  assert.equal(letters('tatami').followStroke,undefined);
+  const shape=geometryPayload({...demo(),objects:[{...object('Fill',[[[10,10],[30,10],[30,30]]]),id:'s',fillPattern:'sweepSatin'}]}).objects[0];
+  assert.equal(shape.followStroke,undefined,'drawn shapes keep their fill angle');
+});

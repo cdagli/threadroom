@@ -19,7 +19,10 @@ export const severityNames: Record<Severity, Key> = {fail: 'Will likely fail', c
 // when Split above is raised past 7 mm.
 // Text: fill letters 6 mm (as the Text panel advises), satin 5 mm, outlines 4 mm; fail at two-thirds.
 // Objects within 3 mm of the sewing field edge are worth checking.
-/** @test */ export const limits = {fillArea: [3, 6], fillWidth: [1, 2], thinArea: 1, textThin: .05, satinWidth: 1, satinWide: satinDefaults.splitLength, edge: 3,
+// Cross stitch sews only whole crosses on a grid at the fill angle (compiler cross_cells): a shape
+// where they cover under half the area (a thin or curved band) sews as scattered crosses joined by
+// trims and doubled travel; under 15% (or none) it is mostly bare. Three cells across fit reliably.
+/** @test */ export const limits = {fillArea: [3, 6], fillWidth: [1, 2], thinArea: 1, textThin: .05, satinWidth: 1, satinWide: satinDefaults.splitLength, edge: 3, crossShare: [.15, .5], crossWidth: 3,
   text: {fill: 6, wide: 5, line: 4} as Record<'fill'|'wide'|'line', number>};
 
 const round = (n: number, d = 1) => Math.round(n*10**d)/10**d;
@@ -87,6 +90,35 @@ const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Ra
   return result;
 }
 
+// Share of the area covered by whole crosses of size cell, counted as the compiler's cross_cells does:
+// grid cells in the frame turned by angle whose two diagonals lie inside the shape.
+/** @test */ export function crossShare(rings: Point[][], cell: number, angle: number, rule: 'evenodd' | 'nonzero', area: number): number {
+  const t = angle*Math.PI/180, c = Math.cos(t), s = Math.sin(t);
+  const turned = rings.map(r => r.map(([x, y]) => [x*c+y*s, -x*s+y*c] as Point)), [minX, minY, maxX, maxY] = box(turned.flat());
+  const nx = Math.floor((maxX-minX)/cell+1e-9), ny = Math.floor((maxY-minY)/cell+1e-9);
+  if (nx*ny > 40000) return 1;
+  const inside = ([x, y]: Point) => {
+    let winding = 0;
+    for (const r of turned) for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i+1)%r.length];
+      if ((a[1] > y) !== (b[1] > y) && x < a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1])) winding += b[1] > a[1] ? 1 : -1;
+    }
+    return rule === 'nonzero' ? winding !== 0 : winding%2 !== 0;
+  };
+  const steps = 6, eps = 1e-6;
+  let cells = 0;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = minX+i*cell, y = minY+j*cell;
+    let whole = true;
+    for (let k = 0; k <= steps && whole; k++) {
+      const u = eps+(cell-2*eps)*k/steps;
+      whole = inside([x+u, y+u]) && inside([x+cell-u, y+u]);
+    }
+    if (whole) cells++;
+  }
+  return Math.min(1, cells*cell*cell/area);
+}
+
 // How far stitches reach past the drawn line: half the column for satin styles, the satin text border.
 function reach(o: StitchObject, p: Project) {
   if (o.rails) return resolve(o, p.fabric, p.locks).pullCompensation/2;
@@ -128,9 +160,10 @@ export function checkProject(p: Project): Warning[] {
       }
     } else if (isFillKind(o.kind)) {
       const r = raster(o.rings,o.fillRule??'evenodd'), cross = o.kind === 'cross'&&!hasCrossStyle(o) ? resolve(o, p.fabric, p.locks).spacing : 0;
-      const [fail, check] = cross ? [cross, 2*cross] : limits.fillWidth;
+      const share = cross && r.area >= limits.fillArea[1] ? crossShare(o.rings, cross, o.angle??0, o.fillRule??'evenodd', r.area) : null;
       if (r.area < limits.fillArea[1]) add('fill-small', o, b, r.area < limits.fillArea[0] ? 'fail' : 'check', {area: round(r.area), limit: limits.fillArea[1]});
-      else if (r.thickness < check) add('fill-narrow', o, b, r.thickness < fail ? 'fail' : 'check', {width: round(r.thickness), limit: check});
+      else if (share !== null && share < limits.crossShare[1]) add('cross-sparse', o, b, share < limits.crossShare[0] ? 'fail' : 'check', {percent: Math.round(share*100), size: cross, width: round(limits.crossWidth*cross)});
+      else if (!cross && r.thickness < limits.fillWidth[1]) add('fill-narrow', o, b, r.thickness < limits.fillWidth[0] ? 'fail' : 'check', {width: round(r.thickness), limit: limits.fillWidth[1]});
       else if (r.thin && r.thin.area >= limits.thinArea) {
         const values:RawWarning['values']={area:round(r.thin.area),limit:limits.fillWidth[0]};values.parts=r.thin.parts;
         add('fill-thin-part',o,r.thin.bounds,'check',values);
@@ -196,6 +229,7 @@ export function explain(w: Warning, p: Project, message = '', t:Translator=creat
     case 'fill-long': return {title:t("Long fill stitches on knit fabric"),why:t("Fill stitches of {v0} mm can snag or shift on stretchy fabric.",{v0:v.length}),fix:t("Reduce fill stitch length to 5 mm or less.")};
     case 'fill-small': return {title: t("Shape too small to fill"), why: t("At {v0} mm² the knots that start and end the thread take up most of it, so it sews as a lump.",{v0:v.area}), fix: t("Enlarge it to at least 3 × 2 mm, or sew it as a running stitch outline.")};
     case 'fill-narrow': return {title: t("Shape too thin to fill"), why: w.severity === 'fail' ? t("At its widest it is {v0} mm, so the rows become tiny stitches that bunch up and break thread.",{v0:v.width}) : t("At its widest it is {v0} mm, too thin for underlay (the foundation stitches), so the edges pull in.",{v0:v.width}), fix: t("Make this shape at least {v0} mm wide or change it to a running stitch.",{v0:v.limit})};
+    case 'cross-sparse': return {title: t("Too narrow for cross stitch"), why: w.severity === 'fail' ? t("Whole {v0} mm crosses cover only {v1}% of this shape, so it is left almost bare.",{v0:v.size,v1:v.percent}) : t("Whole {v0} mm crosses cover only {v1}% of this shape, so it sews as scattered crosses joined by thread cuts and doubled travel.",{v0:v.size,v1:v.percent}), fix: t("Use a tatami or satin fill for thin or curved bands, or make the shape at least {v0} mm wide.",{v0:v.width})};
     case 'fill-thin-part': return {title: t("Thin parts in a fill"), why: t("About {v0} mm² is thinner than {v1} mm and sews as tiny stitches that pucker or break thread.",{v0:v.area,v1:v.limit}), fix: t("Widen the highlighted part to {v0} mm or more, or draw it as a separate line.",{v0:v.limit})};
     case 'satin-narrow': return {title: t("Satin too narrow"), why: t("At {v0} mm the needle hits almost the same holes on both sides, which cuts the fabric and breaks thread.",{v0:v.width}), fix: t("Make it at least {v0} mm wide or use a bean stitch.",{v0:v.limit})};
     case 'satin-long': return {title: t("Satin stitches too long"), why: t("Stitches up to {v0} mm long lie loose and snag on fingers and toys.",{v0:v.bite}), fix: t("Split stitches above {v0} mm (Split above in the object settings).",{v0:v.limit})};
@@ -227,6 +261,8 @@ export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix 
   if (w.code === 'long-stitches' && (w.values.limit??limits.satinWide) <= limits.satinWide && p.trimJump > limits.satinWide) return {label: t("Trim above {v0} mm",{v0:defaultTrimJump}), title: t("Cut the thread for moves longer than {v0} mm",{v0:defaultTrimJump}), apply: q => ({...q, trimJump: defaultTrimJump})};
   if (!o) return null;
   switch (w.code) {
+    case 'cross-sparse':
+      return {label: t("Use tatami fill"), title: t("Fill this shape with rows of short stitches instead of crosses"), apply: q => replace(q, kindFix(o, 'fill'))};
     case 'fill-small': case 'fill-narrow':
       return o.curve ? null : {label: t("Use running stitch"), title: t("Sew this shape as a running stitch outline"), apply: q => replace(q, kindFix(o, 'running'))};
     case 'satin-narrow':

@@ -11,10 +11,12 @@ const rect=(x,y,w,h)=>[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
 const codes=p=>Object.fromEntries(checkProject(p).map(w=>[w.code,w]));
 const font={source:'catalog',id:'nunito',family:'Nunito',weight:700,italic:false,subsets:['latin']};
 const text=(size,kind='fill')=>({...object('Name',[rect(40,40,20,size)],kind),text:{...defaultText(font,[50,50],'Ada'),size}});
+const band=(r,w)=>{const at=(rad,t)=>[50+Math.cos(Math.PI*(1+t))*rad,60+Math.sin(Math.PI*(1+t))*rad];return [...Array.from({length:41},(_,i)=>at(r+w/2,i/40)),...Array.from({length:41},(_,i)=>at(r-w/2,1-i/40))];};
 const satin=(width,extra={})=>({...object('Line',[[[30,50],[70,50]]],'satin'),satinWidth:width,...extra});
 const cases={
   'fill-small':[project(object('Dot',[rect(40,40,1.5,1.5)])),'fail',project(object('Dot',[rect(40,40,2,2.5)])),'check'],
   'fill-narrow':[project(object('Strip',[rect(30,40,30,.7)])),'fail',project(object('Strip',[rect(30,40,30,1.5)])),'check'],
+  'cross-sparse':[project(object('Strip',[rect(30,40,30,1.5)],'cross')),'fail',project(object('Arch',[band(25,4)],'cross')),'check'],
   'fill-thin-part':[project(object('Flag',[[[30,30],[50,30],[50,50],[40,50],[40,56],[39.4,56],[39.4,50],[30,50]]])),'check'],
   'satin-narrow':[project(satin(.6)),'fail'],
   'satin-long':[project(satin(9,{splitLength:12})),'fail'],
@@ -41,6 +43,8 @@ test('Each editor check is triggered by a minimal project and absent on a clean 
     assert.ok(Object.entries(w.values).filter(([key])=>key!=='parts').every(([,v])=>Number.isFinite(v)),code);
   }
   assert.equal(codes(project(satin(1)))['satin-narrow'],undefined);
+  assert.equal(codes(project(object('Patch',[rect(30,30,30,30)],'cross')))['cross-sparse'],undefined,'a wide cross fill is fine');
+  assert.equal(codes(project(object('Strip',[rect(30,40,30,6)],'cross')))['cross-sparse'],undefined,'a straight strip four crosses wide is fine');
   assert.equal(codes(project(object('Corner',[rect(3,40,20,20)])))['near-edge'],undefined);
   assert.equal(codes(project(object('A',[rect(10,10,10,10)],'fill','#111111'),object('C',[rect(50,10,10,10)],'fill','#111111'),object('B',[rect(30,10,10,10)],'fill','#222222')))['colour-order'],undefined);
 });
@@ -58,7 +62,7 @@ test('Every warning has a short title, one sentence on why, and one concrete fix
   const stitches=stitchWarnings(raw,p);
   assert.ok(stitches.every(w=>w.objectId==='a'&&w.source==='stitches'));
   const all=[...Object.values(cases).flatMap(list=>list.filter((_,i)=>i%2===0).flatMap(q=>checkProject(q).map(w=>[w,q]))),...stitches.map(w=>[w,p])];
-  assert.equal(new Set(all.map(([w])=>w.code)).size,15);
+  assert.equal(new Set(all.map(([w])=>w.code)).size,16);
   for(const [w,q] of all){
     const {title,why,fix}=explain(w,q);
     assert.ok(title.length>5&&title.length<=30,title);
@@ -72,7 +76,7 @@ test('Every warning has a short title, one sentence on why, and one concrete fix
 });
 
 test('One-click fixes clear their warning and keep the project valid',()=>{
-  const expected={'fill-small':'Use running stitch','fill-narrow':'Use running stitch','satin-narrow':'Use bean stitch','satin-long':'Split at 7 mm','text-small':'Make 6 mm tall','outside-hoop':'Move inside','near-edge':'Move inside','colour-order':'Sew earlier'};
+  const expected={'cross-sparse':'Use tatami fill','fill-small':'Use running stitch','fill-narrow':'Use running stitch','satin-narrow':'Use bean stitch','satin-long':'Split at 7 mm','text-small':'Make 6 mm tall','outside-hoop':'Move inside','near-edge':'Move inside','colour-order':'Sew earlier'};
   for(const [code,label] of Object.entries(expected)){
     const p=cases[code][0],w=codes(p)[code],fix=fixFor(w,p);
     assert.equal(fix?.label,label,code);

@@ -8,7 +8,7 @@ import {spawn} from 'node:child_process';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import opentype from 'opentype.js';
 import {load} from '../tests/load-lib.mjs';
-const {object, demo} = load('project'), {geometryPayload} = load('curves'), {fillPatterns} = load('fill-patterns');
+const {object, demo} = load('project'), {geometryPayload} = load('curves'), {fillPatterns} = load('fill-patterns'), {checkProject} = load('check');
 
 const args = process.argv.slice(2), arg = k => {const i = args.indexOf(k); return i >= 0 ? args[i+1] : undefined;};
 const only = arg('--only')?.split(','), kindsFilter = arg('--kinds')?.split(','), verbose = args.includes('--verbose');
@@ -221,17 +221,21 @@ for (const c of selected) {
   const project = {...demo(), hoop: '300x200', objects: [c.object]};
   let payload;
   try {payload = geometryPayload(project);} catch (e) {out.push({id: c.id, shape: c.shape, error: String(e)}); continue;}
+  // A case the editor's design check already steers away from (cross stitch on a band too narrow for
+  // whole crosses) is reported, not failed: the user is told to pick another stitch before sewing it.
+  const steered = (c.kind === 'cross' ? checkProject(project) : []).filter(w => w.code === 'cross-sparse').map(w => `${w.code}:${w.severity}`);
   const result = await compile(payload);
-  if (result.error) {out.push({id: c.id, shape: c.shape, error: result.error}); failing++; continue;}
+  if (result.error) {out.push({id: c.id, shape: c.shape, error: result.error, steered}); if (!steered.length) failing++; continue;}
   const m = measure(c, result, payload.objects[0]);
+  if (steered.length && m.fails.length) {m.notes = [...(m.notes ?? []), ...m.fails, `steered by ${steered.join(', ')}`]; m.fails = [];}
   if (m.fails.length) failing++;
   out.push({id: c.id, shape: c.shape, ...m});
 }
 child.stdin.end();
 const round = (v, d = 2) => typeof v === 'number' ? +v.toFixed(d) : v;
 for (const r of out) {
-  if (!verbose && !r.error && !r.fails.length) continue;
-  console.log(`${r.id.padEnd(28)} ${r.shape.padEnd(11)} ${r.error ? 'ERROR '+r.error : `st ${String(r.stitches).padStart(5)} trims ${String(r.trims).padStart(3)} bite ${round(r.maxBite, 1)} run ${round(r.maxRun, 1)}${r.coverage !== undefined ? ` cov ${round(r.coverage*100, 0)}% gaps ${round(r.edgeGaps*100, 0)}% /cm² ${round(r.perCm2, 0)}` : ''}${r.aligned !== undefined ? ` aligned ${round(r.aligned*100, 0)}%` : ''}  ${r.fails.join('; ')}${r.notes ? ` (${r.notes.join('; ')})` : ''}`}`);
+  if (!verbose && !r.error && !r.fails.length && !r.notes?.some(n => n.startsWith('steered'))) continue;
+  console.log(`${r.id.padEnd(28)} ${r.shape.padEnd(11)} ${r.error ? `ERROR ${r.error}${r.steered?.length ? ` (steered by ${r.steered.join(', ')})` : ''}` : `st ${String(r.stitches).padStart(5)} trims ${String(r.trims).padStart(3)} bite ${round(r.maxBite, 1)} run ${round(r.maxRun, 1)}${r.coverage !== undefined ? ` cov ${round(r.coverage*100, 0)}% gaps ${round(r.edgeGaps*100, 0)}% /cm² ${round(r.perCm2, 0)}` : ''}${r.aligned !== undefined ? ` aligned ${round(r.aligned*100, 0)}%` : ''}  ${r.fails.join('; ')}${r.notes ? ` (${r.notes.join('; ')})` : ''}`}`);
 }
 console.log(`${out.length} cases, ${failing} failing, ${((Date.now()-started)/1000).toFixed(0)}s`);
 if (arg('--json')) writeFileSync(arg('--json'), JSON.stringify(out, null, 1));

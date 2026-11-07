@@ -55,7 +55,7 @@ def clean(path, region=None, tolerance=.001, minimum=.35):
     return out
 
 
-def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reorient=False, tolerance=None):
+def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reorient=False, tolerance=None, minimum=.35):
     """Nearest-first pieces; safe interior/boundary travel or a forced trim.
     Each piece is a list of (needle path, split limit) passes (underlay first);
     reorient lets each pass start at either end."""
@@ -99,16 +99,16 @@ def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reo
         start = passes[0][0][0]
         hop = (travel(cur,start) if travel else connector(cur,start,rings,region,grid,tolerance)) if cur is not None else None
         if out and hop is not None:
-            out[-1].append((clean(hop,region,tolerance),3))
+            out[-1].append((clean(hop,region,tolerance,minimum),3))
         else:
-            out.append([(clean(hop,region,tolerance),3)] if entry and not out and hop else [])
+            out.append([(clean(hop,region,tolerance,minimum),3)] if entry and not out and hop else [])
         for j,(path,limit) in enumerate(passes):
             if j:
                 link = connector(passes[j-1][0][-1],path[0],rings,region,grid,tolerance)
                 if link is None:
                     out.append([])
                 else:
-                    out[-1].append((clean(link,region,tolerance),3))
+                    out[-1].append((clean(link,region,tolerance,minimum),3))
             out[-1].append((path,limit))
         cur = passes[-1][0][-1]
     if out and target:
@@ -117,6 +117,34 @@ def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reo
         if hop:
             out[-1].append((clean(hop,region,tolerance),3))
     return out
+
+
+def split_fill_bites(path, limit, angle):
+    """Splits satin fill bites longer than limit, the split penetrations on a shared grid
+    along the row direction (pitch three quarters of the limit) shifted per bite by a
+    random walk of 0.3 to 0.7 pitches. Neighbouring bites never split at nearly the same
+    place, and no regular offset sequence lines the splits up into a visible band over a
+    large fill. A split point closer than 0.3 pitch to a bite end is dropped, so every
+    piece stays within the limit."""
+    if not limit or len(path) < 2:
+        return path
+    t, pitch = (math.cos(math.radians(angle)), math.sin(math.radians(angle))), limit*.75
+    result, offset = [path[0]], 0.0
+    for k, (a, b) in enumerate(zip(path, path[1:])):
+        if math.dist(a, b) > limit:
+            offset = (offset+.3+.4*((math.sin(k*12.9898)*43758.5453) % 1)) % 1
+            ua, ub = a[0]*t[0]+a[1]*t[1], b[0]*t[0]+b[1]*t[1]
+            lo, hi = min(ua, ub), max(ua, ub)
+            if hi-lo > 1e-9:
+                cuts = [(q+offset)*pitch for q in range(math.floor(lo/pitch)-1, math.ceil(hi/pitch)+1)]
+                cuts = sorted((u-ua)/(ub-ua) for u in cuts if lo+.3*pitch < u < hi-.3*pitch)
+                # A bite steep to the row direction splits evenly instead.
+                if not cuts or max(f2-f1 for f1, f2 in zip([0]+cuts, cuts+[1]))*math.dist(a, b) > limit:
+                    n = math.ceil(math.dist(a, b)/pitch)
+                    cuts = [(j+(offset-.5)*.6)/n for j in range(1, n)]
+                result.extend(C.lerp(a, b, f) for f in cuts)
+        result.append(b)
+    return result
 
 
 def satin_columns(obj):
@@ -160,7 +188,7 @@ def route_satin(obj, at, entry, target):
         cover = C.rotate(cover,angle,True)
         if passes and math.dist(passes[-1][0][-1],cover[-1]) < math.dist(passes[-1][0][-1],cover[0]):
             cover.reverse()
-        cover = clean(C.split_bites(cover,obj.get('splitLength',7)))
+        cover = clean(split_fill_bites(cover,obj.get('splitLength',7),angle))
         if len(cover)>1:
             passes.append((cover,C.SATIN_MAX-.15))
             pieces.append(passes)
@@ -244,103 +272,162 @@ def route_circular(obj, at, entry, target):
 # more inside the result), so diagonal and horizontal strokes get bites across them.
 # Each section's row ends become two rails; bites pair the rails by arc length where
 # that turns them with a curving stroke, otherwise they keep the rows.
-TURN_LIMIT, CHORD_DIRECTIONS = 15, 12
+TURN_LIMIT, CHORD_DIRECTIONS, MIN_TIP = 15, 12, .4
 
 
-def simplified(ring, tolerance):
-    """Ramer-Douglas-Peucker on a closed ring (for the direction field only)."""
-    def rdp(points):
-        if len(points) < 3:
-            return points
-        a, b = points[0], points[-1]
-        k, far = max(((i, C.segment_distance(p, a, b)) for i, p in enumerate(points[1:-1], 1)), key=lambda v: v[1])
-        return rdp(points[:k+1])[:-1]+rdp(points[k:]) if far > tolerance else [a, b]
-    if len(ring) < 4:
-        return ring
-    k = max(range(len(ring)), key=lambda i: math.dist(ring[0], ring[i]))
-    return rdp(ring[:k+1])[:-1]+rdp(ring[k:]+[ring[0]])[:-1]
+def crossing_spans(crossings, rule):
+    """Inside spans from one scan line's (x, direction) crossings (as compiler.scan_spans)."""
+    crossings = sorted(crossings)
+    if rule != "nonzero":
+        xs = [x for x, _ in crossings]
+        return list(zip(xs[::2], xs[1::2]))
+    spans, winding, start = [], 0, 0
+    for x, direction in crossings:
+        if winding == 0:
+            start = x
+        winding += direction
+        if winding == 0:
+            spans.append((start, x))
+    return spans
 
 
 class StrokeField:
     """Across-stroke direction (degrees, mod 180) on a grid: the shortest of
-    CHORD_DIRECTIONS chords through each cell centre, chords capped at reach."""
+    CHORD_DIRECTIONS chords through each cell centre (chords capped at four stroke
+    widths), weighted by how much shorter it is than the chord across it (about 1
+    inside a stroke, near 0 at a junction or a square end). A chord is the scan-line
+    span through the point in the outline turned to that direction."""
 
-    def __init__(self, rings, rule, reach):
-        edges = [(a, b) for r in (simplified(r, .03) for r in rings) for a, b in zip(r, r[1:]+r[:1]) if a != b]
+    def __init__(self, rings, rule, stroke):
         xs, ys = [p[0] for r in rings for p in r], [p[1] for r in rings for p in r]
-        self.cell = cell = max(.2, min(.6, reach/8))
+        reach, self.cell = 4*stroke, max(.15, min(.5, stroke/5))
+        cell = self.cell
         self.x0, self.y0 = min(xs), min(ys)
         self.nx, self.ny = int((max(xs)-self.x0)/cell)+1, int((max(ys)-self.y0)/cell)+1
-        size = max(reach, .5)
-        buckets = {}
-        for e, (a, b) in enumerate(edges):
-            for j in range(int((min(a[1], b[1])-self.y0)//size), int((max(a[1], b[1])-self.y0)//size)+1):
-                for i in range(int((min(a[0], b[0])-self.x0)//size), int((max(a[0], b[0])-self.x0)//size)+1):
-                    buckets.setdefault((i, j), []).append(e)
-        directions = [(math.cos(k*math.pi/CHORD_DIRECTIONS), math.sin(k*math.pi/CHORD_DIRECTIONS)) for k in range(CHORD_DIRECTIONS)]
-        self.angle = {}
+        points = []
         for j in range(self.ny):
             y = self.y0+(j+.5)*cell
             spans = C.scan_spans(rings, y, rule)
             for i in range(self.nx):
                 x = self.x0+(i+.5)*cell
-                if not any(a <= x <= b for a, b in spans):
-                    continue
-                bi, bj = int((x-self.x0)//size), int((y-self.y0)//size)
-                near = {e for di in (-1, 0, 1) for dj in (-1, 0, 1) for e in buckets.get((bi+di, bj+dj), ())}
-                chords = []
-                for dx, dy in directions:
-                    lo = hi = reach
-                    for e in near:
-                        (ax, ay), (bx, by) = edges[e]
-                        ex, ey = bx-ax, by-ay
-                        den = dx*ey-dy*ex
-                        if abs(den) < 1e-12:
-                            continue
-                        t, u = ((ax-x)*ey-(ay-y)*ex)/den, ((ax-x)*dy-(ay-y)*dx)/den
-                        if 0 <= u <= 1:
-                            if t >= 0:
-                                lo = min(lo, t)
-                            else:
-                                hi = min(hi, -t)
-                    chords.append(lo+hi)
-                k = min(range(CHORD_DIRECTIONS), key=chords.__getitem__)
-                # Parabolic refinement between the neighbouring directions.
-                a, b, c = chords[k-1], chords[k], chords[(k+1) % CHORD_DIRECTIONS]
-                shift = (a-c)/(2*(a-2*b+c)) if a-2*b+c > 1e-9 else 0
-                self.angle[(i, j)] = ((k+max(-.5, min(.5, shift)))*180/CHORD_DIRECTIONS) % 180
+                if any(a <= x <= b for a, b in spans):
+                    points.append(((i, j), [x, y]))
+        chords = [[reach]*CHORD_DIRECTIONS for _ in points]
+        step = cell/2
+        for k in range(CHORD_DIRECTIONS):
+            turned = [C.rotate(r, k*180/CHORD_DIRECTIONS) for r in rings]
+            bottom = min(p[1] for r in turned for p in r)
+            lines = {}
+            for r in turned:
+                for a, b in zip(r, r[1:]+r[:1]):
+                    if a[1] == b[1]:
+                        continue
+                    for m in range(max(0, math.ceil((min(a[1], b[1])-bottom)/step-.5)), math.floor((max(a[1], b[1])-bottom)/step-.5)+1):
+                        y = bottom+(m+.5)*step
+                        if (a[1] <= y < b[1]) or (b[1] <= y < a[1]):
+                            lines.setdefault(m, []).append((a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1]), 1 if b[1] > a[1] else -1))
+            spans = {}
+            for (_, p), chord in zip(points, chords):
+                x, y = C.rotate([p], k*180/CHORD_DIRECTIONS)[0]
+                m = round((y-bottom)/step-.5)
+                if m not in spans:
+                    spans[m] = crossing_spans(lines.get(m, []), rule)
+                for a, b in spans[m]:
+                    if a <= x <= b:
+                        chord[k] = min(reach, b-a)
+                        break
+        self.angle = {}
+        for (key, _), c in zip(points, chords):
+            k = min(range(CHORD_DIRECTIONS), key=c.__getitem__)
+            # Parabolic refinement between the neighbouring directions.
+            a, b, d = c[k-1], c[k], c[(k+1) % CHORD_DIRECTIONS]
+            shift = (a-d)/(2*(a-2*b+d)) if a-2*b+d > 1e-9 else 0
+            self.angle[key] = ((k+max(-.5, min(.5, shift)))*180/CHORD_DIRECTIONS) % 180, 1-b/max(b, c[(k+CHORD_DIRECTIONS//2) % CHORD_DIRECTIONS], 1e-9)
 
     def at(self, p):
         return self.angle.get((int((p[0]-self.x0)/self.cell), int((p[1]-self.y0)/self.cell)))
 
     def mean(self, rows, angle):
-        """Length-weighted mean field direction over a section's rows (doubled angles)."""
-        sx = sy = 0.0
+        """The dominant field direction over a section's rows: the heaviest 15 degree
+        bin (weights spread over neighbouring bins), refined by the weighted mean of
+        the cells within 20 degrees of it; None where the field is empty."""
+        values = []
         for y, a, b in rows:
             n = max(1, round((b-a)/self.cell))
             for q in C.rotate([[a+(b-a)*(k+.5)/n, y] for k in range(n)], angle, True):
                 v = self.at(q)
-                if v is not None:
-                    sx, sy = sx+math.cos(math.radians(2*v)), sy+math.sin(math.radians(2*v))
-        return None if sx == sy == 0 else math.degrees(math.atan2(sy, sx))/2
+                if v is not None and v[1] > 0:
+                    values.append(v)
+        if not values:
+            return None
+        bins = [0.0]*12
+        for v, w in values:
+            bins[int(v//15) % 12] += w
+        top = max(range(12), key=lambda k: bins[k-1]/2+bins[k]+bins[(k+1) % 12]/2)
+        centre = top*15+7.5
+        sx = sy = 0.0
+        for v, w in values:
+            if abs((v-centre+90) % 180-90) <= 20:
+                sx, sy = sx+w*math.cos(math.radians(2*v)), sy+w*math.sin(math.radians(2*v))
+        return centre if math.hypot(sx, sy) < 1e-9 else math.degrees(math.atan2(sy, sx))/2
 
 
-def section_outline(rows, spacing, angle):
-    """Polygon of a scan-line section, its first and last rows pushed out half a row
-    so neighbouring sections meet."""
-    rows = [(rows[0][0]-spacing/2, *rows[0][1:])]+list(rows)+[(rows[-1][0]+spacing/2, *rows[-1][1:])]
+def mean_stroke(rings, rule):
+    """2 x area / outline length (lib/text.ts textStroke)."""
+    ys = [p[1] for r in rings for p in r]
+    step = max(.05, (max(ys)-min(ys))/400)
+    area = sum((b-a)*step for k in range(int((max(ys)-min(ys))/step)) for a, b in C.scan_spans(rings, min(ys)+(k+.5)*step, rule))
+    perimeter = sum(math.dist(a, b) for r in rings for a, b in zip(r, r[1:]+r[:1]))
+    return max(.3, 2*area/perimeter) if perimeter else 1
+
+
+def section_outline(rows, spacing, angle, rotated, rule):
+    """Polygon of a scan-line section (rows in the frame of rotated), its first and last
+    rows pushed out half a row, within the outline, so neighbouring sections meet."""
+    def pushed(row, dy):
+        y, a, b = row[0]+dy, row[1], row[2]
+        spans = [(max(a, c), min(b, d)) for c, d in C.scan_spans(rotated, y, rule) if max(a, c) < min(b, d)]
+        return [(y, *max(spans, key=lambda s: s[1]-s[0]))] if spans else []
+    rows = pushed(rows[0], -spacing/2)+list(rows)+pushed(rows[-1], spacing/2)
     return C.rotate([[a, y] for y, a, _ in rows]+[[b, y] for y, _, b in rows[::-1]], angle, True)
 
 
-def stroke_sections(rings, rule, spacing, angle, field, depth=2):
+def stroke_sections(rings, rule, spacing, angle, field, depth=3):
     """[(angle, rows)] covering the outline with rows across its strokes."""
-    out = []
-    for rows in C.fill_sections([C.rotate(r, angle) for r in rings], spacing, rule):
-        target = field.mean(rows, angle) if depth and len(rows) > 1 else None
-        if target is not None and abs((target-angle+90) % 180-90) > TURN_LIMIT:
-            out.extend(stroke_sections([section_outline(rows, spacing, angle)], 'evenodd', spacing, target, field, depth-1))
+    out, rotated = [], [C.rotate(r, angle) for r in rings]
+    for rows in C.fill_sections(rotated, spacing, rule):
+        out.extend(fit_section(rows, spacing, angle, field, depth, rotated, rule))
+    return out
+
+
+def fit_section(rows, spacing, angle, field, depth, rotated, rule):
+    """Runs of rows straying more than TURN_LIMIT from the field (at least three rows,
+    or the whole section) are cut again at the field's mean direction over the run."""
+    if not depth:
+        return [(angle, rows)]
+    stray = lambda d: d is not None and abs((d-angle+90) % 180-90) > TURN_LIMIT
+    flags = [stray(field.mean([row], angle)) for row in rows]
+    runs = []
+    for row, flag in zip(rows, flags):
+        if runs and runs[-1][0] == flag:
+            runs[-1][1].append(row)
         else:
-            out.append((angle, rows))
+            runs.append([flag, [row]])
+    # Short runs join a neighbour, so a cut never leaves a sliver.
+    merged = []
+    for flag, run in runs:
+        if merged and (len(run) < 3 or len(merged[-1][1]) < 3):
+            merged[-1][1].extend(run)
+            merged[-1][0] = stray(field.mean(merged[-1][1], angle))
+        else:
+            merged.append([flag, run])
+    out = []
+    for flag, run in merged:
+        target = field.mean(run, angle) if flag else None
+        if target is not None and stray(target):
+            out.extend(stroke_sections([section_outline(run, spacing, angle, rotated, rule)], 'evenodd', spacing, target, field, depth-1))
+        else:
+            out.append((angle, run))
     return out
 
 
@@ -359,28 +446,39 @@ def arc_resample(points, n):
 
 
 def stroke_rails(obj, region, angle, rows):
-    """Left and right rails of one section: the row ends, or the outline sides paired by
-    arc length when that shortens the bites and every bite stays inside."""
+    """Left and right rails of one section and whether their points pair as rungs: the
+    row ends (one bite per row), or the outline sides paired by arc length when that
+    shortens the bites and every bite stays inside."""
     left = C.rotate([[a, y] for y, a, _ in rows], angle, True)
     right = C.rotate([[b, y] for y, _, b in rows], angle, True)
     if len(rows) < 3:
-        return left, right
+        return left, right, True
     n = max(len(rows), math.ceil(max(sum(math.dist(a, b) for a, b in zip(r, r[1:])) for r in (left, right))/.2))
     l2, r2 = arc_resample(left, n), arc_resample(right, n)
     mean = lambda ls, rs: sum(math.dist(a, b) for a, b in zip(ls, rs))/len(ls)
     if mean(l2, r2) < mean(left, right)*.97 and all(region.contains(p, .05) for a, b in zip(l2, r2) for p in C.interpolate(a, b, .3)[:-1]):
-        return l2, r2
-    return left, right
+        return l2, r2, False
+    return left, right, True
 
 
 def route_stroke_satin(obj, at, entry, target):
     spacing, pull, underlay = obj['spacing'], obj['pullCompensation'], obj['underlay']
     rule, region = obj.get('fillRule', 'evenodd'), C.Region(obj['rings'], obj.get('fillRule', 'evenodd'))
-    field = StrokeField(obj['rings'], rule, 6)
+    field = StrokeField(obj['rings'], rule, mean_stroke(obj['rings'], rule))
     pieces = []
     for angle, rows in stroke_sections(obj['rings'], rule, spacing, obj.get('angle', 0), field):
-        left, right = stroke_rails(obj, region, angle, rows)
+        left, right, paired = stroke_rails(obj, region, angle, rows)
+        # A section cut obliquely starts in a point; its first bites would be shorter than
+        # the pull compensation. The neighbouring sections' pull covers that sliver.
         widths = [math.dist(a, b) for a, b in zip(left, right)]
+        lo, hi = 0, len(widths)
+        while hi-lo > 2 and widths[lo] < MIN_TIP:
+            lo += 1
+        while hi-lo > 2 and widths[hi-1] < MIN_TIP:
+            hi -= 1
+        if hi-lo == 2 and max(widths[lo:hi]) < MIN_TIP:
+            continue
+        left, right, widths = left[lo:hi], right[lo:hi], widths[lo:hi]
         passes = []
         if underlay == 'center' and len(left) > 1:
             passes.append((C.tolerant_path([C.lerp(a, b, .5) for a, b in zip(left, right)], 1.5, .1), 3))
@@ -393,10 +491,69 @@ def route_stroke_satin(obj, at, entry, target):
             zig = [edges[i % 2][j] for i, j in enumerate(range(0, len(left), max(1, round(1.5/spacing)))) if widths[j] >= 1]
             if len(zig) > 1:
                 passes.append((C.line_path(zig, 1.5), 3))
-        cover = C.block_path(left, right, spacing, pull, 0, obj.get('shortStitches', True), dots=False) if len(left) > 1 else [left[0], right[0]]
+        cover = C.block_path(left, right, spacing, pull, 0, obj.get('shortStitches', True), dots=False, short_min=1.2, paired=paired) if len(left) > 1 else [left[0], right[0]]
         if passes and math.dist(passes[-1][0][-1], cover[-1]) < math.dist(passes[-1][0][-1], cover[0]):
             cover.reverse()
-        cover = clean(C.split_bites(cover, obj.get('splitLength', 7)))
+        cover = clean(split_fill_bites(cover, obj.get('splitLength', 7), angle))
         if len(cover) > 1:
             pieces.append(passes+[(cover, C.SATIN_MAX-.15)])
-    return route_pieces(obj, pieces, at, entry, target)
+    pieces = reading_order(obj, pieces, entry or at)
+    return route_pieces(obj, pieces, at, entry, target, ordered=True, travel=unsewn_travel(obj, pieces, spacing), minimum=.5)
+
+
+def unsewn_travel(obj, pieces, spacing):
+    """Travel between sections through the letter where it is not sewn yet (the satin
+    sewn later covers it); strokes are often too narrow for the margin that ordinary
+    fill travel keeps from the edge. None (a jump) when no such way exists."""
+    rule = obj.get('fillRule', 'evenodd')
+    region, grid = C.Region(obj['rings'], rule), C.Grid(obj['rings'], rule)
+    grid.safe = grid.inside
+    tolerance = .001+obj['pullCompensation']/2
+    key = lambda p: (round(p[0], 6), round(p[1], 6))
+    owner = {key(p): passes for passes in pieces for path, _ in passes for p in (path[0], path[-1])}
+    previous = [None]
+    reach = max(0, math.ceil(spacing/2/grid.cell))
+    def mark(passes):
+        for path, _ in passes:
+            for a, b in zip(path, path[1:]):
+                for p in [a]+C.interpolate(a, b, grid.cell/2):
+                    ci, cj = int((p[0]-grid.x0)/grid.cell), int((p[1]-grid.y0)/grid.cell)
+                    for j in range(max(0, cj-reach), min(grid.ny, cj+reach+1)):
+                        for i in range(max(0, ci-reach), min(grid.nx, ci+reach+1)):
+                            grid.sewn[j*grid.nx+i] = 1
+    def travel(a, b):
+        if previous[0]:
+            mark(previous[0])
+        previous[0] = owner.get(key(b))
+        if clear(a, b, region, tolerance) and (math.dist(a, b) < 1.5 or grid.component(a) == grid.component(b)):
+            return C.line_path([a, b], 3)
+        if grid.component(a) != grid.component(b):
+            return None
+        goal = grid.near(b, 1, lambda k: grid.inside[k] and not grid.sewn[k])
+        if goal is not None:
+            for _, _, way in grid.reach(a, {goal: [0]}, True):
+                points = way()+[b]
+                if all(clear(u, v, region, tolerance) for u, v in zip(points, points[1:])):
+                    return C.line_path(points, 3)
+                break
+        return connector(a, b, obj['rings'], region, fallback, tolerance)
+    fallback = C.Grid(obj['rings'], rule)
+    return travel
+
+
+def reading_order(obj, pieces, at):
+    """Letters (connected parts) left to right; inside one, the nearest piece next."""
+    grid = C.Grid(obj['rings'], obj.get('fillRule', 'evenodd'))
+    parts = {}
+    for passes in pieces:
+        cover = passes[-1][0]
+        parts.setdefault(grid.component(cover[len(cover)//2]), []).append(passes)
+    out = []
+    for _, group in sorted(parts.items(), key=lambda kv: min(p[0] for ps in kv[1] for p in ps[-1][0])):
+        while group:
+            ends = lambda ps: (ps[0][0][0], ps[0][0][-1], ps[-1][0][0], ps[-1][0][-1])
+            k = 0 if at is None else min(range(len(group)), key=lambda i: min(math.dist(at, p) for p in ends(group[i])))
+            passes = group.pop(k)
+            out.append(passes)
+            at = min(ends(passes)[2:], key=lambda p: -math.dist(p, at)) if at else passes[-1][0][-1]
+    return out

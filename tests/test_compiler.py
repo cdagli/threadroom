@@ -1229,6 +1229,65 @@ class NonRowFillTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 compile_project(project(fillPattern="sweepSatin",**{key:value}))
 
+    # A "Z" of 1.5 mm strokes: horizontal bars joined by a diagonal at about 30 degrees.
+    Z = [[20,20],[40,20],[40,21.5],[23.4,31.5],[40,31.5],[40,33],[20,33],[20,31.5],[36.6,21.5],[20,21.5]]
+
+    def bites(self, result):
+        """Satin bites: sewn stitches longer than 0.8 mm (travel and underlay excluded)."""
+        out, after = [], True
+        for c in result["commands"]:
+            if c["type"] != "stitch":
+                after = True
+                continue
+            d = math.dist((c["x"], c["y"]), (c["fromX"], c["fromY"]))
+            if not after and not c.get("travel") and d > .8:
+                out.append((c, d))
+            after = False
+        return out
+
+    def test_satin_fill_text_bites_follow_each_stroke(self):
+        from embroidery.engines import StrokeField, mean_stroke, stroke_sections
+        settings = dict(rings=[self.Z], fillPattern="sweepSatin", angle=0, spacing=.32, underlay="none", pullCompensation=.4, tieIn="none", tieOff="none")
+        fixed, turned = compile_project(project(**settings)), compile_project(project(followStroke=True, **settings))
+        share = lambda r, q: sorted(d for _, d in self.bites(r))[int(q*(len(self.bites(r))-1))]
+        # At one angle the diagonal and the bars get bites along the stroke; turned, bites
+        # cross their stroke (1.5 mm + 0.4 mm pull, longer only where strokes meet).
+        self.assertGreater(share(fixed, .5), 2.8)
+        self.assertLess(share(turned, .5), 2.05)
+        self.assertLess(share(turned, .95), 3)
+        self.assertLessEqual(turned["stats"]["maxStitch"], 4)
+        self.assertEqual(turned["warnings"], [])
+        self.assertEqual(turned["stats"]["trims"], 0)
+        # The bars are cut at 90 degrees, the diagonal (running at 149 degrees) at about 59.
+        rule, rings = "evenodd", [self.Z]
+        sections = stroke_sections(rings, rule, .32, 0, StrokeField(rings, rule, mean_stroke(rings, rule)))
+        angles = {round(a) % 180 for a, rows in sections if len(rows) > 5}
+        self.assertTrue(any(abs(a-90) <= 8 for a in angles), angles)
+        self.assertTrue(any(abs(a-59) <= 6 for a in angles), angles)
+        self.assertEqual(turned["pes"], compile_project(project(followStroke=True, **settings))["pes"])
+
+    def test_satin_fill_split_points_never_line_up(self):
+        from embroidery.engines import split_fill_bites
+        # Rows of a wide satin fill at 0 degrees, alternating ends (the zigzag).
+        path = [[0 if i % 2 == 0 else 40+(i % 7)*.3, i*.32] for i in range(200)]
+        out = split_fill_bites(path, 7, 0)
+        self.assertLessEqual(max(math.dist(a, b) for a, b in zip(out, out[1:])), 7)
+        rows, current = [], []
+        for p in out:
+            if any(abs(p[1]-q[1]) < 1e-9 for q in path) and p in path:
+                if current:
+                    rows.append(current)
+                current = []
+            else:
+                current.append(p[0])
+        # Neighbouring bites keep their split points apart, and no group of rows within
+        # a dozen repeats one bite's split points (a regular stagger draws lines).
+        for a, b in zip(rows, rows[1:]):
+            self.assertGreater(min(abs(x-y) for x in a for y in b), .3*7*.75*.99)
+        for gap in range(2, 13):
+            close = sum(min(abs(x-y) for y in rows[k+gap]) < .3 for k in range(len(rows)-gap) for x in rows[k])
+            self.assertLess(close/sum(len(r) for r in rows[:-gap]), .35, gap)
+
     def test_satin_demo_is_quiet(self):
         p = node("demo",None)
         for o in p["objects"]:
@@ -1387,7 +1446,8 @@ class EmberRopeAndBlockTests(unittest.TestCase):
             passes = C.line_passes(project(kind, [self.path], length=1.5)["objects"][0], self.path)
             self.assertEqual(len(passes), count, kind)
             out, back, first = passes[0][0], passes[1][0], passes[2][0]
-            self.assertEqual((out[0], out[-1], back), (self.path[0], self.path[-1], out[::-1]))
+            # The run back lands on the rope's first point, so no 0.4 mm join stitch is sewn.
+            self.assertEqual((out[0], out[-1], back[:-1], back[-1]), (self.path[0], self.path[-1], out[::-1][:-1], first[0]))
             self.assertTrue(all(math.dist(a, b) <= 3+1e-9 for a, b in zip(out, out[1:])))
             self.assertEqual(len(first), len(rope))
             sides = []
@@ -1401,7 +1461,7 @@ class EmberRopeAndBlockTests(unittest.TestCase):
                 for p, q, m in zip(rope, first, mirrored):
                     self.assertAlmostEqual(m[0], 2*p[0]-q[0])
                     self.assertAlmostEqual(m[1], 2*p[1]-q[1])
-                self.assertEqual(passes[4][0], out)
+                self.assertEqual(passes[4][0], [mirrored[0]]+out[1:])
         wide = C.line_passes(project("double-rope", [self.path], length=1.5, ropeWidth=1)["objects"][0], self.path)[2][0]
         self.assertAlmostEqual(math.dist(wide[3], rope[3]), 1)
 
