@@ -59,7 +59,7 @@ test('Parser, engine and asynchronous errors have Turkish UI messages',()=>{
 });
 test('Fill pattern names translate without changing saved pattern IDs or geometry',()=>{
   const {fillPatterns,patternPreview}=load('fill-patterns');
-  const names={even:'Düz',sweepSatin:'Saten dolgu',tatami:'Tatami',original:'Orijinal',columns:'Sütunlar','offset-columns':'Kaydırılmış sütunlar',triangle:'Üçgen',walk:'Yürüyüş',waves:'Dalgalar',zigzag:'Zikzak',heartbeat:'Kalp atışı',spiral:'Sarmal',staircase:'Merdiven',rainfall:'Yağmur',tornado:'Hortum',partitionWaveWalk:'Dalgalı yürüyüş',partitionJitter:'Titreşim',partitionBands:'Şeritler',partitionInterlocked:'Geçmeli',partitionRails:'Raylar',partitionTwill:'Dimi',partitionHoundstooth:'Kazayağı',smallHearts:'Kalpler (küçük)',mediumHearts:'Kalpler (orta)',largeHearts:'Kalpler (büyük)',smallDiamond:'Baklavalar (küçük)',mediumDiamond:'Baklavalar (orta)',largeDiamond:'Baklavalar (büyük)',smallCircles:'Daireler (küçük)',mediumCircles:'Daireler (orta)',largeCircles:'Daireler (büyük)',hexweave:'Altıgen örgü',partitionChain:'Zincir',partitionStars:'Yıldızlar',circular:'Dairesel dolgu',crossStitchFill:'Kanaviçe / çarpı işi dolgusu',streamlines:'Akış çizgileri'};
+  const names={even:'Düz',sweepSatin:'Saten dolgu',tatami:'Tatami',columns:'Sütunlar','offset-columns':'Kaydırılmış sütunlar',triangle:'Üçgen',walk:'Yürüyüş',waves:'Dalgalar',zigzag:'Zikzak',heartbeat:'Kalp atışı',spiral:'Sarmal',staircase:'Merdiven',rainfall:'Yağmur',tornado:'Hortum',partitionWaveWalk:'Dalgalı yürüyüş',partitionJitter:'Titreşim',partitionBands:'Şeritler',partitionInterlocked:'Geçmeli',partitionRails:'Raylar',partitionTwill:'Dimi',partitionHoundstooth:'Kazayağı',smallHearts:'Kalpler (küçük)',mediumHearts:'Kalpler (orta)',smallDiamond:'Baklavalar (küçük)',mediumDiamond:'Baklavalar (orta)',smallCircles:'Daireler (küçük)',mediumCircles:'Daireler (orta)',hexweave:'Altıgen örgü',partitionChain:'Zincir',partitionStars:'Yıldızlar',circular:'Dairesel dolgu',crossStitchFill:'Kanaviçe / çarpı işi dolgusu',streamlines:'Akış çizgileri'};
   assert.deepEqual(fillPatterns.map(p=>p.id),Object.keys(names));
   for(const pattern of fillPatterns){
     assert.equal(createT('tr')(pattern.name),names[pattern.id]);
@@ -109,4 +109,15 @@ test('Turkish instructions use the formal register; short button labels stay imp
   assert.deepEqual(sentences.filter(([,v])=>informal.test(v)).map(([k])=>k),[]);
   assert.equal(tr['This fill is too dense. Increase spacing or reduce the design size.'],'Bu dolgu çok sık. Aralığı artırın veya tasarımı küçültün.');
   assert.equal(tr['Delete'],'Sil');
+});
+
+test('Font size guidance and quick fixes translate names and decimal heights',()=>{
+  const translate=createT('tr');
+  assert.equal(translate('from {min} mm',{min:7.5}),'7,5 mm ve üzeri');
+  assert.equal(translate('too thin'),'çok ince');
+  assert.equal(translate('Use {weightName}',{weightName:translate('Extra bold')}),'Ekstra kalın kullan');
+  assert.equal(translate('Make it {min} mm',{min:9.5}),'9,5 mm yap');
+  assert.equal(translate('{font} {weight} has thin strokes at {size} mm. It sews cleanly from {min} mm.',{font:'Nunito',weight:translate('Regular'),size:7.5,min:14}),
+    'Nunito Normal, 7,5 mm harf yüksekliğinde ince çizgilere sahiptir. 14 mm ve üzerindeki yüksekliklerde düzgün dikilir.');
+  assert.equal(translate('{font} {weight} has thin strokes at every letter height.',{font:'Fixture',weight:translate('Thin')}),'Fixture Çok ince her harf yüksekliğinde ince çizgilere sahiptir.');
 });

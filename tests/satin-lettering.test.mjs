@@ -5,10 +5,17 @@ import {load} from './load-lib.mjs';
 await load('satin-lettering').ensureSatinFonts();
 const {satinFonts,layoutSatinText,satinTextShapes,convertSatinText,columnWidth,strokeRails}=load('satin-lettering');
 const {defaultText,validText,transformText}=load('text'),{defaultFont}=load('fonts');
-const {object,demo,validProject,bounds}=load('project'),{geometryPayload,moveGeometry}=load('curves'),{checkProject}=load('check');
+const {object,demo,validProject,bounds}=load('project'),{geometryPayload,moveGeometry,layoutObject}=load('curves'),{checkProject}=load('check');
 const spec=(font='simplex',content='Ayşe İpek',patch={})=>({...defaultText(defaultFont,[50,50],content),size:6,satin:{font,columnWidth:14},...patch});
 const lettering=text=>({...object('Lettering',layoutSatinText(text).rings,'satin-block'),id:'lettering',text});
 const project=o=>({...demo(),objects:[o]});
+
+test('Satin lettering relayout keeps its columns and disables automatic outline filling',()=>{
+  const o={...lettering(spec('simplex','HI',{autoStitch:true})),fillPattern:'tatami'};
+  const next=layoutObject(o);
+  assert.equal(next.kind,'satin-block');assert.equal(next.fillPattern,'tatami');assert.equal(next.text.autoStitch,false);
+  assert.deepEqual(next.rings,layoutSatinText(o.text).rings);assert.ok(validProject(project(next)));
+});
 
 test('Every satin glyph (Hershey and EMS), including Turkish and punctuation, produces finite paired editable rails',()=>{
   const required='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789çğıİöşüÇĞIÖŞÜ.,!?\'"-:;()';
@@ -80,7 +87,10 @@ test('Six millimetre Turkish names have a quiet geometry and actual PES design c
     const run=spawnSync(process.env.THREADROOM_PYTHON||'.venv/bin/python',['-c',code],{input:JSON.stringify(geometryPayload(p)),encoding:'utf8'});
     assert.equal(run.status,0,run.stderr);const out=JSON.parse(run.stdout);assert.deepEqual(out.warnings,[]);
     assert.ok(out.stats.stitches>100);assert.ok(out.commands.every(c=>c.objectId==='lettering'));
-    assert.ok(out.stats.trims<12,'nearby strokes connect rather than cutting every block');
+    // Strokes of a letter connect under sewn columns; separate letters and diacritics trim
+    // (a connector over bare fabric would float), so trims stay well below one per block.
+    const blocks=geometryPayload(p).objects[0].satinColumns.length;
+    assert.ok(out.stats.trims<=blocks*.7,`nearby strokes connect rather than cutting every block (${font}: ${out.stats.trims}/${blocks})`);
   }
 });
 

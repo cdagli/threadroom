@@ -15,7 +15,8 @@ Spacing, underlay and pull compensation arrive resolved from the editor's
 fabric profile (lib/project.ts); the compiler has no fabric defaults.
 Runs that change colour or start more than trimJump mm away are tied off,
 trimmed and tied in (per-object tack/triangle locks); nearer runs join with
-one stitch. Cross fills sew rows of half-crosses and return over them. Rope runs sew a
+one stitch only when later stitches cover it (or it is at most 1 mm), since a
+connector over bare fabric is a visible float (hidden_connects). Cross fills sew rows of half-crosses and return over them. Rope runs sew a
 hidden double run, then one (double) or two mirrored (triple) passes whose
 points alternate either side of the path. Satin blocks sew satin between two
 rails the editor samples in pairs (railPaths), so the width follows the rails.
@@ -694,6 +695,29 @@ def fill_centroid(rings, rule):
     return [cx/total, cy/total] if abs(total) > 1e-9 else list(rings[0][0])
 
 
+# Pattern penetrations closer than this to a row end or to each other are merged:
+# shorter stitches fray or nest (the brief's 0.5 mm floor, with PES rounding room).
+MIN_PATTERN_STITCH = .5
+
+
+# Even rows divide each row into equal stitches. Rows of equal length (a rectangle at 0°)
+# would put every penetration under the one in the row before, a perforation line; the
+# subdivision starts a quarter or half stitch in on successive rows, as tatami does.
+EVEN_STAGGER = (0, .5, .25, .75)
+
+
+def even_row(a, b, length, row):
+    d = math.dist(a, b)
+    count = max(1, math.ceil(d/length))
+    step, phase = d/count, EVEN_STAGGER[row % len(EVEN_STAGGER)]
+    if phase and a[0] > b[0]:
+        phase = 1-phase  # rows alternate direction; keep the offset measured from the same end
+    if not phase or min(phase, 1-phase)*step < MIN_PATTERN_STITCH:
+        return [a]+interpolate(a, b, length)
+    at = lambda t: [a[0]+(b[0]-a[0])*t/d, a[1]+(b[1]-a[1])*t/d]
+    return [list(a)]+[at((k+phase)*step) for k in range(count)]+[list(b)]
+
+
 class Rows:
     """A fill section: rows (y, left, right) in the frame rotated by angle.
     Variants start at either end of the first or the last row."""
@@ -727,7 +751,7 @@ class Rows:
 
     def paths(self, variant, length):
         if not self.pattern or self.pattern == "even":
-            return [rotate([a]+interpolate(a, b, length), self.angle, True) for a, b in self.ordered(variant)]
+            return [rotate(even_row(a, b, length, i), self.angle, True) for i, (a, b) in enumerate(self.ordered(variant))]
         paths, ordered = [], self.ordered(variant)
         cycle, shear = pattern_cycle(self.pattern, length, self.spacing, self.params)
         for i, (a, b) in enumerate(ordered):
@@ -743,10 +767,10 @@ class Rows:
                 xs.extend(origin+q*width for q in range(math.floor((lo-origin)/width)+1, math.ceil((hi-origin)/width)))
                 prefix += step
             # Allow 0.05 mm for rounding onto PES's 0.1 mm coordinate grid.
-            xs = sorted(x for x in xs if x-lo >= .35-1e-9 and hi-x >= .35-1e-9)
+            xs = sorted(x for x in xs if x-lo >= MIN_PATTERN_STITCH-1e-9 and hi-x >= MIN_PATTERN_STITCH-1e-9)
             kept = []
             for x in xs:
-                if not kept or x-kept[-1] >= .35-1e-9:
+                if not kept or x-kept[-1] >= MIN_PATTERN_STITCH-1e-9:
                     kept.append(x)
             interior = [[x,a[1]] for x in (kept if a[0] <= b[0] else kept[::-1])]
             points = [list(a)]+interior
@@ -868,12 +892,16 @@ def route_fill(obj, at, entry, target, underlay_only=False):
         return []
     top_length = obj.get("fillLength", length) if obj["kind"] == "fill" else length
     tolerance = CONNECT_TOLERANCE+pull/2
-    out, state, links = [], {"at": at, "jump": True, "stitch": 0}, {}
+    out, state, links, fixed = [], {"at": at, "jump": True, "stitch": 0}, {}, set()
     base = min(row[0] for part in parts.values() for piece in part["top"] for row in piece.rows)
     def sew(path):
         if state["jump"]:
             out.append([])
             state["jump"] = False
+        elif out[-1] and math.dist(out[-1][-1], path[0]) > top_length+JOIN_SLACK:
+            # A straight join across the part (between sections or underlay rows) is sewn
+            # as ordinary stitches; only pattern rows may carry planned floats.
+            out[-1].extend(interpolate(out[-1][-1], path[0], length)[:-1])
         out[-1].extend(path)
         state["at"] = out[-1][-1]
     def travel(goals, avoid):
@@ -889,6 +917,8 @@ def route_fill(obj, at, entry, target, underlay_only=False):
     def sew_piece(piece, variant, top):
         rows = piece.rows[::-1] if top and variant[0] else getattr(piece, "rows", None)
         for i, path in enumerate(piece.paths(variant, top_length if top else getattr(piece, "stitch_length", None) or length)):
+            if isinstance(piece, Loop):
+                fixed.update(id(p) for p in path)
             if top and obj["kind"] == "fill" and obj.get("handStitch", 0):
                 path = hand_stitch(path, angle, top_length, obj["handStitch"], obj.get("id", ""), state["stitch"], region)
             if top:
@@ -1033,7 +1063,28 @@ def route_fill(obj, at, entry, target, underlay_only=False):
         link(tops+([last[0]] if last else []))
         if not underlay_only:
             sequence(tops, True, last)
-    return [path for path in out if len(path) > 1]
+    return [path for path in (merge_short(path, fixed) for path in out) if len(path) > 1]
+
+
+# Joins longer than the row stitch plus JOIN_SLACK are split. Sewn fill moves shorter than
+# MIN_FILL_STITCH (travel landing beside a row start) fray or nest; row turns, one row
+# spacing (0.35 mm and up) along the edge, are kept.
+JOIN_SLACK, MIN_FILL_STITCH = 1, .35-1e-9  # 0.35 leaves room for PES 0.1 mm rounding
+
+
+def merge_short(path, fixed=(), minimum=MIN_FILL_STITCH):
+    """Drops penetrations closer than minimum to the previous one; the path keeps both ends
+    and any point whose id is in fixed (edge walks, whose corners keep their inset)."""
+    if len(path) < 3:
+        return path
+    out = [path[0]]
+    for p in path[1:-1]:
+        if math.dist(out[-1], p) >= minimum or id(p) in fixed:
+            out.append(p)
+    if len(out) > 1 and math.dist(out[-1], path[-1]) < minimum and id(out[-1]) not in fixed:
+        out.pop()
+    out.append(path[-1])
+    return out
 
 
 def satin_path(ring, spacing, width, style="satin", split=0, short=False, flip=False):
@@ -1123,9 +1174,17 @@ def block_rungs(left, right, spacing):
     return rungs
 
 
+MIN_BITES, MIN_DOT_SPACING = 4, .18
+
+
 def block_path(left, right, spacing, pull=0, split=0, short=False):
     """Satin between paired rails: penetrations alternate left/right on successive rungs, each end
     pushed out by half the pull compensation; short stitches and splitting as in satin_path."""
+    # A short column (a diacritic dot, a comma) at the normal spacing gets two or three
+    # bites, which sew as a chevron. Give it at least MIN_BITES so it reads as a satin dot.
+    total = sum(math.dist(a, b) for a, b in zip(left, left[1:]))+sum(math.dist(a, b) for a, b in zip(right, right[1:]))
+    if total/2 < MIN_BITES*spacing:
+        spacing = max(MIN_DOT_SPACING, total/2/MIN_BITES)
     rungs = block_rungs(left, right, spacing)
     def end(j, side, inset=0):
         a, b = rungs[j]
@@ -1309,7 +1368,9 @@ def route_cross(obj, at, entry, target):
                     paths[-1].extend([centre(legs[k-1][0], j), a])
                 paths[-1].append(b)
                 at_v = v
-        return [rotate(path, angle, True) for path in paths]
+        # A row that starts at the corner where the last one ended would sew a
+        # 0.1 mm stitch between the two pull-compensated needle points.
+        return [merge_short(rotate(path, angle, True)) for path in paths]
     start = entry or at
     cost = lambda paths: (math.dist(start, paths[0][0]) if start else 0)+(math.dist(paths[-1][-1], target) if target else 0)+len(paths)*1000
     return [[(path, 3)] for path in min((plan(True), plan(False)), key=cost)]
@@ -1491,16 +1552,39 @@ def covered_column_travel(start, end, covered, width):
     return None
 
 
+def redundant_column(block, centre, others):
+    """A short column lying mostly inside a longer column of the same letter (a stub left
+    where a font stroke doubles back, as in some cedillas) only stacks a starburst of bites
+    on top of that column, so it is not sewn."""
+    width = block_width(block)
+    length = sum(math.dist(a, b) for a, b in zip(centre, centre[1:]))
+    if length >= 2*width:
+        return False
+    for column, ring in others:
+        other_length = sum(math.dist(a, b) for a, b in zip(ring, ring[1:]))
+        if other_length <= length:
+            continue
+        half = block_width({"railPaths": column["railPaths"]})/2
+        samples = sample_path(centre, .2)
+        inside = sum(min(segment_distance(p, a, b) for a, b in zip(ring, ring[1:])) <= half+.2 for p in samples)
+        if inside >= .6*len(samples):
+            return True
+    return False
+
+
 def lettering_plan(obj):
     """Reading order, nearby strokes connected under already sewn columns when possible.
     Disconnected strokes use the ordinary short connector / trim policy. Ownership
     stays with the live text, including all hidden travel and its diagnostics.
     """
     plan, covered, character, at = [], [], None, None
-    for column, centre in zip(obj["satinColumns"], obj["rings"]):
+    pairs = list(zip(obj["satinColumns"], obj["rings"]))
+    for column, centre in pairs:
         if column["character"] != character:
             covered, character = [], column["character"]
         block = {**obj, "railPaths": column["railPaths"], "rings": [centre]}
+        if redundant_column(block, centre, [(c, r) for c, r in pairs if c is not column and c["character"] == column["character"]]):
+            continue
         passes = block_passes(block, centre)
         if at is not None and covered:
             hidden = covered_column_travel(at, passes[0][0][0], covered, block_width(block))
@@ -1548,9 +1632,9 @@ def plan_object(obj, at, target):
             cycle, _ = pattern_cycle(obj["fillPattern"], obj.get("fillLength", obj.get("length", 2.5)), obj["spacing"], obj.get("patternParams"))
             limit = max(limit, max(v for _, ls in cycle for v in ls)+.01)
             # Merging tiny crossings and skipLast turns can exceed the raw table's
-            # longest interval. Preserve those planned floats too; split only at
-            # the machine cap, with room for PES's 0.1 mm coordinate rounding.
-            return [[(path, min(SATIN_MAX-.15, max(limit, max(math.dist(a,b) for a,b in zip(path,path[1:]))+.01)))] for path in paths]
+            # longest interval. Preserve those planned floats up to LONG_STITCH; longer
+            # motif floats loosen and snag, so they are split.
+            return [[(path, min(LONG_STITCH-.15, max(limit, max(math.dist(a,b) for a,b in zip(path,path[1:]))+.01)))] for path in paths]
         return [[(path, limit)] for path in paths]
     if kind == "redwork":
         from .redwork import plan
@@ -1680,6 +1764,44 @@ def design_check(trace, cuts, objects):
     return warnings
 
 
+def hidden_connects(runs):
+    """hidden[k]: run k may join the previous run with one untrimmed stitch. That
+    connecting stitch is either at most FLOAT_LIMIT long or covered all along by
+    stitches sewn later in the same colour (within COVER_DISTANCE). Otherwise it would
+    lie on top as a visible float (a diacritic dot reached from its letter, say)."""
+    cell, hidden = 1.0, [True]*len(runs)
+    grid = {}
+    for k, (_, obj, _, points) in enumerate(runs):
+        for a, b in zip(points, points[1:]):
+            x0, x1 = sorted((a[0], b[0]))
+            y0, y1 = sorted((a[1], b[1]))
+            for i in range(int(x0//cell), int(x1//cell)+1):
+                for j in range(int(y0//cell), int(y1//cell)+1):
+                    grid.setdefault((i, j), []).append((k, a, b))
+    for k in range(1, len(runs)):
+        a, b = runs[k-1][3][-1], runs[k][3][0]
+        d = math.dist(a, b)
+        if d <= FLOAT_LIMIT:
+            continue
+        color = runs[k][1]["color"].lower()
+        def covered(p):
+            for i in range(int((p[0]-COVER_DISTANCE)//cell), int((p[0]+COVER_DISTANCE)//cell)+1):
+                for j in range(int((p[1]-COVER_DISTANCE)//cell), int((p[1]+COVER_DISTANCE)//cell)+1):
+                    for m, u, v in grid.get((i, j), ()):
+                        if m >= k and runs[m][1]["color"].lower() == color and segment_distance(p, u, v) <= COVER_DISTANCE:
+                            return True
+            return False
+        n = max(1, math.ceil(d/.25))
+        hidden[k] = all(covered([a[0]+(b[0]-a[0])*t/n, a[1]+(b[1]-a[1])*t/n]) for t in range(1, n))
+    return hidden
+
+
+# An untrimmed connecting stitch up to FLOAT_LIMIT mm is tolerated; a longer one must be
+# covered by later stitches (within COVER_DISTANCE mm) or it is trimmed.
+FLOAT_LIMIT, COVER_DISTANCE = 1.0, .35
+LOCK_MIN = .5  # smallest lock stitch; below 0.3 mm the lock is skipped
+
+
 def compile_project(project, *, cache=None):
     started = time.perf_counter()
     width, height, trim_jump, objects = validate(project)
@@ -1724,6 +1846,9 @@ def compile_project(project, *, cache=None):
         arrow size long and wide pointing along it. Ends at points[0]."""
         nonlocal tie_phase
         tie_phase = phase
+        # On a tiny run (a dot) a full-size tack reaches past it and sews a starburst.
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        size = min(size, max(LOCK_MIN, math.hypot(max(xs)-min(xs), max(ys)-min(ys))/3))
         a, q, run = points[0], points[0], 0
         for u, v in zip(points, points[1:]):
             d = math.dist(u, v)
@@ -1754,12 +1879,13 @@ def compile_project(project, *, cache=None):
     # off, trim, jump, tie in. Nearer runs join with one connecting stitch and
     # no ties: pystitch writes every PEC jump after the first with the trim flag
     # (0x20) and drops TRIM itself, so a jump that must not trim is a stitch.
+    hidden = hidden_connects(runs)
     color, last, trims, cuts = None, None, 0, []
     for run_index, (index, obj, chunks, points) in enumerate(runs):
         changes = obj["color"].lower() != color
         separate_engine = obj["kind"] == "fill" and FILL_PATTERNS.get(obj.get("fillPattern"), {}).get("mode") == "engine"
         avoid_short = "satinColumns" in obj or separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))
-        trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump or (separate_engine or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped"))) and index == owner)
+        trim = last is not None and (changes or math.dist(previous, points[0]) > trim_jump or not hidden[run_index] or obj["kind"] == "cross" and any(k in obj for k in ("crossStyle","crossSize","threadCount","coverage","dense","flipped")) and index == owner)
         if trim:
             lock(last[1][::-1], last[0]["tieOff"], last[0]["lockSize"], "off")
             pattern.add_command(TRIM)

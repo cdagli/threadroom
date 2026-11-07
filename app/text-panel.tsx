@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import {Loading} from './panel-loading';
 import type {Translator} from '@/lib/i18n';
 import {useEffect, useState, type RefObject} from 'react';
-import {loadCatalog, previewRef, weightNames} from '@/lib/fonts';
+import {loadCatalog, previewRef, weightNames, minSize, weightFor, type CatalogFont} from '@/lib/fonts';
 import {satinFonts,satinLetteringDefaults,columnLimits,columnWidth,type SatinFontId} from '@/lib/satin-lettering';
 import {textLimits, type TextLayout, type TextSpec} from '@/lib/text';
 
@@ -37,12 +37,16 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
   const shapes=shapesFor(t),aligns=alignsFor(t);
   useEffect(()=>{onReady();},[onReady]);
   const family=usePreview(()=>spec.satin?Promise.resolve(''):previewRef(spec.font),`${spec.satin?.font??''}-${spec.font.source}-${spec.font.id}-${spec.font.weight}-${spec.font.italic}`);
-  const [weights,setWeights]=useState<{weights:number[];italic:boolean}|null>(null);
+  const [weights,setWeights]=useState<CatalogFont|null>(null);
   useEffect(()=>{
     let live=true;setWeights(null);
-    if(!spec.satin&&spec.font.source==='catalog')loadCatalog().then(all=>{const f=all.find(x=>x.id===spec.font.id);if(live&&f)setWeights({weights:f.weights,italic:f.italic});}).catch(()=>{});
+    if(!spec.satin&&spec.font.source==='catalog')loadCatalog().then(all=>{const f=all.find(x=>x.id===spec.font.id);if(live&&f)setWeights(f);}).catch(()=>{});
     return()=>{live=false;};
   },[spec.font.id,spec.font.source,spec.satin]);
+  const min=weights?minSize(weights,spec.font.weight):undefined;
+  const bestWeight=weights?weightFor(weights,spec.font.weight,spec.size):spec.font.weight;
+  const cleanHeavier=weights&&bestWeight>spec.font.weight&&(minSize(weights,bestWeight)??Infinity)<=spec.size;
+  const weightLabel=(w:number)=>weightNames[w]?t(weightNames[w]):formatNumber(w);
   const multiline=spec.content.includes('\n'),number=(n:string,[min,max]:readonly [number,number])=>{const v=Number(n);return Number.isFinite(v)&&v>=min&&v<=max?v:null;};
   return <section className="panel-section text-panel" aria-label={t("Text")}>
     <Section id="text" title={t("Text")} defaultOpen summaryExtra={loading?<span className="text-status" role="status">{t("Loading font…")}</span>:undefined}>
@@ -54,9 +58,9 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       <label>{t("Satin font")}<Select value={spec.satin.font} onChange={e=>onChange({satin:{...spec.satin!,font:e.target.value as SatinFontId}})}>{Object.entries(satinFonts).map(([id,font])=><option key={id} value={id}>{font.name}</option>)}</Select></label>
       <label>{t("Column width")} · %<Input type="number" min={columnLimits[0]} max={columnLimits[1]} step="1" value={spec.satin.columnWidth} onChange={e=>{const n=number(e.target.value,columnLimits);if(n!==null)onChange({satin:{...spec.satin!,columnWidth:n}},'columnWidth');}}/><span className="field-value">{formatNumber(columnWidth(spec))} mm</span></label>
       <p className="text-hint">{t("For 4–10 mm text. Columns are limited to 1–10 mm.")}</p>
-    </>:<FontPicker value={spec.font} onChange={font=>onChange({font})}/> }
+    </>:<FontPicker size={spec.size} value={spec.font} onChange={font=>onChange({font})}/> }
     {!spec.satin&&spec.font.source==='catalog'&&weights&&(weights.weights.length>1||weights.italic)&&<div className="style-row">
-      <label>{t("Weight")}<Select value={spec.font.weight} onChange={e=>onChange({font:{...spec.font,weight:Number(e.target.value)}})}>{weights.weights.map(w=><option key={w} value={w}>{weightNames[w]?t(weightNames[w]):formatNumber(w)}</option>)}</Select></label>
+      <label>{t("Weight")}<Select value={spec.font.weight} onChange={e=>onChange({font:{...spec.font,weight:Number(e.target.value)}})}>{weights.weights.map(w=><option key={w} value={w}>{weightLabel(w)}{minSize(weights,w)!==undefined?` · ${Number.isFinite(minSize(weights,w))?t('from {min} mm',{min:formatNumber(minSize(weights,w)!)}):t('too thin')}`:''}</option>)}</Select></label>
       {weights.italic&&<Button variant="ghost" type="button" className="italic-toggle" aria-pressed={spec.font.italic} aria-label={t("Italic")} title={t("Italic")} onClick={()=>onChange({font:{...spec.font,italic:!spec.font.italic}})}>{t('I')}</Button>}
     </div>}
     <div className="setting-grid">
@@ -98,6 +102,10 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       </div>}
     </div></Section>}
     {missing.length>0&&<p className="text-warning" role="status">{t("Not in this font:")} {missing.slice(0,12).join(' ')}</p>}
-    {fill&&!spec.satin&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
+    {fill&&!spec.satin&&min!==undefined&&min>spec.size&&<p className="text-warning" role="status">
+      {Number.isFinite(min)?t('{font} {weight} has thin strokes at {size} mm. It sews cleanly from {min} mm.',{font:spec.font.family,weight:weightLabel(spec.font.weight),size:formatNumber(spec.size),min:formatNumber(min)}):t('{font} {weight} has thin strokes at every letter height.',{font:spec.font.family,weight:weightLabel(spec.font.weight)})}{' '}
+      {cleanHeavier?<Button variant="link" onClick={()=>onChange({font:{...spec.font,weight:bestWeight}})}>{t('Use {weightName}',{weightName:weightLabel(bestWeight)})}</Button>:Number.isFinite(min)&&<Button variant="link" onClick={()=>onChange({size:min})}>{t('Make it {min} mm',{min:formatNumber(min)})}</Button>}
+    </p>}
+    {fill&&!spec.satin&&min===undefined&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
   </section>;
 }

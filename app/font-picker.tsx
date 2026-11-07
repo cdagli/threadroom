@@ -3,7 +3,7 @@ import {Button,Input,Popover} from '@/design-system';
 import {useT} from './i18n';
 import {errorText,type Translator} from '@/lib/i18n';
 import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent} from 'react';
-import {categoryNames, listUploads, loadCatalog, previewFamily, previewRef, recommended, refFor, uploadFont, type CatalogFont, type Category, type UploadedFont} from '@/lib/fonts';
+import {categoryNames, listUploads, loadCatalog, previewFamily, previewRef, recommended, refFor, minSize, weightFor, uploadFont, type CatalogFont, type Category, type UploadedFont} from '@/lib/fonts';
 import {type FontRef} from '@/lib/text';
 
 type Filter='recommended'|'all'|Category|'mine';
@@ -17,17 +17,18 @@ function usePreview(load:()=>Promise<string>,key:string) {
   },[key]);
   return family;
 }
-function FontRow({font,selected,active,id,onPick}:{font:CatalogFont&{upload?:boolean};selected:boolean;active:boolean;id:string;onPick:()=>void}) {
-  const {t}=useT();
+function FontRow({font,weight,size,subdued,selected,active,id,onPick}:{font:CatalogFont&{upload?:boolean};weight:number;size:number;subdued:boolean;selected:boolean;active:boolean;id:string;onPick:()=>void}) {
+  const {t,formatNumber}=useT();
+  const chosen=weightFor(font,weight,size),min=minSize(font,chosen);
   const family=usePreview(()=>font.upload?previewRef({source:'upload',id:font.id,family:font.family,weight:font.weights[0],italic:font.italic,subsets:[]}):previewFamily(font.id,font.subsets,font.weights.includes(400)?400:font.weights[0]),font.id);
   return <Button variant="item" type="button" id={id} role="option" aria-selected={selected} className={`font-row${active?' active':''}`} tabIndex={-1} onMouseDown={e=>e.preventDefault()} onClick={onPick}>
-    <span className="font-sample" style={family?{fontFamily:`'${family}'`}:undefined}>{font.family}</span>
-    <small>{font.upload?t("Uploaded"):t(categoryNames[font.category])} · {t('weights.other',{count:font.weights.length})}{font.italic?t('italicSuffix'):''}</small>
+    <span className={`font-sample${subdued?' font-subdued':''}`} style={family?{fontFamily:`'${family}'`}:undefined}>{font.family}</span>
+    <small className={subdued?'font-subdued':undefined}>{font.upload?t("Uploaded"):t(categoryNames[font.category])} · {t('weights.other',{count:font.weights.length})}{font.italic?t('italicSuffix'):''}{min!==undefined&&<> · {Number.isFinite(min)?t('from {min} mm',{min:formatNumber(min)}):t('too thin')}</>}</small>
     {selected&&<span className="stitch-check" aria-hidden="true">✓</span>}
   </Button>;
 }
 
-export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef)=>void}) {
+export function FontPicker({value,size,onChange}:{value:FontRef;size:number;onChange:(ref:FontRef)=>void}) {
   const {t,formatNumber}=useT();
   const filters=filtersFor(t);
   const id=useId(),button=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),list=useRef<HTMLDivElement>(null),input=useRef<HTMLInputElement>(null),file=useRef<HTMLInputElement>(null);
@@ -42,8 +43,9 @@ export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef
     let pool:(CatalogFont&{upload?:boolean})[]=filter==='mine'?mine:filter==='recommended'&&!q?Object.keys(recommended).map(r=>fonts.find(f=>f.id===r)).filter((f):f is CatalogFont=>!!f)
       :filter==='all'||filter==='recommended'?[...mine,...fonts]:fonts.filter(f=>f.category===filter);
     if(q)pool=pool.filter(f=>f.family.toLowerCase().includes(q));
+    if(filter==='recommended')pool.sort((a,b)=>Number((minSize(a,weightFor(a,value.weight,size))??0)>size)-Number((minSize(b,weightFor(b,value.weight,size))??0)>size));
     return pool;
-  },[fonts,uploads,query,filter]);
+  },[fonts,uploads,query,filter,size,value.weight]);
   useEffect(()=>{setActive(0);setScroll(0);if(list.current)list.current.scrollTop=0;},[query,filter]);
   function place(){
     const rect=button.current!.getBoundingClientRect(),width=Math.min(340,window.innerWidth-24);
@@ -52,7 +54,7 @@ export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef
   }
   function pick(font:CatalogFont&{upload?:boolean}){
     menu.current?.hidePopover();button.current?.focus();
-    onChange(font.upload?{source:'upload',id:font.id,family:font.family,weight:font.weights[0],italic:font.italic,subsets:[]}:refFor(font,value.weight,value.italic));
+    onChange(font.upload?{source:'upload',id:font.id,family:font.family,weight:font.weights[0],italic:font.italic,subsets:[]}:refFor(font,value.weight,value.italic,size));
   }
   function reveal(index:number){
     const el=list.current;if(!el)return;
@@ -81,7 +83,7 @@ export function FontPicker({value,onChange}:{value:FontRef;onChange:(ref:FontRef
       <div ref={list} id={`${id}-list`} className="font-list" role="listbox" aria-label={t("Fonts")} style={{height}} onScroll={e=>setScroll(e.currentTarget.scrollTop)}>
         <div style={{height:shown.length*ROW,position:'relative'}}>
           {shown.slice(first,last).map((font,i)=><div key={font.id} style={{position:'absolute',top:(first+i)*ROW,left:0,right:0,height:ROW}}>
-            <FontRow font={font} id={`${id}-${font.id}`} selected={font.id===value.id} active={first+i===active} onPick={()=>pick(font)}/>
+            <FontRow font={font} weight={value.weight} size={size} subdued={filter==='recommended'&&(minSize(font,weightFor(font,value.weight,size))??0)>size} id={`${id}-${font.id}`} selected={font.id===value.id} active={first+i===active} onPick={()=>pick(font)}/>
           </div>)}
         </div>
         {!shown.length&&<p className="empty-list">{fonts.length||error?t("No matching fonts"):t("Loading fonts…")}</p>}

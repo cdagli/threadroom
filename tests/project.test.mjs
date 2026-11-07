@@ -302,7 +302,7 @@ test('Non-row settings validate, retain defaults and carry centers through geome
   const {fillCenter,resolve,hasCrossStyle}=load('project'),{moveGeometry}=load('curves');
   const o={...object('Fill',[square]),fillPattern:'sweepSatin'};
   const satin=resolve(o,'woven',defaultLocks);
-  assert.deepEqual([satin.spacing,satin.pullCompensation,satin.splitLength,satin.shortStitches,satin.underlay],[.32,.4,7,true,'center']);
+  assert.deepEqual([satin.spacing,satin.pullCompensation,satin.splitLength,satin.shortStitches,satin.underlay],[.32,.4,5,true,'center'],'satin fill splits at 5 mm: it covers whole areas');
   for(const patch of [{spacing:.2},{spacing:1},{underlay:'center'},{underlay:'edge-zigzag'}])assert.ok(validProject(project({...o,...patch})));
   for(const patch of [{spacing:.19},{spacing:1.01},{underlay:'tatami'}])assert.equal(validProject(project({...o,...patch})),false);
   const circular={...o,fillPattern:'circular',center:[45,45]};

@@ -1,9 +1,22 @@
 import {createT,TranslationError,type Translator} from './i18n';
-import {fabrics, isFillKind, isRopeKind, profileDefault, resolve, ropeDefaults, type Kind, type Point, type Project, type Rails, type Resolved, type StitchObject} from './project';
+import {fabrics, isFillKind, isRopeKind, profileDefault, resolve, ropeDefaults, underlayOptions, type Kind, type Point, type Project, type Rails, type Resolved, type StitchObject} from './project';
 import {splineBeziers,sampleCubic} from './spline';
-import {mergedOutline, transformText} from './text';
+import {autoTextPattern, layoutText, mergedOutline, transformText, type FontLike} from './text';
 import {transformGuides} from './angle-guides';
-import {satinTextShapes} from './satin-lettering';
+import {layoutSatinText, satinTextShapes} from './satin-lettering';
+
+// Shared text relayout; callers load outline fonts before entering this pure path.
+export function layoutObject(o:StitchObject,fonts:FontLike[]=[]):StitchObject {
+  if(!o.text)return o;
+  if(o.text.satin)return {...o,kind:'satin-block',text:{...o.text,autoStitch:false},rings:layoutSatinText(o.text).rings};
+  if(!fonts.length)return o;
+  const rings=layoutText(o.text,fonts,!isFillKind(o.kind)).rings;
+  if(o.kind!=='fill'||!o.text.autoStitch)return {...o,rings};
+  const fillPattern=autoTextPattern(rings),satin=fillPattern==='sweepSatin';
+  const underlay=o.underlay===undefined||underlayOptions(satin?'satin':'fill').includes(o.underlay)?o.underlay:'edge';
+  const spacing=o.spacing!==undefined&&(o.spacing<(satin?.2:.3)||o.spacing>(satin?1:2))?undefined:o.spacing;
+  return {...o,rings,fillPattern,underlay,spacing};
+}
 
 // Interpolating Catmull–Rom splines: the curve passes through every anchor.
 // The compiler receives flattened millimetre geometry; projects retain anchors.
@@ -101,7 +114,7 @@ export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
 }
 function switchKind(o:StitchObject,kind:Kind):StitchObject {
   if(isFillKind(kind)&&!isClosedShape(o))return o;
-  if(o.text)return {...o,kind:kind==='manual'?'running':kind};
+  if(o.text)return {...o,kind:kind==='manual'?'running':kind,text:kind==='fill'?o.text:{...o.text,autoStitch:false}};
   if(o.curve&&kind==='manual'){const {curve,...plain}=o;return {...plain,kind,rings:[curve.points]};}
   if(o.curve)return {...o,kind,rings:[curveRing(o.curve,!isFillKind(kind))]};
   return {...o,kind,rings:isClosedShape(o)?reclose(o.rings,!isFillKind(kind)):o.rings};

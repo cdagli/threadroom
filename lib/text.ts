@@ -21,6 +21,7 @@ export type TextSpec={
   path?:Point[]; offset:number; reverse:boolean; below:boolean; // follow a path
   origin:Point; rotation:number; // centre and angle for straight, arc and wave
   border?:TextBorder;
+  autoStitch?:boolean; // choose the outline fill from its mean stroke width on layout
   satin?:{font:SatinFontId;columnWidth:number}; // column width as % of capital height
   affine?:[number,number,number,number,number,number]; // post-layout transform for stretch, shear and reflection
 };
@@ -30,6 +31,38 @@ export type GlyphLike={index:number;advanceWidth?:number;getPath(x:number,y:numb
 export type FontLike={unitsPerEm:number;tables:{os2?:{sCapHeight?:number}};charToGlyph(c:string):GlyphLike;charToGlyphIndex(c:string):number;getKerningValue(a:GlyphLike,b:GlyphLike):number};
 
 export const textLimits={content:300,size:[3,150] as const,tracking:[-30,150] as const,lineHeight:[.8,4] as const,bend:[-100,100] as const,waveHeight:[0,1.5] as const,waveLength:[1,20] as const,borderWidth:[.5,4] as const};
+
+export const textSatinThreshold=3; // mean stroke width, mm
+
+// Mean stroke ≈ 2·nonzero union area / summed contour length, including counters.
+// check.raster imports curves/text, so integrate nonzero scanline spans here without
+// its grid and distance maps. The same adaptive scanline resolution bounds the work.
+export function textStroke(rings:Point[][]):number {
+  let perimeter=0,minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const r of rings)for(let i=0;i<r.length;i++){
+    const [x,y]=r[i],b=r[(i+1)%r.length];
+    perimeter+=Math.hypot(b[0]-x,b[1]-y);
+    minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+  }
+  if(!perimeter||maxY<=minY)return 0;
+  const rows=Math.ceil((maxY-minY)/Math.max(.06,Math.sqrt((maxX-minX)*(maxY-minY)/150000))),step=(maxY-minY)/rows;
+  let area=0;
+  for(let j=0;j<rows;j++){
+    const y=minY+(j+.5)*step,hits:[number,number][]=[];
+    for(const r of rings)for(let i=0;i<r.length;i++){
+      const a=r[i],b=r[(i+1)%r.length];
+      if((a[1]<=y&&y<b[1])||(b[1]<=y&&y<a[1]))hits.push([a[0]+(y-a[1])*(b[0]-a[0])/(b[1]-a[1]),b[1]>a[1]?1:-1]);
+    }
+    hits.sort((a,b)=>a[0]-b[0]);
+    let winding=0,start=0;
+    for(const [x,d] of hits){if(!winding)start=x;winding+=d;if(!winding)area+=(x-start)*step;}
+  }
+  return 2*area/perimeter;
+}
+
+export function autoTextPattern(rings:Point[][]):'sweepSatin'|'tatami' {
+  return textStroke(rings)<=textSatinThreshold?'sweepSatin':'tatami';
+}
 
 export function defaultText(font:FontRef,origin:Point,content:string|undefined=undefined,t:Translator=createT('en')):TextSpec {
   return {content:content??t('Your text'),font,size:12,tracking:0,lineHeight:1.6,align:'center',layout:'straight',bend:25,waveHeight:.3,waveLength:5,offset:50,reverse:false,below:false,origin,rotation:0};
@@ -190,6 +223,7 @@ const point=(p:unknown)=>Array.isArray(p)&&p.length===2&&p.every(n=>finite(n,[-1
 export function validText(value:unknown):value is TextSpec {
   if(!value||typeof value!=='object')return false;
   const t=value as TextSpec,f=t.font;
+  if(t.autoStitch!==undefined&&typeof t.autoStitch!=='boolean')return false;
   if(t.affine!==undefined&&(!Array.isArray(t.affine)||t.affine.length!==6||!t.affine.every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=10000)||Math.abs(t.affine[0]*t.affine[3]-t.affine[1]*t.affine[2])<1e-8))return false;
   if(typeof t.content!=='string'||t.content.length>textLimits.content)return false;
   if(!f||!['catalog','upload'].includes(f.source)||typeof f.id!=='string'||!/^[a-z0-9-]{1,80}$/.test(f.id)||typeof f.family!=='string'||!finite(f.weight,[100,1000])||typeof f.italic!=='boolean'||!Array.isArray(f.subsets)||f.subsets.some(s=>typeof s!=='string'))return false;

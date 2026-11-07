@@ -19,7 +19,7 @@ import {Fragment, Profiler, useEffect, useLayoutEffect, useRef, useState, useMem
 
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
 import {bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
-import {curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
+import {layoutObject as layoutTextObject, curvePoints, curveRing, setCorner, isCorner, draftRails, withRails, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {fitFreehand} from '@/lib/spline';
 import {clientToWorld, fitViewport, keepViewportOnResize, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
@@ -37,7 +37,7 @@ import {SVGImportChoice,ExportImageButton} from './io-controls';
 import {DensityHeat,DensityLegend,StitchDiagnostics,useDensity} from './density-view';
 import {exportSVG} from '@/lib/svg-export';
 import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarnings, stitchWarnings, type Box, type Warning} from '@/lib/check';
-import {defaultText, fitTextInHoop, layoutText, textSourcePoint, type TextSpec} from '@/lib/text';
+import {defaultText, fitTextInHoop, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
 import {layoutSatinText,convertSatinText,ensureSatinFonts,satinFontsLoaded} from '@/lib/satin-lettering';
 import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
@@ -361,10 +361,10 @@ function StudioEditor() {
   function stopPlayback(){playRequest.current++;setPlaying(false);setProgress(1);}
   function invalidate(){revision.current++;traceTask.cancel();svgTask.cancel();hoverTask.cancel();clickTask.cancel();lastStitch.current=null;setStitchHover(null);compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
   function layoutObject(o:StitchObject):StitchObject{
-    if(!o.text)return o;if(o.text.satin)return {...o,kind:'satin-block',rings:layoutSatinText(o.text).rings};
+    if(!o.text)return o;if(o.text.satin)return layoutTextObject(o);
     // A restored project has no fonts loaded yet: fetch them and relay out once ready instead of keeping stale outlines.
     const fonts=loadedFonts(o.text.font);if(!fonts.length){loadTextFonts(o.id,o.text);return o;}
-    return {...o,rings:layoutText(o.text,fonts,!isFillKind(o.kind)).rings};
+    return layoutTextObject(o,fonts);
   }
   function relayout(id:string){
     const p=current.current,o=p.objects.find(x=>x.id===id);if(!o?.text)return;
@@ -392,7 +392,7 @@ function StudioEditor() {
     if(patch.font||patch.content!==undefined||item.text.satin&&!text.satin)loadTextFonts(item.id,text);
   }
   function placeText(p:Point){
-    const text=defaultText(lastFont.current,p,undefined,t),o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
+    const text={...defaultText(lastFont.current,p,undefined,t),autoStitch:true},o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
     loadTextFonts(o.id,text,true);setSettingsCollapsed(false);
     textFocus.current=true;requestAnimationFrame(focusTextReady);
@@ -423,6 +423,7 @@ function StudioEditor() {
   function drawMapPath(ids:string[]){chooseTool('open');cancelDrawing();mapPathSelection.current=ids;requestAnimationFrame(()=>svg.current?.focus({preventScroll:true}));}
   function updateObject(patch:Partial<StitchObject>){if(!item||item.locked)return;if(patch.kind&&patch.kind!==item.kind&&isFillKind(patch.kind)&&!isClosedShape(item))return;
     let next={...(patch.kind?changeStitchKind(item,patch.kind):item),...patch};if(patch.color!==undefined&&!patch.thread)delete next.thread;for(const key of Object.keys(patch) as (keyof StitchObject)[])if(patch[key]===undefined)delete next[key];
+    if(next.text&&Object.hasOwn(patch,'fillPattern'))next.text={...next.text,autoStitch:false};
     if(next.text&&patch.kind){const relaid=layoutObject(next);next=relaid!==next?relaid:{...next,rings:reclose(next.rings,!isFillKind(patch.kind))};if(patch.kind==='manual')next.kind='running';}commit({...project,objects:project.objects.map(o=>o.id===selected?next:o)});}
   // Undo/redo keeps the selected objects that still exist; it never jumps to an unrelated object.
   function restoreSelection(p:Project){if(!selection.length&&p.images?.some(i=>i.id===imageSel))return;setSelection(ids=>{const kept=ids.filter(id=>p.objects.some(o=>o.id===id));return kept.length===ids.length?ids:kept;});}
@@ -1221,7 +1222,7 @@ function StudioEditor() {
         <SewingSpeed project={project} onChange={commit}/>
         <p className="fabric-advice">{t("Stabilizer:")} {t(fabric.stabilizer)} {t("· Topping:")} {t(fabric.topping)}</p>
         <div className="setting-grid setup-locks"><label>{t("Tie-in")}<Select disabled={hasDraft} value={project.locks.tieIn} onChange={e=>setLocks({tieIn:e.target.value as Lock})}>{lockOptions}</Select></label><label>{t("Tie-off")}<Select disabled={hasDraft} value={project.locks.tieOff} onChange={e=>setLocks({tieOff:e.target.value as Lock})}>{lockOptions}</Select></label>
-          <label>{t("Lock size · mm")}<Input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>{t("Trim jumps longer than · mm")}<Input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title={t("Shorter jumps sew as one stitch without a trim")} onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
+          <label>{t("Lock size · mm")}<Input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>{t("Trim jumps longer than · mm")}<Input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title={t("Shorter jumps sew as one stitch only where later stitches cover it; over bare fabric, moves longer than 1 mm are trimmed")} onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
       </section>}
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>

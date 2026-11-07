@@ -8,13 +8,10 @@ import type {FontRef} from './text';
 const CDN='https://cdn.jsdelivr.net/fontsource/fonts';
 export type Category='s'|'r'|'d'|'h'|'m';
 export const categoryNames:Record<Category, Key>={s:'Sans serif',r:'Serif',d:'Display',h:'Script',m:'Monospace'};
-export type CatalogFont={id:string;family:string;category:Category;weights:number[];italic:boolean;subsets:string[]};
+export type CatalogFont={id:string;family:string;category:Category;weights:number[];italic:boolean;subsets:string[];min?:number[]};
 export type UploadedFont={id:string;family:string;weight:number;italic:boolean};
-// "Best for stitching": faces whose strokes stay at least 1 mm wide as fill stitches at
-// the default 12 mm letter height, with every Turkish letter. Each entry is the lightest
-// weight that qualifies (under ~2% of the letters thinner than 1 mm by the design check's
-// raster); choosing the font raises a lighter weight to it. Hairline scripts and
-// high-contrast serifs (Dancing Script, Great Vibes, Playfair Display) are not listed.
+// Curated featured ordering for "Best for stitching". These weights are a fallback
+// for older catalogue rows without per-weight minimum clean fill heights.
 export const recommended:Record<string,number>={
   nunito:700,'baloo-2':400,quicksand:700,comfortaa:700,'varela-round':400,'m-plus-rounded-1c':700,grandstander:400,dynapuff:400,gluten:400,
   poppins:700,montserrat:700,rubik:400,kanit:400,signika:400,'open-sans':700,roboto:700,inter:700,raleway:700,'josefin-sans':700,barlow:700,dosis:700,oswald:700,'bebas-neue':400,anton:400,'archivo-black':400,'fjalla-one':400,'russo-one':400,'paytone-one':400,
@@ -29,15 +26,34 @@ export const weightNames:Record<number, Key>={100:'Thin',200:'Extra light',300:'
 
 let catalog:Promise<CatalogFont[]>|null=null;
 export function loadCatalog(t:Translator=createT('en')):Promise<CatalogFont[]> {
-  catalog??=fetch('/fonts/catalog.json').then(r=>{if(!r.ok)throw new Error();return r.json();}).then((data:{fonts:[string,string,Category,number[],number,string[]][]})=>
-    data.fonts.map(([id,family,category,weights,italic,subsets])=>({id,family,category,weights,italic:!!italic,subsets})))
+  catalog??=fetch('/fonts/catalog.json').then(r=>{if(!r.ok)throw new Error();return r.json();}).then((data:{fonts:[string,string,Category,number[],number,string[],number[]?][]})=>
+    data.fonts.map(([id,family,category,weights,italic,subsets,min])=>({id,family,category,weights,italic:!!italic,subsets,min})))
     .catch(()=>{catalog=null;throw new TranslationError(t,"The font list could not be loaded. Check your connection and try again.");});
   return catalog;
 }
-export function refFor(font:CatalogFont,weight:number,italic:boolean):FontRef {
+/** Minimum clean fill letter height in mm; Infinity means this weight never passes. */
+export function minSize(font:CatalogFont,weight:number):number|undefined {
+  const min=font.min?.[font.weights.indexOf(weight)];
+  return min===0?Infinity:min;
+}
+function fallbackWeight(font:CatalogFont,weight:number):number {
   weight=Math.max(weight,recommended[font.id]??0);
-  const nearest=font.weights.reduce((best,w)=>Math.abs(w-weight)<Math.abs(best-weight)?w:best,font.weights[0]);
-  return {source:'catalog',id:font.id,family:font.family,weight:nearest,italic:italic&&font.italic,subsets:font.subsets};
+  return font.weights.reduce((best,w)=>Math.abs(w-weight)<Math.abs(best-weight)?w:best,font.weights[0]);
+}
+/** Prefer the lightest clean weight at or above the request; otherwise the best
+ * minimum height, breaking ties toward the heaviest weight. Never mutate the font. */
+export function weightFor(font:CatalogFont,weight:number,size:number):number {
+  if(!font.min)return fallbackWeight(font,weight);
+  const clean=font.weights.filter(w=>w>=weight&&(minSize(font,w)??Infinity)<=size);
+  if(clean.length)return Math.min(...clean);
+  return font.weights.reduce((best,w)=>{
+    const min=minSize(font,w)??Infinity,bestMin=minSize(font,best)??Infinity;
+    return min<bestMin||(min===bestMin&&w>best)?w:best;
+  },font.weights[0]);
+}
+export function refFor(font:CatalogFont,weight:number,italic:boolean,size?:number):FontRef {
+  const chosen=size!==undefined&&font.min?weightFor(font,weight,size):fallbackWeight(font,weight);
+  return {source:'catalog',id:font.id,family:font.family,weight:chosen,italic:italic&&font.italic,subsets:font.subsets};
 }
 
 function subsetOrder(ref:FontRef) {

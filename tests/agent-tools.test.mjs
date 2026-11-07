@@ -43,6 +43,17 @@ test('Object patches mirror the settings panel rules',()=>{
   assert.match(patchObject({...line,locked:true},{name:'x'}).error,/locked/);
   assert.equal(patchObject(line,{matchThread:true}).object.thread.brand,'brother');
 });
+test('Explicit fill pattern patches disable automatic text stitching, including resets and the current pattern',()=>{
+  const {defaultText}=load('text'),{defaultFont}=load('fonts');
+  const text={...defaultText(defaultFont,[50,50],'HI'),autoStitch:true};
+  const o={...object('HI',[[[10,10],[20,10],[20,20],[10,20]]]),text,fillPattern:'sweepSatin',underlay:'edge'};
+  for(const fillPattern of ['sweepSatin','tatami',null,undefined]){
+    const next=patchObject(o,{fillPattern}).object;
+    assert.equal(next.text.autoStitch,false);assert.equal(o.text.autoStitch,true);
+  }
+  assert.equal(patchObject(o,{angle:45}).object.text.autoStitch,true);
+  assert.equal(patchObject(o,{kind:'running'}).object.text.autoStitch,false);
+});
 test('Thread search returns the nearest CIEDE2000 matches with rounded distances',()=>{
   assert.deepEqual(findThreads({color:'#123456'}).threads,[
     {code:'21',name:'Ultramarine',color:'#0b3d91',deltaE:8.1},
@@ -163,12 +174,13 @@ test('Point editing mirrors the point editor and is one atomic change',()=>{
 
 // Exercise the shipped tool definitions without mounting the editor. Only browser pixel loading
 // and PNG rendering are replaced; execution and schema validation use the production code.
-function toolHarness(name='agent-tools'){
+function toolHarness(name='agent-tools',fonts=[]){
   const nodeRequire=createRequire(import.meta.url),module={exports:{}},calls=[];
   const pixels={width:2,height:2,data:new Uint8ClampedArray(Array.from({length:4},()=>[10,85,163,255]).flat())};
   const source=readFileSync(new URL(`../app/${name}.tsx`,import.meta.url),'utf8')+'\nexport const testTools=tools;';
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
   const require=id=>{
+    if(id==='@/lib/fonts')return {...load('fonts'),loadCatalog:async()=>fonts};
     if(id==='@/lib/artwork-color')return {artworkPixels:async src=>{calls.push(src);return pixels;}};
     if(id==='./reference-view')return {};
     if(id==='./context-menu')return {menuLabels:{}};
@@ -198,4 +210,65 @@ test('Read-only reference tools resolve selection before the top image and never
   const samples=await invoke('sample_colors',api,{imageId:'selected',points:[[11,11]]});assert.equal(samples[0].nearest.code,'2');assert.equal(calls.at(-1),'selected-pixels');
   await assert.rejects(invoke('sample_colors',api,{imageId:'missing',points:[[11,11]]}),/Unknown reference image/);
   assert.equal(p.objects.length,0);assert.equal(p.images[0],base);
+});
+
+const textFont={id:'fixture',family:'Fixture',category:'s',weights:[400,700,800,900],italic:true,subsets:['latin'],min:[14,9,7,0]};
+function textApi(spec){
+  let p=blank(spec?[{...object('HI',[[[10,10],[20,10],[20,20],[10,20]]]),id:'text',text:spec}]:[]);
+  const api={t:createT('en'),project:()=>p,selection:[],issues:()=>[],clearError(){},notify(){},
+    select(ids){api.selection=ids;},
+    placeText(origin){const {defaultText}=load('text'),{defaultFont}=load('fonts');p=blank([{...object('HI',[[[10,10],[20,10],[20,20],[10,20]]]),id:'text',text:defaultText(defaultFont,origin)}]);},
+    async updateText(patch){p={...p,objects:p.objects.map(o=>o.id===api.selection[0]?{...o,text:{...o.text,...patch}}:o)};},
+  };
+  return api;
+}
+const fixtureText=()=>({...load('text').defaultText({source:'catalog',id:'fixture',family:'Fixture',weight:400,italic:false,subsets:['latin']},[50,50],'HI'),size:12});
+
+test('Text tools select clean font weights at the supplied size, honor explicit weights and preserve weight on size edits',async t=>{
+  const original=globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame=fn=>{queueMicrotask(fn);return 1;};
+  t.after(()=>{if(original)globalThis.requestAnimationFrame=original;else delete globalThis.requestAnimationFrame;});
+  const {invoke}=toolHarness('agent-tools',[textFont]),api=textApi();
+  await invoke('add_text',api,{content:'HI',origin:[50,50],font:'Fixture',size:8});
+  assert.equal(api.project().objects[0].text.font.weight,800);
+  await invoke('update_text',api,{id:'text',size:5});
+  assert.equal(api.project().objects[0].text.font.weight,800);
+  await invoke('update_text',api,{id:'text',font:'Fixture',size:8,weight:400});
+  assert.equal(api.project().objects[0].text.font.weight,400);
+  await invoke('update_text',api,{id:'text',font:'Fixture',size:9});
+  assert.equal(api.project().objects[0].text.font.weight,700);
+  await invoke('update_text',api,{id:'text',weight:400});
+  assert.equal(api.project().objects[0].text.font.weight,400);
+  assert.equal((await invoke('get_design',api,{})).objects[0].text.minSize,14);
+});
+test('Satin text column width can be added and edited, keeps other satin settings, and validates its limits',async t=>{
+  const original=globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame=fn=>{queueMicrotask(fn);return 1;};
+  t.after(()=>{if(original)globalThis.requestAnimationFrame=original;else delete globalThis.requestAnimationFrame;});
+  const {invoke}=toolHarness(),api=textApi();
+  await invoke('add_text',api,{content:'HI',origin:[50,50],satinFont:'simplex',columnWidth:5});
+  assert.deepEqual(api.project().objects[0].text.satin,{font:'simplex',columnWidth:5});
+  await invoke('update_text',api,{id:'text',columnWidth:40});
+  assert.deepEqual(api.project().objects[0].text.satin,{font:'simplex',columnWidth:40});
+  await invoke('update_text',api,{id:'text',satinFont:'readability'});
+  assert.deepEqual(api.project().objects[0].text.satin,{font:'readability',columnWidth:40});
+  const summary=(await invoke('get_design',api,{})).objects[0].text;
+  assert.equal(summary.columnWidth,40);assert.ok(!('minSize' in summary));
+  for(const columnWidth of [4,41,NaN,Infinity])assert.throws(()=>invoke('update_text',api,{id:'text',columnWidth}));
+  await assert.rejects(invoke('update_text',api,{id:'text',satinFont:null,columnWidth:14}),/requires satin lettering/);
+  await assert.rejects(invoke('update_text',textApi(fixtureText()),{id:'text',columnWidth:14}),/requires satin lettering/);
+});
+test('Text summaries expose per-weight minima only for known catalogue fill fonts and stay JSON-safe',()=>{
+  const spec=fixtureText(),p=textApi(spec).project();
+  const summary=text=>designSummary({...p,objects:[{...p.objects[0],text}]},{},[textFont]).objects[0].text;
+  assert.equal(summary(spec).minSize,14);
+  assert.equal(summary({...spec,font:{...spec.font,weight:800}}).minSize,7);
+  const never=summary({...spec,font:{...spec.font,weight:900}});
+  assert.equal(never.minSize,0);assert.equal(JSON.parse(JSON.stringify(never)).minSize,0);
+  assert.ok(!('minSize' in designSummary(p).objects[0].text));
+  assert.ok(!('minSize' in summary({...spec,font:{...spec.font,source:'upload'}})));
+  assert.ok(!('minSize' in summary({...spec,font:{...spec.font,weight:500}})));
+  assert.ok(!('minSize' in summary({...spec,satin:{font:'simplex',columnWidth:14}})));
+  const legacy={...textFont,min:undefined};
+  assert.ok(!('minSize' in designSummary(p,{},[legacy]).objects[0].text));
 });

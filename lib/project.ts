@@ -102,10 +102,13 @@ export const usesShortStitches=(kind:Kind)=>isSatinKind(kind)||kind==='zigzag';
 // keeps even an unsplit bite with 1 mm compensation within the machine limit.
 export const satinLimits={width:[.5,10] as const,split:[3,12] as const};
 export const satinDefaults={splitLength:7,shortStitches:true};
+// Satin fill covers whole areas: 7 mm split bites lie loose across a large shape, so it splits at 5 mm.
+export const sweepSatinSplit=5;
 export type Setting = 'spacing' | 'underlay' | 'pullCompensation' | 'splitLength' | 'shortStitches' | keyof Locks;
 // Ties are sewn only around trims: tie-in after each trim and at the start, tie-off before each trim
-// and colour change. Size 1 mm hides under fill rows and satin yet grips; jumps up to 3 mm (the
-// longest running stitch) sew as one connecting stitch instead of a trim, so no float is longer.
+// and colour change. Size 1 mm hides under fill rows and satin yet grips (smaller on tiny pieces);
+// jumps up to 3 mm (the longest running stitch) sew as one connecting stitch instead of a trim when
+// later stitches cover it; over bare fabric anything over 1 mm trims (compiler hidden_connects).
 export const lockNames: Record<Lock, Key> = {none: 'None', tack: 'Tack', triangle: 'Triangle'};
 export const lockLimits={size:[.5,1.5] as const,trim:[1,10] as const};
 export const defaultLocks: Locks = {tieIn: 'tack', tieOff: 'tack', lockSize: 1};
@@ -127,7 +130,7 @@ export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
 export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]; satinColumns?: {railPaths:[Point[],Point[]];character:number}[]};
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
   const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin';
-  const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults};
+  const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults,splitLength:sweepSatinSplit};
   const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??(sweep?sweepDefaults[key]??profileDefault(o.kind,fabric,key):profileDefault(o.kind,fabric,key));
   const underlay=(value('underlay')??'none') as Underlay;
   return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true,

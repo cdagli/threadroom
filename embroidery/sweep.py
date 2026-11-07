@@ -391,7 +391,7 @@ def route(obj, guides, at, entry, target):
     anchor = rows.field(C.fill_centroid(rings, rule))[1]
     tolerance = C.CONNECT_TOLERANCE+pull/2
     # Longer connectors (between shortened rows) are split at this length.
-    limit = max(3, length) if cycle is None else min(C.SATIN_MAX-.15, max(3, length, max(v for _, ls in cycle for v in ls)+.01))
+    limit = max(3, length) if cycle is None else min(C.LONG_STITCH-.15, max(3, length, max(v for _, ls in cycle for v in ls)+.01))
     pieces = []
     for section in rows.sections():
         current = []

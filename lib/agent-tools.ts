@@ -5,6 +5,7 @@ import {fillPatterns} from './fill-patterns';
 import {brotherThreads,deltaE2000,nearestBrother,rgbToLab,threadReference,type Thread} from './threads';
 import {circle,diamond,heart,hexagon,rect,shapeNames,star,triangle,type ShapeKind} from './shapes';
 import {textLimits} from './text';
+import {minSize,type CatalogFont} from './fonts';
 import {production} from './production';
 import {createT,en as enDictionary,tr as trDictionary,type Key,type Translator} from './i18n';
 
@@ -17,14 +18,16 @@ const roundPoint=([x,y]:Point):Point=>[r2(x),r2(y)];
 const box=(b:{x:number;y:number;width:number;height:number})=>({x:r2(b.x),y:r2(b.y),width:r2(b.width),height:r2(b.height)});
 const objectBox=(o:StitchObject)=>box(bounds([o.rails?{...o,rings:[blockOutline(o.rails)]}:o]));
 
-function summarizeObject(o:StitchObject,p:Project,index:number){
+function summarizeObject(o:StitchObject,p:Project,index:number,fonts:CatalogFont[]){
+  const font=o.text&&!o.text.satin&&o.text.font.source==='catalog'?fonts.find(f=>f.id===o.text!.font.id):undefined;
+  const min=font?minSize(font,o.text!.font.weight):undefined;
   const r=resolve(o,p.fabric,p.locks);
   return {
     id:o.id,index,name:o.name,kind:o.kind,kindName:en(kindNames[o.kind]),color:o.color,
     ...(o.thread&&{thread:`${o.thread.brand} ${o.thread.code} ${o.thread.name}`}),
     ...(o.group&&{group:o.group}),...(o.locked&&{locked:true}),...(o.hidden&&{hidden:true}),...(o.layoutOnly&&{layoutOnly:true}),
     closed:isClosedShape(o),bounds:objectBox(o),
-    ...(o.text&&{text:{content:o.text.content,size:o.text.size,font:o.text.satin?`satin:${o.text.satin.font}`:o.text.font.family,layout:o.text.layout}}),
+    ...(o.text&&{text:{content:o.text.content,size:o.text.size,font:o.text.satin?`satin:${o.text.satin.font}`:o.text.font.family,layout:o.text.layout,...(min!==undefined&&{minSize:Number.isFinite(min)?min:0}),...(o.text.satin&&{columnWidth:o.text.satin.columnWidth})}}),
     settings:{
       ...(isFillKind(o.kind)&&{angle:o.angle,fillPattern:o.fillPattern??'even',spacing:r2(r.spacing),underlay:r.underlay,...(o.fillLength!==undefined&&{fillLength:o.fillLength})}),
       ...(!isFillKind(o.kind)&&{length:o.length}),
@@ -35,14 +38,14 @@ function summarizeObject(o:StitchObject,p:Project,index:number){
   };
 }
 
-export function designSummary(p:Project,extra:Record<string,unknown>={}){
+export function designSummary(p:Project,extra:Record<string,unknown>={},fonts:CatalogFont[]=[]){
   const hoop=hoops[p.hoop],all=p.objects.filter(o=>o.rings.length);
   return {
     name:p.name,machine:p.machine,hoop:{id:p.hoop,width:hoop.width,height:hoop.height},fabric:p.fabric,fabricName:en(fabrics[p.fabric].label),
     sewingSpeed:p.sewingSpeed??production.defaultSpeed,locks:p.locks,trimJump:p.trimJump,
     units:'mm; origin is the hoop top-left corner, x right, y down',
     objectCount:p.objects.length,objectLimit,designBounds:all.length?box(bounds(all.map(o=>o.rails?{...o,rings:[blockOutline(o.rails)]}:o))):null,
-    objects:p.objects.map((o,i)=>summarizeObject(o,p,i)),
+    objects:p.objects.map((o,i)=>summarizeObject(o,p,i,fonts)),
     groups:(p.groups??[]).map(g=>({id:g.id,name:g.name,objects:p.objects.filter(o=>o.group===g.id).map(o=>o.id)})),
     images:(p.images??[]).map(i=>({id:i.id,name:i.name,x:r2(i.x),y:r2(i.y),width:r2(i.width),height:r2(i.height),rotation:i.rotation??0,opacity:i.opacity,...(i.hidden&&{hidden:true}),...(i.locked&&{locked:true})})),
     ...extra,
@@ -140,6 +143,7 @@ export function patchObject(o:StitchObject,patch:ObjectPatch):{object:StitchObje
   if(kind&&kind!==o.kind){next=changeStitchKind(o,kind);if(next.kind!==kind&&!(o.text&&kind==='manual'))return {error:`"${o.name}" can't change from ${o.kind} to ${kind} (satin blocks, satin lettering and redwork keep their kind).`};}
   const rest:Record<string,unknown>={...patch};delete rest.kind;delete rest.threadCode;delete rest.matchThread;
   next={...next,...rest} as StitchObject;
+  if(next.text&&Object.hasOwn(patch,'fillPattern'))next.text={...next.text,autoStitch:false};
   for(const [k,v] of Object.entries(rest))if(v===null||v===undefined){if(!resettable.has(k))return {error:`${k} can't be reset.`};delete (next as Record<string,unknown>)[k];}
   if(typeof next.name==='string')next.name=next.name.slice(0,40);
   if(patch.color!==undefined)delete next.thread;

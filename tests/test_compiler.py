@@ -226,6 +226,111 @@ class CompilerTests(unittest.TestCase):
         Path("tests/stitch-library.project.json").write_text(json.dumps(p))
 
 
+def sewn(result):
+    """Lengths of sewn moves, without ties, landings after a jump or travel connectors."""
+    out, after_jump = [], True
+    for c in result["commands"]:
+        if c["type"] != "stitch":
+            after_jump = True
+            continue
+        if not after_jump and not c.get("tie") and not c["travel"]:
+            out.append(math.dist((c["x"], c["y"]), (c["fromX"], c["fromY"])))
+        after_jump = False
+    return out
+
+
+class StitchQualityTests(unittest.TestCase):
+    """Machine-embroidery limits found by scripts/audit-stitches.mjs."""
+    star = [[[50+math.cos(-math.pi/2+i*math.pi/5)*(20 if i % 2 == 0 else 8), 50+math.sin(-math.pi/2+i*math.pi/5)*(20 if i % 2 == 0 else 8)] for i in range(10)]]
+
+    def test_pattern_fill_joins_are_split_and_no_stitch_is_tiny(self):
+        # Joins between sections and underlay rows used to keep the longest pattern
+        # interval as their limit and sewed 9-13 mm straight stitches across a star.
+        for pattern in ("tatami", "partitionTwill", "smallHearts", "even"):
+            result = compile_project(project(rings=self.star, fillPattern=pattern, angle=35, underlay="tatami"))
+            lengths = sewn(result)
+            self.assertLessEqual(max(lengths), C.LONG_STITCH, pattern)
+            self.assertGreaterEqual(min(lengths), .28, pattern)  # 0.35 mm before PES's 0.1 mm rounding
+        result = compile_project(project(rings=self.star, fillPattern="tatami", angle=35, underlay="tatami"))
+        self.assertLessEqual(result["stats"]["maxStitch"], 3.6)
+
+    def test_pattern_rows_keep_half_millimetre_stitches(self):
+        rows = [(30+i*.4, 20, 47.3) for i in range(12)]
+        for pattern in (id for id, p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
+            for path in C.Rows(rows, 0, pattern, [33.3, 30], .4).paths((False, 0), 2.5):
+                for a, b in zip(path, path[1:]):
+                    if a[1] == b[1]:
+                        self.assertGreaterEqual(abs(b[0]-a[0]), C.MIN_PATTERN_STITCH-1e-6, pattern)
+
+    def test_even_rows_are_staggered(self):
+        result = compile_project(project(angle=0))
+        rows = {}
+        for c in result["commands"]:
+            if c["type"] == "stitch" and abs(c["y"]-c["fromY"]) < .05 and abs(c["x"]-c["fromX"]) > 1:
+                rows.setdefault(round(c["y"], 1), []).append(c["x"])
+        ys = sorted(rows)
+        pairs = [(x, rows[b]) for a, b in zip(ys, ys[1:]) for x in rows[a]]
+        aligned = sum(any(abs(x-v) < .15 for v in nxt) for x, nxt in pairs)/len(pairs)
+        self.assertLess(aligned, .05)
+        self.assertLessEqual(result["stats"]["maxStitch"], 2.5+.15)  # PES rounding
+        # Every row still starts and ends on the outline.
+        for a, b in zip([[20, 30], [60, 30]], C.even_row([20, 30], [60, 30], 2.5, 1)[::len(C.even_row([20, 30], [60, 30], 2.5, 1))-1]):
+            self.assertEqual(a, b)
+
+    def test_motif_floats_are_split_at_long_stitch(self):
+        for pattern in ("mediumHearts", "mediumCircles", "mediumDiamond"):
+            result = compile_project(project(rings=[[[20,20],[80,20],[80,60],[20,60]]], fillPattern=pattern, fillLength=6, angle=0))
+            self.assertLessEqual(result["stats"]["maxStitch"], C.LONG_STITCH, pattern)
+        self.assertNotIn("largeHearts", C.FILL_PATTERNS)
+        self.assertNotIn("original", C.FILL_PATTERNS)
+
+    def test_cross_rows_do_not_sew_a_stitch_between_pull_points(self):
+        circle = [[[50+math.cos(i/48*2*math.pi)*5, 50+math.sin(i/48*2*math.pi)*5] for i in range(48)]]
+        result = compile_project(project("cross", circle, spacing=1.5, pullCompensation=.2, angle=35))
+        self.assertGreaterEqual(min(sewn(result)), .28)
+
+    def test_circular_fill_merges_short_arm_ends(self):
+        strip = [[[20,40],[50,40],[50,43],[20,43]]]
+        lengths = sewn(compile_project(project(rings=strip, fillPattern="circular", spacing=.4)))
+        self.assertGreaterEqual(min(lengths), .28)
+
+    def test_short_satin_columns_sew_as_dots_and_small_locks(self):
+        left, right = [[50,50],[50,50.8]], [[51.4,50],[51.4,50.8]]
+        path = C.block_path(left, right, .4)
+        self.assertGreaterEqual(len(path)-1, C.MIN_BITES)
+        self.assertGreaterEqual(min(math.dist(a, b) for a, b in zip(path[::2], path[2::2])), 2*C.MIN_DOT_SPACING-1e-9)
+        dot = {"name": "Dot", "kind": "satin-block", "color": "#c99d72", **LOCKS, "rings": [[[50.7,50],[50.7,50.8]]], "railPaths": [left, right],
+               "spacing": .4, "underlay": "center", "pullCompensation": 0, "splitLength": 7, "shortStitches": True, "length": 2.5, "angle": 0, "satinWidth": 2}
+        result = compile_project({**project(), "objects": [dot]})
+        ties = [c for c in result["commands"] if c.get("tie")]
+        self.assertTrue(ties)
+        # A 1 mm tack on a 0.8 x 1.4 mm dot reached past it (a starburst); it scales to the dot.
+        self.assertTrue(all(math.dist((c["x"], c["y"]), (c["fromX"], c["fromY"])) <= .7 for c in ties))
+
+    def test_redundant_stub_columns_are_skipped(self):
+        tail = {"railPaths": [[[40,50],[40,56]], [[41.4,50],[41.4,56]]], "character": 0}
+        stub = {"railPaths": [[[40.1,52],[40.1,52.8]], [[41.3,52],[41.3,52.8]]], "character": 0}
+        apart = {"railPaths": [[[45,52],[45,52.8]], [[46.4,52],[46.4,52.8]]], "character": 0}
+        centre = lambda c: [[(a[0]+b[0])/2, (a[1]+b[1])/2] for a, b in zip(*c["railPaths"])]
+        obj = {"kind": "satin-block", "satinColumns": [tail, stub, apart], "rings": [centre(tail), centre(stub), centre(apart)],
+               "spacing": .4, "underlay": "none", "pullCompensation": 0, "splitLength": 7, "shortStitches": True, "length": 2.5}
+        self.assertEqual(len(C.lettering_plan(obj)), 2)
+
+    def test_connecting_stitch_is_trimmed_unless_later_stitches_cover_it(self):
+        def columns(*xs):
+            # Up, then down: the second column starts beside the end of the first.
+            ys = lambda i: (50, 58) if i % 2 == 0 else (58, 50)
+            blocks = [{"railPaths": [[[x,ys(i)[0]],[x,ys(i)[1]]], [[x+1.4,ys(i)[0]],[x+1.4,ys(i)[1]]]], "character": i} for i, x in enumerate(xs)]
+            return {"name": "Text", "kind": "satin-block", "color": "#c99d72", **LOCKS, "satinColumns": blocks,
+                    "rings": [[[x+.7,ys(i)[0]],[x+.7,ys(i)[1]]] for i, x in enumerate(xs)], "spacing": .4, "underlay": "none", "pullCompensation": 0,
+                    "splitLength": 7, "shortStitches": True, "length": 2.5, "angle": 0, "satinWidth": 2}
+        trims = lambda *xs: compile_project({**project(), "objects": [columns(*xs)]})["stats"]["trims"]
+        # Letters 2 mm apart (as a dot beside its letter): the connector would float on bare fabric.
+        self.assertEqual(trims(40, 43.4), 1)
+        # Overlapping columns: the next column sews over the connector, so it stays untrimmed.
+        self.assertEqual(trims(40, 40.6), 0)
+
+
 if __name__ == "__main__":unittest.main()
 
 
@@ -692,10 +797,11 @@ def near(a, b, tolerance=.08):
 
 
 class LockAndTrimTests(unittest.TestCase):
-    def lines(self, gap, trim_jump=3, colours=("#c99d72", "#c99d72"), **locks):
+    def lines(self, gap, trim_jump=3, colours=("#c99d72", "#c99d72"), covered=False, **locks):
         p = project("running", [[[20,40],[50,40]]], **locks)
         p["trimJump"] = trim_jump
-        second = {**p["objects"][0], "rings": [[[50+gap,40],[80,40]]], "color": colours[1]}
+        # covered: the second line first runs back over the gap, hiding the connecting stitch.
+        second = {**p["objects"][0], "rings": [[[50+gap,40],[49,40],[80,40]] if covered else [[50+gap,40],[80,40]]], "color": colours[1]}
         p["objects"].append(second)
         return compile_project(p)
 
@@ -721,7 +827,7 @@ class LockAndTrimTests(unittest.TestCase):
 
     def test_jumps_below_the_threshold_sew_one_stitch_without_trim_or_ties(self):
         for gap, trim_jump, trims in ((2, 3, 0), (5, 3, 1), (5, 6, 0), (9.5, 10, 0), (2, 1, 1)):
-            result = self.lines(gap, trim_jump)
+            result = self.lines(gap, trim_jump, covered=True)
             self.assertEqual(result["stats"]["trims"], trims, (gap, trim_jump))
             self.assertEqual(pec_trims(result), trims)
             self.assertEqual(len(runs(result)), trims+1)
@@ -732,6 +838,10 @@ class LockAndTrimTests(unittest.TestCase):
                 self.assertTrue(near((joint["x"], joint["y"]), (50+gap, 40)))
                 self.assertEqual(sum(near((c["x"], c["y"]), (50,40)) for c in stitches), 1)
                 self.assertEqual(sum(near((c["x"], c["y"]), (50+gap,40)) for c in stitches), 1)
+        # A connecting stitch over open fabric would float on top: past 1 mm it trims
+        # whatever the trim distance (a diacritic dot reached from its letter).
+        for gap, trims in ((.8, 0), (2, 1), (5, 1)):
+            self.assertEqual(self.lines(gap, 10)["stats"]["trims"], trims, gap)
         # A colour change always trims, with ties on both sides.
         result = self.lines(1, 10, ("#c99d72", "#849984"))
         self.assertEqual((result["stats"]["trims"], result["stats"]["colorChanges"]), (1, 1))
@@ -822,7 +932,7 @@ class DesignCheckTests(unittest.TestCase):
         self.assertLessEqual(w["bounds"][0], 20.5)
 
     def test_long_stitches_exclude_satin_bites(self):
-        w = self.codes(self.lines([[20,20],[40,20]], [[48,20],[60,20]], trim_jump=10))["long-stitches"]
+        w = self.codes(self.lines([[20,20],[40,20]], [[48,20],[39,20],[60,20]], trim_jump=10))["long-stitches"]
         self.assertEqual((w["objectId"], w["severity"]), ("o1", "check"))
         self.assertAlmostEqual(w["values"]["longest"], 8, delta=.15)
         self.assertNotIn("long-stitches", self.codes(project("satin", [[[20,40],[60,40]]], satinWidth=10, splitLength=12)))
@@ -850,7 +960,7 @@ class DesignCheckTests(unittest.TestCase):
         self.assertNotIn("many-trims", self.codes(project("running", rings[:10])))
 
     def test_preview_marks_trims_and_travel(self):
-        result = compile_project(self.lines([[20,20],[40,20]], [[42,20],[60,20]], [[20,60],[40,60]]))
+        result = compile_project(self.lines([[20,20],[40,20]], [[42,20],[39,20],[60,20]], [[20,60],[40,60]]))
         self.assertEqual(sum(c["trim"] for c in result["commands"]), result["stats"]["trims"])
         self.assertTrue(all(c["type"] == "jump" for c in result["commands"] if c["trim"]))
         travel = [c for c in result["commands"] if c["travel"]]
@@ -900,8 +1010,8 @@ class FillPatternTests(unittest.TestCase):
                     self.assertEqual(path[-1][0],60 if i % 2 == 0 else 20)
             if pattern == "tatami":
                 self.assertEqual(paths[0][1:], [[p[0],30] for p in paths[4][1:]])
-        piece = C.Rows(rows[:2],0,"original",[40,30],.5)
-        self.assertEqual(piece.paths((False,0),4)[0][-1],[56,30])
+        piece = C.Rows(rows[:2],0,"tatami",[40,30],.5)
+        self.assertEqual(piece.paths((False,0),4)[0][-1],[59,30])
         piece.skip_last = False
         self.assertEqual(piece.paths((False,0),4)[0][-1],[60,30])
         self.assertEqual(C.pattern_offset("offset-columns", 6, 4), 6)
@@ -940,7 +1050,7 @@ class FillPatternTests(unittest.TestCase):
 
     def test_exact_cycles_examples_and_shear(self):
         cycle = lambda id: C.pattern_cycle(id,4,.2)[0]
-        for id,n in {"smallHearts":20,"mediumHearts":40,"largeHearts":60,"smallDiamond":10,"mediumDiamond":30,"largeDiamond":60,"smallCircles":18,"mediumCircles":38,"largeCircles":58,"hexweave":36,"partitionChain":40,"partitionStars":40,"zigzag":40,"heartbeat":21,"spiral":40,"staircase":40,"rainfall":30,"tornado":75,"partitionWaveWalk":21}.items():
+        for id,n in {"smallHearts":20,"mediumHearts":40,"smallDiamond":10,"mediumDiamond":30,"smallCircles":18,"mediumCircles":38,"hexweave":36,"partitionChain":40,"partitionStars":40,"zigzag":40,"heartbeat":21,"spiral":40,"staircase":40,"rainfall":30,"tornado":75,"partitionWaveWalk":21}.items():
             self.assertEqual(len(cycle(id)),n,id)
         for id,index,offset,lengths in [("smallHearts",0,.693,[.149,2.316,.149,1.387]),("smallHearts",10,.407,[3.187,.813]),("smallDiamond",1,.8,[.4,1.6]),("smallCircles",1,1.128,[1.744,2.256]),("rainfall",1,1.591,[4.716]),("partitionChain",0,1.715,[.571,3.429,.571,3.429]),("partitionStars",15,0,[.058,7.884,.058])]:
             o,ls = cycle(id)[index]
@@ -962,7 +1072,7 @@ class FillPatternTests(unittest.TestCase):
         # Ember's falsy-amplitude quirk is intentional.
         self.assertEqual(C.pattern_cycle("waves",4,.2,{"amplitude":0}),C.pattern_cycle("waves",4,.2))
 
-    def test_square_penetration_fixtures_machine_limit_and_unbroken_tile_floats(self):
+    def test_square_penetration_fixtures_machine_limit_and_split_tile_floats(self):
         import hashlib
         expected = json.loads(Path("tests/fill-pattern-penetrations.json").read_text())
         for id in (id for id,p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
@@ -975,9 +1085,10 @@ class FillPatternTests(unittest.TestCase):
             params = {f["key"]:f["max"] for f in C.FILL_PATTERNS[id].get("params",[])}
             result = compile_project(project(fillPattern=id,patternParams=params,fillLength=6,angle=37,spacing=.3,handStitch=5))
             self.assertLessEqual(result["stats"]["maxStitch"],12.7,id)
-        for id in ("largeHearts","largeDiamond","largeCircles","partitionStars"):
-            r = compile_project(project(fillPattern=id,fillLength=4,angle=0,spacing=.3))
-            self.assertGreater(r["stats"]["maxStitch"],7,id)
+        # Motif floats longer than 7 mm loosen and snag: they are split at LONG_STITCH.
+        for id in ("mediumHearts","mediumDiamond","mediumCircles","partitionStars"):
+            r = compile_project(project(fillPattern=id,fillLength=6,angle=0,spacing=.3))
+            self.assertLessEqual(r["stats"]["maxStitch"],C.LONG_STITCH,id)
             self.assertNotIn("long-stitches",[w["code"] for w in r["warnings"]],id)
 
     def test_pattern_specific_parameter_validation(self):
@@ -995,7 +1106,7 @@ class FillPatternTests(unittest.TestCase):
             C.validate(project(fillPattern="heartbeat",patternParams={"tightness":3}))
 
     def test_pattern_long_stitch_check_preserves_connector_and_float_safety(self):
-        objects = project(fillPattern="largeHearts")["objects"]
+        objects = project(fillPattern="mediumHearts")["objects"]
         for role,length,warn,limit in [("pattern",12,False,0),("pattern",12.8,True,12.7),("bite",12.8,True,12.7),("connect",8,True,7),("run",8,True,7)]:
             result = C.design_check([(20,20,0,"land"),(20+length,20,0,role)],[],objects)
             found = [w for w in result if w["code"] == "long-stitches"]
@@ -1090,7 +1201,7 @@ class FillSettingsTests(unittest.TestCase):
     def test_unset_settings_preserve_baseline_bear_and_quiet_patterns(self):
         import hashlib
         bear = node("demo",None)
-        self.assertEqual(hashlib.sha256(compile_project(bear)["pes"].encode()).hexdigest(),"ed5cb6963af3c5e265158a214cda92f09787818a163805888bb7aca0a18debab")
+        self.assertEqual(hashlib.sha256(compile_project(bear)["pes"].encode()).hexdigest(),"3039f85137b668b64d23a6b9087cd5390a4ed4452f0a9286728bbaa5da0bc486")
         for pattern in (id for id,p in C.FILL_PATTERNS.items() if p["mode"] != "engine"):
             p = copy.deepcopy(bear)
             for o in p["objects"]:
@@ -1215,8 +1326,8 @@ class NonRowFillTests(unittest.TestCase):
 
     def test_legacy_pes_remains_byte_identical_to_original_compiler(self):
         import hashlib
-        fixtures = [(node('demo',None),'ed5cb6963af3c5e265158a214cda92f09787818a163805888bb7aca0a18debab'),
-                    (resolved(json.loads(Path('tests/stitch-library.project.json').read_text())),'9eec449e41875b5dc3669d05f727f12bba6b8def0937e178c9a278d497bb0a89')]
+        fixtures = [(node('demo',None),'3039f85137b668b64d23a6b9087cd5390a4ed4452f0a9286728bbaa5da0bc486'),
+                    (resolved(json.loads(Path('tests/stitch-library.project.json').read_text())),'e5ffd18182d7e98caf72c12e335ef43f30b436670ec0b4bf8ee51a06f131a647')]
         for p,expected in fixtures:
             self.assertEqual(hashlib.sha256(compile_project(p)['pes'].encode()).hexdigest(),expected)
 

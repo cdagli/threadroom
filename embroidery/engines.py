@@ -41,16 +41,16 @@ def connector(a, b, rings, region, grid, tolerance=.001):
     return boundary
 
 
-def clean(path, region=None, tolerance=.001):
-    """Merge sub-0.35 mm penetrations, leaving room for PES rounding."""
+def clean(path, region=None, tolerance=.001, minimum=.35):
+    """Merge penetrations closer than minimum (default 0.35 mm, leaving room for PES rounding)."""
     if not path:
         return []
     out = [path[0]]
     for p in path[1:]:
-        if math.dist(out[-1],p) >= .35:
+        if math.dist(out[-1],p) >= minimum:
             out.append(p)
     if len(out)>1 and math.dist(out[-1],path[-1]) > 1e-7:
-        if math.dist(out[-2],path[-1]) >= .35 and (region is None or clear(out[-2],path[-1],region,tolerance)):
+        if math.dist(out[-2],path[-1]) >= minimum and (region is None or clear(out[-2],path[-1],region,tolerance)):
             out[-1] = path[-1]
     return out
 
@@ -231,6 +231,7 @@ def route_circular(obj, at, entry, target):
     arms = circular_arms(center,radius,obj['spacing'],length)
     lines = clip_lines([arms[1][::-1]+arms[0]],rings,rule)
     region = C.Region(rings,rule)
-    paths = [clean(C.tolerant_path(line,length,min(.2,obj["spacing"]/2)),region) for line in lines]
+    # Spiral arms clipped by the outline leave short ends; merge them to the 0.5 mm floor.
+    paths = [clean(C.tolerant_path(line,length,min(.2,obj["spacing"]/2)),region,minimum=.5) for line in lines]
     pieces = [[(p,min(length,C.SATIN_MAX-.15))] for p in paths if len(p)>1]
     return route_pieces(obj,pieces,at,entry,target)

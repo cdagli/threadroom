@@ -57,7 +57,7 @@ Where `document.modelContext` doesn't exist, registration does nothing.
 | `update_objects` | Stitch settings, colour or Brother thread, stitch kind, density, underlay, ties, entry and exit |
 | `add_shape` | Circle, rectangle, star, triangle, diamond, hexagon, heart |
 | `add_path` | Open line, closed fill, satin block or manual points, with corner or smooth anchors |
-| `add_text` / `update_text` | Lettering with catalogue or satin fonts, layout, size and position; convert to shapes |
+| `add_text` / `update_text` | Lettering with catalogue or satin fonts, layout, size and position; catalogue font choices use a clean weight for the letter height unless `weight` is explicit; size edits preserve weight. Satin `columnWidth` is 5–40% of capital height. `get_design` text includes `minSize` in mm when known (0 = never clean) and satin `columnWidth`; convert to shapes |
 | `get_points` | The editable anchors of one object, by ring and index: curve anchors with corner flags, satin-block rails (rung k is index k on both rails) or polyline points, plus the start and end points |
 | `edit_points` | One undo step of point edits: `move` (`to` or `by`), `insert` (`afterIndex`, `at`, `corner`), `remove`, `set_corner`, `set_end` (entry/exit, `null` for automatic) |
 | `transform_objects` | Move, scale, rotate, set position or size, align |

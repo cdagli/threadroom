@@ -3,14 +3,74 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import opentype from 'opentype.js';
 import {load} from './load-lib.mjs';
-const {layoutText,defaultText,transformText,validText,mergedOutline,fitTextInHoop}=load('text');
-const {moveGeometry,geometryPayload}=load('curves');
+const {layoutText,defaultText,transformText,validText,mergedOutline,fitTextInHoop,textStroke,autoTextPattern,textSatinThreshold}=load('text');
+const {moveGeometry,geometryPayload,layoutObject,changeStitchKind}=load('curves');
 const {object,validProject,bounds}=load('project');
 const font=name=>opentype.parse(readFileSync(new URL(`./fixtures/${name}`,import.meta.url)).buffer);
 const latin=font('nunito-latin-700-normal.ttf'),ext=font('nunito-latin-ext-700-normal.ttf');
 const ref={source:'catalog',id:'nunito',family:'Nunito',weight:700,italic:false,subsets:['latin','latin-ext']};
 const box=rings=>bounds([{rings}]);
 const spec=(patch={})=>({...defaultText(ref,[50,50],'HI'),...patch});
+
+test('Stroke estimate uses nonzero union area, counters and closed contour lengths',()=>{
+  const square=[[0,0],[6,0],[6,6],[0,6]],hole=[[2,2],[2,4],[4,4],[4,2]];
+  assert.ok(Math.abs(textStroke([square])-3)<1e-10);
+  assert.ok(Math.abs(textStroke([square,hole])-2)<.01,'subtract the counter area and include its perimeter');
+  const overlapping=square.map(([x,y])=>[x+3,y]);
+  assert.ok(Math.abs(textStroke([square,overlapping])-2.25)<1e-10,'overlapping same-winding letters count their union area once');
+  assert.equal(textStroke([]),0);assert.equal(textStroke([[],[[0,0],[0,0]]]),0);
+  assert.equal(textStroke([[...square,square[0]]]),textStroke([square]));
+  const rings=layoutText(spec({size:10}),[latin]).rings;
+  assert.ok(Math.abs(textStroke(rings)-1.63)<.03,'Nunito Bold HI at 10 mm has a mean stroke near 1.63 mm');
+  const perimeter=rings.reduce((p,r)=>p+r.reduce((s,a,i)=>{const b=r[(i+1)%r.length];return s+Math.hypot(b[0]-a[0],b[1]-a[1]);},0),0);
+  assert.ok(Math.abs(textStroke(rings)-2*load('check').raster(rings,'nonzero').area/perimeter)<.03);
+});
+
+test('Automatic outline fill uses satin through the 3 mm stroke threshold and tatami above it',()=>{
+  assert.equal(textSatinThreshold,3);
+  assert.equal(autoTextPattern([[[0,0],[6,0],[6,6],[0,6]]]),'sweepSatin');
+  assert.equal(autoTextPattern([[[0,0],[6.1,0],[6.1,6.1],[0,6.1]]]),'tatami');
+  assert.equal(autoTextPattern(layoutText(spec({size:8}),[latin]).rings),'sweepSatin');
+  assert.equal(autoTextPattern(layoutText(spec({size:30}),[latin]).rings),'tatami');
+});
+
+test('Shared text relayout reselects only opted-in outline fills and preserves valid settings',()=>{
+  const base={...object('HI',[]),fillPattern:'tatami',underlay:'edge',text:spec({size:8,autoStitch:true})};
+  const small=layoutObject(base,[latin]);
+  assert.equal(small.fillPattern,'sweepSatin');assert.equal(small.underlay,'edge');assert.equal(base.fillPattern,'tatami');
+  const large=layoutObject({...small,text:{...small.text,size:30}},[latin]);
+  assert.equal(large.fillPattern,'tatami');assert.equal(large.underlay,'edge');
+  for(const text of [spec({size:8}),spec({size:8,autoStitch:false})])assert.equal(layoutObject({...base,text},[latin]).fillPattern,'tatami');
+  assert.equal(layoutObject({...base,text:spec({size:30}),fillPattern:'sweepSatin'},[latin]).fillPattern,'sweepSatin','legacy projects keep their pattern');
+  for(const kind of ['running','cross']){
+    const changed=changeStitchKind(small,kind);
+    assert.equal(changed.text.autoStitch,false);
+    const relaid=layoutObject(changed,[latin]);assert.equal(relaid.kind,kind);assert.equal(relaid.fillPattern,small.fillPattern);
+    assert.equal(layoutObject({...changeStitchKind(relaid,'fill'),text:{...relaid.text,size:30}},[latin]).fillPattern,'sweepSatin','returning to fill does not re-enable automatic choice');
+  }
+  assert.equal(layoutObject(base),base,'wait for fonts before choosing');
+  const project=o=>({version:1,name:'Text',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{tieIn:'tack',tieOff:'tack',lockSize:1},trimJump:3,objects:[o]});
+  const satin=layoutObject({...base,underlay:'edge-tatami',spacing:1.5},[latin]);
+  assert.equal(satin.underlay,'edge');assert.equal(satin.spacing,undefined);assert.ok(validProject(project(satin)));
+  const tatami=layoutObject({...large,underlay:'center',spacing:.2},[latin]);
+  assert.equal(tatami.underlay,'edge');assert.equal(tatami.spacing,undefined);assert.ok(validProject(project(tatami)));
+  assert.ok(validProject(project(JSON.parse(JSON.stringify(small)))));
+});
+
+test('Text autoStitch validates as an optional boolean',()=>{
+  for(const autoStitch of [undefined,true,false])assert.ok(validText(spec({autoStitch})));
+  for(const autoStitch of [null,0,1,'true',{}])assert.equal(validText(spec({autoStitch})),false);
+});
+
+test('Content and font edits use the new outlines to choose their automatic fill',()=>{
+  const text=spec({size:20,autoStitch:true}),base={...object('HI',[]),text};
+  const bold=layoutObject(base,[latin]);assert.equal(bold.fillPattern,'tatami');
+  const content=layoutObject({...bold,text:{...text,content:'M'}},[latin]);
+  assert.equal(content.fillPattern,'sweepSatin');
+  const script=font('dancing-script-latin-400-normal.ttf');
+  const changed=layoutObject({...bold,text:{...text,font:{...ref,id:'dancing-script',family:'Dancing Script',weight:400}}},[script]);
+  assert.equal(changed.fillPattern,'sweepSatin');
+});
 
 test('Capital height matches the requested letter height and centres on the origin',()=>{
   const {rings,width}=layoutText(spec({size:10}),[latin]);
