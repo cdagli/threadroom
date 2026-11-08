@@ -21,6 +21,10 @@ Each step was tried on a generated cats-and-pothos scene (Nov 2026); results are
 ## Gaps: check before you finish
 
 - **Knifed parts meet exactly edge to edge.** Pull compensation then opens a visible seam: `offset` +0.3 on all parts.
+- **Connection gaps.** Stems, petioles and midribs drawn from skeletons or by eye stop short. Every join
+  needs ≥ 0.5 mm overlap, with the covering object sewn later: extend stem ends along their tangent 1.2 mm into
+  the neighbour, add a petiole when a leaf reaches < 0.5 mm into its stem, and clip midribs inside the leaf.
+  See lessons.md "Fourth run".
 - **See-through fills.** Inspect a `capture_preview` zoomed at the seams and leaf interiors. Fix with `spacing` 0.36–0.38
   or a tatami underlay. Don't stop at "0 warnings": coverage gaps aren't a check.
 

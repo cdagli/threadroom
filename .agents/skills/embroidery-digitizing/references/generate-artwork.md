@@ -78,6 +78,10 @@ After generating, copy the final PNG to [ABSOLUTE PROJECT PATH]/agent-out/[slug]
      2. Interior regions: raw trace `offset` +0.3, so neighbours overlap instead of leaving gaps.
      3. Base cutters: copies of every region made *before* clipping, including enclosed ones. Then do
         SKILL.md step 9: `union`, `offset` +0.6 / −1.0, `subtract`.
+   - **One colour forming a connected network** (navy stems joined to dark leaf halves): flood tracing
+     returns the whole network. Vectorise offline instead: label pixels by palette, `opening` with a disk wider
+     than the stems → bodies; the remainder → skeleton → stem centre lines. Then fix the joins (lessons.md
+     "Fourth run"), because skeleton ends stop short.
    - **Scene without outlines (no shared base): fastest path.** Add one closed fill per flood-traced
      colour region, in layer order, then `offset` +0.3 on every region that sits on top of a neighbour.
      The cats-and-pothos scene (14 regions) reached 0 fail and 4 checks with no base cutting. Use the

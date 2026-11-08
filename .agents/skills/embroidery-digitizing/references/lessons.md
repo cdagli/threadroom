@@ -85,3 +85,31 @@ didn't, is in `stitch-art.md`. Key lessons:
 - Knife-split parts need `offset` +0.3, or the seams open.
 - Background Chrome tab = stalled tools and 45 s timeouts. Run work in a background queue and wake the tab with a screenshot (SKILL.md).
 - The light-leaf block had one unavoidable 30.2 mm jump: the nearest same-colour leaves sat on either side of the pot. Report it rather than distorting the art.
+
+## Fourth run: blue botanical bouquet, connection gaps (Nov 2026)
+
+A Codex-generated flat botanical (5 blues, 180×130 hoop) was vectorised offline (numpy/scikit-image/shapely
+in a scratch venv), then sent as 68 `add_path` calls: two-tone fishbone leaf halves, radial petals,
+`circular` centres and berries, satin stems and midribs. 0 fail, 4 colour changes. The user then saw
+**gaps at every connection point**: stems stopped short of flowers, buds and leaves, leaf bases floated
+off their stems, and midribs stuck out past the leaf base. Causes and fixes:
+
+| Gap | Cause | Fix |
+| --- | --- | --- |
+| Stem ends 1–2 mm short of what they join | Skeleton centre lines retract about half a stem width at each end; a satin column also ends square at its last anchor | Extend each stem end **along its tangent** (taken over the last ~3 mm, not the last segment) until it is 1.2 mm inside the neighbour it meets. Sew stems first so the neighbour covers the tip |
+| Hooked stem ends | Skeleton spurs leave an extra anchor < 1.2 mm from the end, pointing backwards | Drop end anchors closer than 1.2 mm before measuring the tangent. Two anchors 0.7 mm apart also gave a `short-stitches` check on a satin midrib |
+| Leaf floats beside its stem | Separating stems from leaf bodies (opening + dilated subtraction) shaves the leaf base; geometric "touching" (overlap 0–0.3 mm) still opens after pull compensation | Measure how deep each leaf reaches into the stem: `halfWidth − distance(leaf, stemCentreLine)`. Below 0.5 mm, add a short petiole: satin 1.3 mm in the stem colour, from 1.6 mm inside the leaf to just past the stem centre line, sewn in the stem block |
+| Midrib pokes out past the leaf | The midrib was traced from the art, but the halves were shrunk/opened | Clip each midrib to the leaf closed over its seam (`union(halves).buffer(1.5).buffer(-1.8)`); clipping to the plain union deletes the whole midrib, because it runs along the seam |
+
+- **Zero warnings don't mean connected.** No check reports a 1 mm gap between two objects. Zoom into every
+  junction of the stitch render (stem–flower, stem–stem, leaf–stem, bud–sepal, berry–twig) before reporting.
+- **Check joins numerically too.** For each line end, cast its tangent 5 mm forward and test against every
+  other object's shape (a line's shape = buffer of half its width). Fern leaflets at 0.42–0.6 mm deep
+  looked joined; stems at −0.7 mm did not.
+- **Edit in place.** Use `edit_points` (move/remove/insert anchors) for the fixes. Deleting and re-adding
+  reorders the sewing and breaks the colour blocks.
+- **"Proje başka biri tarafından değiştirildi"** (someone else changed the project) showed up mid-session
+  and the page reloaded the server copy, quietly dropping the last batch of edits. After any reload,
+  restore the bridge and re-check a known edit with `get_points` before going on. Watch the
+  `.save-indicator` aria-label ("Kaydedildi" = saved).
+- A density `gradient` ramp on a petal only exposed the underlay lattice. It didn't read as shading.

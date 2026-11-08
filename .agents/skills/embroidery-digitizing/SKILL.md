@@ -100,6 +100,8 @@ workflow below. Ask before generating if the user only described a design withou
 
 ## Rules of thumb
 
+- Joins overlap ≥ 0.5 mm: stem ends tuck 1.2 mm under what they meet, leaves reach into their stem (or get
+  a petiole), midribs stay inside the leaf. No check catches a gap, so zoom into every junction.
 - Fills ≥ 2 mm wide and ≥ 6 mm²; satin 1–7 mm wide; anything smaller becomes a line or a satin dot.
 - Never stack small fills on the base: cut them out (step 9) or the density check fires.
 - Satin on tight closed curves (rings around eyes) makes short stitches; avoid or use a bean outline.
