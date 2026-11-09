@@ -21,6 +21,7 @@ export function ToolButton({className='',...props}:ButtonProps){
   return <Button variant="ghost" size="xl" {...props} className={`ds-button--tool ${className}`}/>;
 }
 
-export function MenuItem({className='',...props}:ButtonProps){
-  return <Button variant="ghost" {...props} className={`ds-menu-item ${className}`}/>;
+// `compact` is for dense, long menus such as the canvas context menu.
+export function MenuItem({className='',compact=false,...props}:ButtonProps&{compact?:boolean}){
+  return <Button variant="ghost" size={compact?'sm':undefined} {...props} className={`ds-menu-item${compact?' ds-menu-item--compact':''} ${className}`}/>;
 }

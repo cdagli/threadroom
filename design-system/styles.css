@@ -102,8 +102,9 @@
     font-size:10px;
     line-height:12px;
   }
-  .ds-menu-item {width:100%;justify-content:flex-start;text-align:left;gap:8px}
+  .ds-menu-item {display:flex;width:100%;justify-content:flex-start;text-align:left;gap:8px}
   .ds-menu-item kbd {margin-left:auto}
+  .ds-menu-item--compact {min-height:24px;padding:3px 8px;gap:16px;font-weight:400;line-height:16px}
   .ds-menu-popover {
     width:260px;
     max-width:calc(100vw - 24px);
