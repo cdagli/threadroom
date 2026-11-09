@@ -184,7 +184,7 @@ test('Zoom limits keep anchors fixed and screen dragging moves the scene by the 
   const hoop={width:100,height:100},rect={left:0,top:0,width:1000,height:500},view={zoom:1,pan:[0,0]},client=[400,250];
   const anchor=clientToWorld(view,client,rect,hoop);
   const max=zoomViewport(view,anchor,100,hoop),min=zoomViewport(view,anchor,.01,hoop);
-  assert.equal(max.zoom,8);assert.equal(min.zoom,.5);
+  assert.equal(max.zoom,10);assert.equal(min.zoom,.5);
   assert.ok(near(clientToWorld(max,client,rect,hoop),anchor));assert.ok(near(clientToWorld(min,client,rect,hoop),anchor));
   const delta=[100,-40],next=panViewport(view,delta,viewportScale(view,rect,hoop));
   assert.ok(near(clientToWorld(next,[client[0]+delta[0],client[1]+delta[1]],rect,hoop),anchor));

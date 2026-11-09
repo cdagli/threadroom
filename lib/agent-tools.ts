@@ -3,7 +3,7 @@ import {blockOutline,changeStitchKind,curveRing,draftRails,insertGeometryPoint,i
 import {explain,fixFor,type Warning} from './check';
 import {fillPatterns} from './fill-patterns';
 import {brotherThreads,deltaE2000,nearestBrother,rgbToLab,threadReference,type Thread} from './threads';
-import {circle,diamond,heart,hexagon,rect,shapeNames,star,triangle,type ShapeKind} from './shapes';
+import {boxShape,isBoxShape,radialShapes,shapeNames,type ShapeKind} from './shapes';
 import {textLimits} from './text';
 import {minSize,type CatalogFont} from './fonts';
 import {production} from './production';
@@ -159,13 +159,12 @@ export function checked(p:Project):{project:Project}|{error:string}{
 }
 
 const outside=(rings:Point[][],hoop:{width:number;height:number})=>rings.some(r=>r.some(([x,y])=>x<0||y<0||x>hoop.width||y>hoop.height));
-const radial={circle,star,triangle,diamond,hexagon,heart};
 
-// A filled shape centred on center with the given width (and height for rectangles), as the Shapes tool draws it.
+// A filled shape centred on center with the given width (and height for rectangles, ovals and rounded rectangles), as the Shapes tool draws it.
 export function makeShape(kind:ShapeKind,center:Point,width:number,height:number,p:Project,opts:{name?:string;color?:string;kind?:Kind}={}):{object:StitchObject}|{error:string}{
   if(!shapeKinds.includes(kind))return {error:`Unknown shape "${kind}". Use one of ${shapeKinds.join(', ')}.`};
   if(!(width>=1)||!(height>=1))return {error:'Shapes must be at least 1 mm across.'};
-  const shape=kind==='rect'?rect([center[0]-width/2,center[1]-height/2],[center[0]+width/2,center[1]+height/2]):radial[kind](center,width/2);
+  const shape=isBoxShape(kind)?boxShape(kind,[center[0]-width/2,center[1]-height/2],[center[0]+width/2,center[1]+height/2]):radialShapes[kind](center,width/2);
   const curve={points:shape.points,closed:true,corners:shape.corners,spline:'levien' as const};
   const ring=curveRing(curve);if(outside([ring],hoops[p.hoop]))return {error:'The shape would extend outside the hoop. Move it inward or make it smaller.'};
   let o:StitchObject={...object(opts.name??en(shapeNames[kind]),[ring],'fill',opts.color??palette[3]),fillPattern:'tatami',curve};

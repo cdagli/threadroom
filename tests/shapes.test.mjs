@@ -1,14 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
-const shapes=load('shapes'),{circle,rect,star,triangle,diamond,hexagon,heart,shapeNames,fitRadius,fitRect}=shapes;
+const {isBoxShape,boxShape,radialShapes,shapeNames,fitRadius,fitRect}=load('shapes'),{circle,star,triangle,diamond,hexagon,heart}=radialShapes;
+const rect=(a,b,square)=>boxShape('rect',a,b,square),oval=(a,b,square)=>boxShape('oval',a,b,square),rounded=(a,b,square)=>boxShape('rounded',a,b,square);
 const {curvePoints}=load('curves');
 const near=(a,b)=>Math.abs(a-b)<1e-9;
-const outline=(kind,c,r)=>{const s=kind==='rect'?rect([c[0]-r,c[1]-r],[c[0]+r,c[1]+r]):shapes[kind](c,r);return curvePoints(s.points,true,s.corners,'levien');};
+const outline=(kind,c,r)=>{const s=isBoxShape(kind)?boxShape(kind,[c[0]-r,c[1]-r],[c[0]+r,c[1]+r]):radialShapes[kind](c,r);return curvePoints(s.points,true,s.corners,'levien');};
 const inside=(pts,h)=>pts.every(([x,y])=>x>=-1e-9&&y>=-1e-9&&x<=h.width+1e-9&&y<=h.height+1e-9);
 
 test('Shape names and radial node layouts use millimetres with their top point facing up',()=>{
-  assert.deepEqual(Object.keys(shapeNames),['circle','rect','star','triangle','diamond','hexagon','heart']);
+  assert.deepEqual(Object.keys(shapeNames),['circle','oval','rect','rounded','star','triangle','diamond','pentagon','hexagon','octagon','heart','teardrop','arrow']);
   assert.equal(shapeNames.rect,'Rectangle');assert.ok(Object.values(shapeNames).every(n=>typeof n==='string'&&n.length));
   const c=[23,31],r=12;
   for(const [make,n,start,corner,inner] of [[circle,12,Math.PI,false,1],[star,10,-Math.PI/2,true,.382],[triangle,3,-Math.PI/2,true,1],[hexagon,6,-Math.PI/2,true,1]]){
@@ -65,4 +66,17 @@ test('Rectangle fitting clamps the second corner and can keep a square in each d
     assert.ok(inside(s.points,h));assert.ok(near(Math.abs(p[0]-a[0]),Math.abs(p[1]-a[1])));
   }
   assert.deepEqual(fitRect(a,[40,50],h,true),[60,50]);assert.deepEqual(a,[30,20]);
+});
+
+test('Oval and rounded rectangle fill the dragged box and stay inside it',()=>{
+  const a=[10,20],b=[50,40],h={width:100,height:80};
+  for(const kind of ['oval','rounded']){
+    const s=boxShape(kind,a,b),pts=curvePoints(s.points,true,s.corners,'levien'),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+    assert.ok(Math.min(...xs)>=10-1e-6&&Math.max(...xs)<=50+1e-6&&Math.min(...ys)>=20-1e-6&&Math.max(...ys)<=40+1e-6,kind);
+    assert.ok(Math.max(...xs)-Math.min(...xs)>39.9&&Math.max(...ys)-Math.min(...ys)>19.9,kind);
+    assert.ok(inside(pts,h));
+  }
+  const sq=oval(a,[50,30],true),xs=sq.points.map(p=>p[0]),ys=sq.points.map(p=>p[1]);
+  assert.ok(near(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys)),'Ctrl keeps an oval round');
+  assert.equal(rounded(a,b).corners.filter(Boolean).length,8);
 });

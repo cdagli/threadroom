@@ -22,7 +22,7 @@ export function visibleCommands(commands:Command[],objects:StitchObject[],exclud
 }
 
 export type LayerRow={key:string;type:'object'|'group';index:number;end:number;name:string;ids:string[];group?:string;object?:StitchObject;collapsed?:boolean};
-export function layerRows(project:Project,collapsed:Set<string>):LayerRow[]{
+function layerRows(project:Project,collapsed:Set<string>):LayerRow[]{
   const rows:LayerRow[]=[];
   project.objects.forEach((o,index)=>{
     if(o.layoutOnly)return;
@@ -35,9 +35,21 @@ export function layerRows(project:Project,collapsed:Set<string>):LayerRow[]{
   });
   return rows;
 }
-export function layerTarget(row:LayerRow,after:boolean,wholeGroup=false){
-  const index=row.type==='group'?(after&&(wholeGroup||row.collapsed)?row.end:row.index):row.index+(after?1:0);
-  return {index,group:wholeGroup?null:row.type==='group'&&!after?null:row.group??null};
+// Layers panel order: the top of the list is the object on top of the stack (sewn last), like canvas layers.
+// Group headers stay above their members.
+export function stackRows(project:Project,collapsed:Set<string>):LayerRow[]{
+  const blocks:LayerRow[][]=[];
+  for(const row of layerRows(project,collapsed)){
+    if(row.type==='object'&&row.group!==undefined&&blocks.at(-1)?.[0].group===row.group)blocks.at(-1)!.push(row);else blocks.push([row]);
+  }
+  return blocks.reverse().flatMap(([first,...rest])=>[first,...rest.reverse()]);
+}
+// Drop target for a stackRows row; below means under the row on screen, i.e. earlier in sew order.
+export function stackTarget(row:LayerRow,below:boolean,wholeGroup=false){
+  if(row.type==='object')return {index:row.index+(below?0:1),group:wholeGroup?null:row.group??null};
+  if(!below)return {index:row.end,group:null};
+  if(wholeGroup)return {index:row.index,group:null};
+  return row.collapsed?{index:row.index,group:row.group??null}:{index:row.end,group:row.group??null};
 }
 
 // Locks: locked objects stay selectable from Layers but are skipped by canvas hits, Select all and edits.

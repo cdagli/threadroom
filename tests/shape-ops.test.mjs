@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
 const P=load('polygon'),S=load('shape-ops'),{object,defaultLocks,defaultTrimJump,validProject,demo}=load('project'),{curveRing,geometryPayload}=load('curves');
-const {checkProject,fixFor}=load('check'),{exportSVG}=load('svg-export'),{createT}=load('i18n'),{circle}=load('shapes');
+const {checkProject,fixFor}=load('check'),{exportSVG}=load('svg-export'),{createT}=load('i18n'),{radialShapes:{circle}}=load('shapes');
 const sq=(x,y,w,h=w)=>[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
 const project=(...objects)=>({version:1,name:'Shapes',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:{...defaultLocks},trimJump:defaultTrimJump,objects});
 const named=(id,rings,kind='fill',extra={})=>({...object(id,rings,kind),id,...extra});

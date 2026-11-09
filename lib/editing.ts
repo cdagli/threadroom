@@ -1,6 +1,6 @@
-import {moveGeometry} from './curves';
+import {blockOutline,moveGeometry} from './curves';
 import {designBounds,objectGeometry} from './editor-render';
-import {hoops,normalizeGroups,validProject,type Point,type Project,type StitchObject} from './project';
+import {hoops,isFillKind,isWideKind,normalizeGroups,validProject,type Point,type Project,type StitchObject} from './project';
 import {validText} from './text';
 
 export type Rect={x:number;y:number;width:number;height:number};
@@ -82,4 +82,41 @@ export function pasteSelection(p:Project,clip:Project,offset:number,id:()=>strin
   const ids=objects.map(o=>o.id),combined={...p,groups:[...(p.groups??[]),...(clip.groups??[]).map(g=>({...g,id:groups.get(g.id)!}))],objects:[...p.objects,...objects]};
   const project=transformSelection(combined,ids,translate(offset,offset));
   return project&&validProject(project)?{project:normalizeGroups(project),ids}:null;
+}
+// Marquee selection: an object is picked when its outline crosses the box, sits inside it, or (filled) encloses it.
+export function marqueeIds(p:Project,box:Rect):string[]{
+  const x0=Math.min(box.x,box.x+box.width),x1=Math.max(box.x,box.x+box.width),y0=Math.min(box.y,box.y+box.height),y1=Math.max(box.y,box.y+box.height);
+  const inside=([x,y]:Point)=>x>=x0&&x<=x1&&y>=y0&&y<=y1;
+  const cross=(a:Point,b:Point,c:Point,d:Point)=>{const o=(p:Point,q:Point,r:Point)=>Math.sign((q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0]));return o(a,b,c)!==o(a,b,d)&&o(c,d,a)!==o(c,d,b);};
+  const corners:Point[]=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],edges=corners.map((c,i)=>[c,corners[(i+1)%4]] as [Point,Point]);
+  const contains=(rings:Point[][],[x,y]:Point)=>rings.reduce((n,r)=>r.reduce((m,a,i)=>{const b=r[(i+1)%r.length];return (a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]?m+1:m;},n),0)%2===1;
+  return p.objects.filter(o=>{
+    if(o.locked||o.hidden||o.layoutOnly)return false;
+    const b=objectGeometry(o).bounds;if(b.x>x1||b.y>y1||b.x+b.width<x0||b.y+b.height<y0)return false;
+    const closed=!!o.rails||isFillKind(o.kind)||!!o.curve?.closed||!!o.text?.satin,rings=(o.rails?[blockOutline(o.rails)]:o.rings).filter(r=>r.length);
+    if(rings.some(r=>r.some(inside)))return true;
+    if(rings.some(r=>r.some((a,i)=>(i<r.length-1||closed)&&edges.some(([c,d])=>cross(a,r[(i+1)%r.length],c,d)))))return true;
+    return closed&&contains(rings,[(x0+x1)/2,(y0+y1)/2]);
+  }).map(o=>o.id);
+}
+// Click picking: the topmost object really under the point wins (inside a fill, or on a line's stitched width);
+// only when nothing is hit directly does the nearest outline within `reach` (mm) win, so halos never steal clicks.
+export function pickObject(p:Project,[x,y]:Point,reach:number):string|null{
+  const segment=(a:Point,b:Point)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/l)):0;return Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy);};
+  let near:string|null=null,best=reach;
+  for(let i=p.objects.length-1;i>=0;i--){
+    const o=p.objects[i];if(o.locked||o.hidden||o.layoutOnly)continue;
+    const b=objectGeometry(o).bounds,pad=Math.max(reach,o.satinWidth);if(x<b.x-pad||y<b.y-pad||x>b.x+b.width+pad||y>b.y+b.height+pad)continue;
+    const area=!!o.rails||isFillKind(o.kind)||!!o.text?.satin,closed=area||!!o.curve?.closed,rings=(o.rails?[blockOutline(o.rails)]:o.rings).filter(r=>r.length);
+    let edge=Infinity;for(const r of rings)for(let j=0;j<r.length;j++)if(j<r.length-1||closed||r.length===1)edge=Math.min(edge,segment(r[j],r[(j+1)%r.length]));
+    if(area){
+      let winding=0,crossings=0;
+      for(const r of rings)for(let j=0;j<r.length;j++){const a=r[j],c=r[(j+1)%r.length];if((a[1]>y)!==(c[1]>y)&&x<(c[0]-a[0])*(y-a[1])/(c[1]-a[1])+a[0]){crossings++;winding+=c[1]>a[1]?1:-1;}}
+      if(o.text||o.fillRule==='nonzero'?winding!==0:crossings%2===1)return o.id;
+      // Text is picked anywhere in its box so the gaps between letters still select it.
+      if(o.text&&x>=b.x&&y>=b.y&&x<=b.x+b.width&&y<=b.y+b.height)edge=Math.min(edge,reach/2);
+    }else if(edge<=Math.max(isWideKind(o.kind)?o.satinWidth/2:.25,reach/2))return o.id;// thin lines get half the reach as a direct hit
+    if(edge<best){best=edge;near=o.id;}
+  }
+  return near;
 }

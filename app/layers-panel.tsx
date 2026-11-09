@@ -2,7 +2,7 @@
 import {Button,Icon,IconButton,Input,SegmentedControl} from '@/design-system';
 import {useT} from './i18n';
 import {memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode} from 'react';
-import {colourRuns, layerRows, layerTarget, type ColourRun, type LayerRow} from '@/lib/layers';
+import {colourRuns, stackRows, stackTarget, type ColourRun, type LayerRow} from '@/lib/layers';
 import {brotherThreads} from '@/lib/threads';
 import {satinFonts} from '@/lib/satin-lettering';
 import {objectGeometry} from '@/lib/editor-render';
@@ -29,8 +29,8 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
   },[view,project.objects,compiled]);
   const list=useRef<HTMLDivElement>(null),drag=useRef<{ids:string[];start:[number,number];active:boolean;index:number;group:string|null;wholeGroup?:string;run?:boolean}|null>(null),skipClick=useRef(false);
   const [collapsed,setCollapsed]=useState(new Set<string>()),[line,setLine]=useState<number|null>(null),[targetGroup,setTargetGroup]=useState<string|null>(null),[renaming,setRenaming]=useState<{id:string;name:string;group:boolean}|null>(null),rename=useRef(renaming);rename.current=renaming;
-  const rows=useMemo(()=>layerRows(project,collapsed),[project,collapsed]);
-  // The last selected object's row scrolls into view (new objects land at the end of a long list).
+  const rows=useMemo(()=>stackRows(project,collapsed),[project,collapsed]);
+  // The last selected object's row scrolls into view (new objects land at the top of a long list).
   const lastSelected=selection.at(-1);
   useEffect(()=>{if(lastSelected)list.current?.querySelector<HTMLElement>(`[data-layer="object:${CSS.escape(lastSelected)}"]`)?.scrollIntoView({block:'nearest'});},[lastSelected,view]);
   function finishRename(save:boolean){const r=rename.current;rename.current=null;setRenaming(null);if(save&&r)onRename(r.id,r.name.trim()||(r.group?project.groups?.find(g=>g.id===r.id)?.name:project.objects.find(o=>o.id===r.id)?.name)||t("Group"),r.group);}
@@ -45,11 +45,11 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
     e.preventDefault();const elements=Array.from(el.querySelectorAll<HTMLElement>('[data-layer]')),element=elements.find(r=>e.clientY<r.getBoundingClientRect().bottom)??elements.at(-1);if(!element)return;
     if(d.run){const run=runs.find(r=>r.key===element.dataset.layer);if(!run)return;const box=element.getBoundingClientRect(),after=e.clientY>box.top+box.height/2;d.index=after?run.end:run.index;d.group=null;setLine((after?box.bottom:box.top)-el.getBoundingClientRect().top+el.scrollTop);const area=el.getBoundingClientRect();if(e.clientY<area.top+24)el.scrollTop-=10;else if(e.clientY>area.bottom-24)el.scrollTop+=10;return;}
     const row=rows.find(r=>r.key===element.dataset.layer)!;let box=element.getBoundingClientRect(),after=e.clientY>box.top+box.height/2;
-    const target=layerTarget(row,after,d.wholeGroup!==undefined),outside=e.clientY>elements.at(-1)!.getBoundingClientRect().bottom+4;d.index=outside?project.objects.length:target.index;d.group=outside?null:target.group;
+    const target=stackTarget(row,after,d.wholeGroup!==undefined),outside=e.clientY>elements.at(-1)!.getBoundingClientRect().bottom+4;d.index=outside?0:target.index;d.group=outside?null:target.group;
     // Whole groups cannot nest: show the line at the block boundary moveGroup will use.
     if(d.wholeGroup!==undefined&&row.group!==undefined){
       const header=rows.find(r=>r.type==='group'&&r.group===row.group)!;
-      if(d.index<header.end){d.index=header.index;box=elements.find(r=>r.dataset.layer===header.key)!.getBoundingClientRect();after=false;}
+      if(d.index>header.index){d.index=header.end;box=elements.find(r=>r.dataset.layer===header.key)!.getBoundingClientRect();after=false;}
       else{const last=elements.filter(r=>rows.find(x=>x.key===r.dataset.layer)?.group===row.group).at(-1)!;box=last.getBoundingClientRect();after=true;}
     }
     setTargetGroup(d.group);setLine((after?box.bottom:box.top)-el.getBoundingClientRect().top+el.scrollTop);

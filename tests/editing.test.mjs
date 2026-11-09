@@ -102,3 +102,26 @@ test('Lengths for the worksheet and Info follow the display units and language',
   const {formatNumber}=load('i18n'),tr=(n,d)=>formatNumber(n,'tr',d),en=(n,d)=>formatNumber(n,'en',d);
   assert.equal(formatLength(25,'mm',tr),'25,0 mm');assert.equal(formatLength(25,'cm',tr),'2,5 cm');assert.equal(formatLength(25.4,'in',en),'1.000 in');assert.equal(formatLength(100,'cm',en),'10.0 cm');
 });
+test('Marquee picks objects whose outline crosses, sits inside or (when filled) encloses the box',()=>{
+  const {marqueeIds}=load('editing');
+  const a=rectangle(10,10,10,10),b=rectangle(50,50,30,30),line=object('Line',[[[0,90],[90,0]]],'running','#000000'),hidden={...rectangle(12,12,2,2),hidden:true},locked={...rectangle(14,14,2,2),locked:true};
+  const p=project([a,b,line,hidden,locked]);
+  assert.deepEqual(marqueeIds(p,{x:5,y:5,width:20,height:20}),[a.id]);
+  assert.deepEqual(marqueeIds(p,{x:25,y:5,width:-20,height:20}),[a.id],'negative sizes from leftward drags');
+  assert.deepEqual(marqueeIds(p,{x:60,y:60,width:5,height:5}),[b.id],'a box inside a fill picks it');
+  assert.deepEqual(marqueeIds(p,{x:43,y:43,width:4,height:4}),[line.id],'a segment crossing the box picks the line');
+  assert.deepEqual(marqueeIds(p,{x:2,y:2,width:4,height:4}),[],'a line bounding box alone does not');
+});
+test('Click picking prefers what is directly under the point over a nearby halo',()=>{
+  const {pickObject}=load('editing');
+  const under=rectangle(10,10,20,20),beside=rectangle(30.5,10,20,20),line=object('Line',[[[0,40],[60,40]]],'running','#000000');
+  const p=project([under,beside,line]);
+  assert.equal(pickObject(p,[29.8,15],1),under.id,'inside the lower fill beats the higher neighbour 0.7 mm away');
+  assert.equal(pickObject(p,[30.2,15],1),under.id,'in the gap, the nearest outline wins');
+  assert.equal(pickObject(p,[40,15],1),beside.id);
+  assert.equal(pickObject(p,[20,40.1],1),line.id);
+  const onFill=project([rectangle(0,30,60,20),line]);assert.equal(pickObject(onFill,[20,40.4],1),line.id,'a line on top of a fill is picked within half the reach');assert.notEqual(pickObject(onFill,[20,41],1),line.id);
+  assert.equal(pickObject(p,[20,41.5],1),null,'beyond reach picks nothing');
+  const hollow={...rectangle(0,0,100,100),rings:[[[0,0],[100,0],[100,100],[0,100]],[[40,40],[60,40],[60,60],[40,60]]]},inner=rectangle(45,45,10,10);
+  assert.equal(pickObject(project([inner,hollow]),[50,50],1),inner.id,'a hole lets clicks reach the object below');
+});

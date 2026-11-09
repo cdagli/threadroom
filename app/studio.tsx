@@ -16,7 +16,7 @@ import {syncPathBindings} from '@/lib/map-to-path';
 import {PixelCrossButton} from './pixel-cross';
 import {useT} from './i18n';
 import {TransformBox,SelectionTools,ViewControls,CanvasRulers,ShortcutHelp} from './editing-controls';
-import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
+import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,marqueeIds,pickObject,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
 import {defaultView,formatLength,playbackRate,playbackSpeeds,readViewSettings,type ViewSettings} from '@/lib/view-settings';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
 import {FillSettings, CrossSettings, StitchAngle} from './fill-settings';
@@ -45,13 +45,13 @@ import {checkProject, engineWarning, explain, fixFor, severityNames, sortWarning
 import {defaultText, fitTextInHoop, textSourcePoint, type TextSpec} from '@/lib/text';
 import {defaultFont, ensureFonts, loadedFonts} from '@/lib/fonts';
 import {layoutSatinText,convertSatinText,ensureSatinFonts,satinFontsLoaded} from '@/lib/satin-lettering';
-import {circle, diamond, fitRadius, fitRect, heart, hexagon, rect, shapeNames, star, triangle, type ShapeKind} from '@/lib/shapes';
+import {boxShape, fitRadius, fitRect, isBoxShape, radialShapes, shapeNames, type ShapeKind} from '@/lib/shapes';
 import StitchSelector from './stitch-selector';
 const TextPanel=dynamic(()=>import('./text-panel'),{loading:Loading});
 import ThreadView from './thread-view';
 const ThreadPicker=dynamic(()=>import('./thread-picker'),{loading:Loading});
 import {SewingSpeed,SewingTime,WorksheetButton} from './worksheet';
-import {recolorObject} from '@/lib/threads';
+import {recolorObject,type Thread} from '@/lib/threads';
 import LayersPanel from './layers-panel';
 import {IssueMarker, EndHandles, DraftOverlay, ShapeOverlay, MeasureOverlay, NeedleMarker} from './canvas-overlays';
 import {CanvasObject} from './canvas-object';
@@ -77,7 +77,6 @@ const pathTool=(t:Tool)=>t==='open'||t==='closed'||t==='blocks'||t==='holes';
 const drawTool=(t:Tool)=>['open','closed','blocks','freehand','points'].includes(t);
 const dockTool=(t:Tool)=>t!=='holes'&&t!=='knife'&&t!=='stitch';
 const shapeKinds=Object.keys(shapeNames) as ShapeKind[];
-const shapeMakers={circle,star,triangle,diamond,hexagon,heart};
 function download(blob: Blob, name: string) {
   const url=URL.createObjectURL(blob), link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -157,6 +156,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const clickHistory=useRef<Pick<DraftState,'lastLeft'|'lastRight'>>({});
   const draftPress=useRef<{start:Point;button:number;moved:boolean;detail:number}|null>(null);
   const [measure,setMeasure]=useState<{a:Point;b:Point}|null>(null),measuring=useRef(false);
+  // The latest thread colour the user picked; new objects are drawn with it.
+  const [drawColour,setDrawColour]=useState<{color:string;thread?:Thread}|null>(null);
   const [shapeKind,setShapeKind]=useState<ShapeKind>('circle'),[shapeDraft,setShapeDraft]=useState<{start:Point;end:Point;square:boolean}|null>(null);
   const shapePress=useRef<{client:Point;moved:boolean}|null>(null);
   // Point capture retargets double-clicks to the canvas, so remember which anchor was pressed.
@@ -176,6 +177,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   useEffect(()=>{if(!pickHint)return;const timer=setTimeout(()=>setPickHint(''),3000);return()=>clearTimeout(timer);},[pickHint]);
   const [spacePan,setSpacePan]=useState(false),[panMode,setPanMode]=useState(false);
   const [navigating,setNavigating]=useState(false),[selectionDragging,setSelectionDragging]=useState(false);
+  // Rubber-band selection in Select: drag on empty canvas; Ctrl/Cmd adds to the current selection.
+  const [marquee,setMarquee]=useState<{start:Point;end:Point}|null>(null),marqueeDrag=useRef<{start:Point;client:Point;base:string[];additive:boolean;moved:boolean}|null>(null);
   const draftDrag=useRef<{index:number;start:Point;before:Point[];moved:boolean}|null>(null);
   const closedDraft=tool==='closed'||tool==='holes';
   const canFinish=draft.length>=(closedDraft?3:tool==='blocks'?4:2);
@@ -454,7 +457,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     if(patch.font||patch.content!==undefined||item.text.satin&&!text.satin)loadTextFonts(item.id,text);
   }
   function placeText(p:Point){
-    const text={...defaultText(lastFont.current,p,undefined,t),autoStitch:true},o=layoutObject({...object(t("Your text"),[],'fill',item?.color||palette[3]),fillPattern:'tatami',underlay:'edge',text});
+    const text={...defaultText(lastFont.current,p,undefined,t),autoStitch:true},o=layoutObject({...newObject(t("Your text"),[],'fill'),fillPattern:'tatami',underlay:'edge',text});
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setTool('select');setEditPoints(false);
     loadTextFonts(o.id,text,true);setSettingsCollapsed(false);
     textFocus.current=true;requestAnimationFrame(focusTextReady);
@@ -523,7 +526,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       const next=layoutObject({...target,text:{...target.text,layout:'path',path:rings[0].map(p=>textSourcePoint(target.text!,p))}});
       commit({...project,objects:project.objects.map(o=>o.id===target.id?next:o)});setGuide(null);cancelDrawing();setTool('select');setSelected(target.id);return true;
     }
-    const next=existing?{...existing,rings,...(closed?{kind,name:t("Closed shape"),fillPattern:'tatami' as const}:{})}:object(closed&&!fit?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind,item?.color||palette[3]);
+    const next=existing?{...existing,rings,...(closed?{kind,name:t("Closed shape"),fillPattern:'tatami' as const}:{})}:object(closed&&!fit?t("Closed shape"):tool==='blocks'?t("Satin block"):tool==='open'?t("Open shape"):tool==='points'?t("Point stitches"):t("Freehand line"),rings,kind);
     if(!existing&&kind==='fill')next.fillPattern='tatami';
     if(curve)next.curve=curve;
     const created=rails?withRails(next,rails):next;
@@ -531,16 +534,21 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     commit({...project,objects:existing?project.objects.map(o=>o.id===next.id?next:o):[...project.objects,created]});setSelected(next.id);setActivePoint(null);cancelDrawing();setEditPoints(false);setTool(mapSelection?'select':tool);
     if(mapSelection)setSelection([...mapSelection,next.id]);return true;
   }
+  function newObject(name:string,rings:Point[][],kind:Kind):StitchObject{
+    const o=object(name,rings,kind,drawColour?.color??(item?.color||palette[3]));
+    return drawColour?.thread?{...o,thread:drawColour.thread}:o;
+  }
+  const pickDrawColour=useStableCallback((color:string,thread?:Thread)=>setDrawColour({color,thread}));
   function shapeOf(d:{start:Point;end:Point;square:boolean}){
-    if(shapeKind==='rect')return rect(d.start,fitRect(d.start,d.end,hoop,d.square),d.square);
+    if(isBoxShape(shapeKind))return boxShape(shapeKind,d.start,fitRect(d.start,d.end,hoop,d.square),d.square);
     const r=fitRadius(shapeKind,d.start,Math.hypot(d.end[0]-d.start[0],d.end[1]-d.start[1]),hoop);
-    return shapeMakers[shapeKind](d.start,r);
+    return radialShapes[shapeKind](d.start,r);
   }
   function finishShape(d:{start:Point;end:Point;square:boolean}){
     setShapeDraft(null);shapePress.current=null;
     const shape=shapeOf(d),xs=shape.points.map(p=>p[0]),ys=shape.points.map(p=>p[1]);
     if(Math.max(...xs)-Math.min(...xs)<1||Math.max(...ys)-Math.min(...ys)<1){setError(t("Click again a little further away to size the shape."));return;}
-    const curve={points:shape.points,closed:true,corners:shape.corners,spline:'levien' as const},o={...object(t(shapeNames[shapeKind]),[curveRing(curve)],'fill',item?.color||palette[3]),fillPattern:'tatami' as const,curve};
+    const curve={points:shape.points,closed:true,corners:shape.corners,spline:'levien' as const},o={...newObject(t(shapeNames[shapeKind]),[curveRing(curve)],'fill'),fillPattern:'tatami' as const,curve};
     commit({...project,objects:[...project.objects,o]});setSelected(o.id);setEditPoints(false);setError('');
   }
   // Shape operations commit one undo step and select the results; failures show their reason.
@@ -624,7 +632,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       const pixels=await artworkPixels(art.src,t);
       if(colourPickRef.current!==session||!current.current.images?.includes(art))return;
       const color=sampleArtwork(pixels,art,toImageFrame(art,p));if(!color){setPickHint(t("No visible image pixels here. Try another point."));return;}
-      const before=current.current;cancelColourPick();
+      const before=current.current;cancelColourPick();setDrawColour({color});
       commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?recolorObject(o,color):o)},t("Thread colour picked: {v0}",{v0:color.toUpperCase()}));
     }catch(e){if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));}
   }
@@ -710,13 +718,13 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       }
       if(touchNavigation.current)return;
     }
-    endDrag();pressedAnchor.current=null;pressedObject.current=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')??null;if(e.button>2)return;
+    endDrag();pressedAnchor.current=null;pressedObject.current=objectAt(e);if(e.button>2)return;
     const handle=(e.target as SVGElement).closest('[data-transform]')?.getAttribute('data-transform') as ScaleHandle|'rotate'|undefined;
     if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!selection.length&&selImage&&!selImage.locked){setSelectionDragging(true);transformDrag.current={before:current.current,ids:[],box:imageBounds(selImage),start:point(e),angle:selImage.rotation??0,handle,image:selImage.id};dragUndo.current.begin(current.current);capture(e);return;}
     if(handle&&e.button===0&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode){setSelectionDragging(true);transformDrag.current={before:current.current,ids:[...movableIds],box:selectionBounds(current.current,movableIds),start:point(e),angle:selectionRotation,handle};dragUndo.current.begin(current.current);capture(e);return;}
     // Right-click adds a curve point while drawing a path; elsewhere it pans.
     const smooth=e.button===2&&(pathTool(tool)||editing)&&!panMode&&!spacePan;
-    if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan,button:e.button,target:(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')};capture(e);return;}
+    if(e.button===1||e.button===2&&!smooth||tool==='pan'||panMode||spacePan||(tool==='select'&&e.shiftKey)){setNavigating(true);panDrag.current={start:[e.clientX,e.clientY],source:viewport.current.pan,button:e.button,target:pressedObject.current};capture(e);return;}
     if(e.button!==0&&!smooth)return;
     const p=point(e);
     if(tool==='measure'){setMeasure({a:p,b:p});measuring.current=true;capture(e);return;}
@@ -726,7 +734,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       if(shapeDraft){finishKnife({...shapeDraft,end:p,square:e.ctrlKey||e.metaKey});return;}
       setShapeDraft({start:p,end:p,square:false});shapePress.current={client:[e.clientX,e.clientY],moved:false};capture(e);return;
     }
-    if(p[0]<0||p[1]<0||p[0]>hoop.width||p[1]>hoop.height)return;
+    const offHoop=p[0]<0||p[1]<0||p[0]>hoop.width||p[1]>hoop.height;
+    if(offHoop&&!(tool==='select'&&!editing))return;
     if(tool==='shape'){
       stopPlayback();
       if(shapeDraft){finishShape({...shapeDraft,end:p,square:e.ctrlKey||e.metaKey});return;}
@@ -740,29 +749,45 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       capture(e);
     }
     else if(tool==='text'){
-      const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object'),hit=project.objects.find(o=>o.id===id&&o.text);
+      const id=pressedObject.current,hit=project.objects.find(o=>o.id===id&&o.text);
       if(hit){setSelected(hit.id);setTool('select');focusText();}else placeText(p);
     }
     else {
       const target=e.target as SVGElement;
-      const id=target.closest('[data-object]')?.getAttribute('data-object');
+      const id=pressedObject.current;
       const source=current.current.objects.find(o=>o.id===id&&!o.hidden&&!o.locked);
       if(source&&!editing&&(e.ctrlKey||e.metaKey)){selectObject(source.id,e);return;}
       const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]'),end=target.closest('[data-end]')?.getAttribute('data-end');
       if(ends&&item&&(end==='entry'||end==='exit')){startDrag({id:item.id,start:p,source:current.current.objects.find(o=>o.id===item.id)??item,end},e);return;}
       if(editing&&item){
         if(insertion){const handle=handles.find(h=>h.ring===Number(insertion.getAttribute('data-ring'))&&h.index===Number(insertion.getAttribute('data-insert')));if(handle)addPoint(handle.ring,handle.index,handle.point,e.button===0);return;}
-        if(source?.id===item.id&&node){const location:[number,number]=[Number(node.getAttribute('data-ring')),Number(node.getAttribute('data-point'))];setActivePoint(location);pressedAnchor.current=location[1];if(pointMode==='remove'){removePoint(location);return;}startDrag({id:source.id,start:p,source,point:location},e);return;}
-        if(pointMode!=='remove'&&!node){const nearest=closestInsertion(item,p);if(nearest&&nearest.distance*scaleForCanvas()<5){addPoint(nearest.ring,nearest.index,p,e.button===0);return;}}
+        // A point within reach wins over whatever shape is under the cursor.
+        const location:[number,number]|null=node&&node.closest('[data-object]')?.getAttribute('data-object')===item.id?[Number(node.getAttribute('data-ring')),Number(node.getAttribute('data-point'))]:nearestAnchor(item,p,14/scaleForCanvas());
+        if(location){const base=current.current.objects.find(o=>o.id===item.id)??item;setActivePoint(location);pressedAnchor.current=location[1];if(pointMode==='remove'){removePoint(location);return;}startDrag({id:item.id,start:p,source:base,point:location},e);return;}
+        if(pointMode==='add'){const nearest=closestInsertion(item,p);if(nearest&&nearest.distance*scaleForCanvas()<5){addPoint(nearest.ring,nearest.index,p,e.button===0);return;}}
         if(source?.id===item.id){setActivePoint(null);return;}
       }
       if(e.button!==0)return;
       // Reference images sit under every object; locked or hidden ones take no canvas clicks.
       const imageHit=!source&&!editing?current.current.images?.find(i=>i.id===target.closest('[data-image]')?.getAttribute('data-image')&&!i.locked&&!i.hidden):undefined;
       if(imageHit){selectImage(imageHit.id);setSelectionDragging(true);transformDrag.current={before:current.current,ids:[],box:imageBounds(imageHit),start:p,angle:imageHit.rotation??0,handle:'move',image:imageHit.id};dragUndo.current.begin(current.current);capture(e);return;}
-      if(source){const ids=selection.includes(source.id)?unlockedIds(current.current,selection):[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
+      // While editing points a click on another shape only switches to it, so a near miss never drags it.
+      if(source&&editing){setSelected(source.id);setActivePoint(null);}
+      else if(source){const ids=selection.includes(source.id)?unlockedIds(current.current,selection):[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
+      else if(!editing&&tool==='select'){marqueeDrag.current={start:p,client:[e.clientX,e.clientY],base:e.ctrlKey||e.metaKey?selection:[],additive:e.ctrlKey||e.metaKey,moved:false};capture(e);}
       else if(!editing){setSelected(null);setImageSel(null);}
     }
+  }
+  // Handles keep their own target; otherwise the object is picked from geometry, not from invisible hit halos.
+  function objectAt(e:ReactPointerEvent<SVGSVGElement>):string|null{
+    const target=e.target as SVGElement;
+    if(target.closest('[data-point],[data-insert],[data-end],[data-transform]'))return target.closest('[data-object]')?.getAttribute('data-object')??null;
+    return pickObject(current.current,point(e),6/scaleForCanvas());
+  }
+  function nearestAnchor(o:StitchObject,p:Point,reach:number):[number,number]|null{
+    let best:[number,number]|null=null,distance=reach;
+    (o.rails?.points??(o.curve?[o.curve.points]:o.rings)).forEach((ring,ri)=>ring.forEach((a,i)=>{const d=Math.hypot(a[0]-p[0],a[1]-p[1]);if(d<=distance){distance=d;best=[ri,i];}}));
+    return best;
   }
   function scaleForCanvas(){return viewportScale(viewport.current,svg.current!.getBoundingClientRect(),hoop);}
   function pointerMove(event:ReactPointerEvent<SVGSVGElement>){
@@ -781,6 +806,13 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       }
     }
     const p=point(e);setCursor(p);
+    const band=marqueeDrag.current;
+    if(band){
+      if(!band.moved&&Math.hypot(e.clientX-band.client[0],e.clientY-band.client[1])<4)return;
+      band.moved=true;setMarquee({start:band.start,end:p});
+      const hit=marqueeIds(current.current,{x:band.start[0],y:band.start[1],width:p[0]-band.start[0],height:p[1]-band.start[1]});
+      const next=[...band.base,...hit.filter(id=>!band.base.includes(id))];setSelection(ids=>ids.length===next.length&&ids.every((id,i)=>id===next[i])?ids:next);anchor.current=next[0]??null;return;
+    }
     const transform=transformDrag.current;
     if(transform){
       let m:Matrix,rotation=0,guides:SnapGuide[]=[];
@@ -825,6 +857,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     const panned=panDrag.current;panDrag.current=null;measuring.current=false;
     // A right-click without drag in Select opens the canvas menu; right-drag stays a pan.
     if(panned){draftPress.current=null;if(panned.button===2&&tool==='select'&&!editing&&!hasDraft&&!spacePan&&!panMode&&!colourPickRef.current&&Math.hypot(e.clientX-panned.start[0],e.clientY-panned.start[1])<4){applyViewport({...viewport.current,pan:panned.source});openMenu(e.clientX,e.clientY,panned.target??null);}return;}
+    const band=marqueeDrag.current;marqueeDrag.current=null;
+    if(band){setMarquee(null);if(band.moved){setEditPoints(false);setImageSel(null);}else if(!band.additive){setSelected(null);setImageSel(null);}return;}
     if(shapePress.current){const press=shapePress.current;shapePress.current=null;if(press.moved&&shapeDraft)(tool==='knife'?finishKnife:finishShape)({...shapeDraft,end:point(e),square:e.ctrlKey||e.metaKey});return;}
     const dragged=draftDrag.current?.moved;draftDrag.current=null;
     const press=draftPress.current;draftPress.current=null;
@@ -840,7 +874,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     endDrag();
     if(drawing){setDrawing(false);const p=point(e);if(p[0]>=0&&p[1]>=0&&p[0]<=hoop.width&&p[1]<=hoop.height)setDraft(d=>[...d,p]);if(draftRef.current.length>=2)finish(draftRef.current);else cancelDrawing();}
   }
-  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();setSelectionDragging(false);draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
+  function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();if(marqueeDrag.current){const band=marqueeDrag.current;marqueeDrag.current=null;setMarquee(null);if(band.moved)setSelection(band.base);}setSelectionDragging(false);draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
   function openMenu(x:number,y:number,target:string|null,keyboard=false){
     const p=current.current,o=target?p.objects.find(o=>o.id===target&&!o.hidden&&!o.locked):undefined,canPaste=!!clipboard.current?.objects.length;
     let ids=selection;if(o&&!selection.includes(o.id)){ids=[o.id];setSelected(o.id);setEditPoints(false);}
@@ -1092,7 +1126,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);if(tool==='stitch')hoverStitch(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(editing&&(item?.curve||item?.rails)&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
-            const id=(e.target as SVGElement).closest('[data-object]')?.getAttribute('data-object')??pressedObject.current;if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
+            const id=pressedObject.current;if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
               <defs><pattern id="fine-grid" width={viewSettings.gridSize/viewSettings.subdivisions} height={viewSettings.gridSize/viewSettings.subdivisions} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize/viewSettings.subdivisions} 0 L 0 0 0 ${viewSettings.gridSize/viewSettings.subdivisions}`} fill="none" stroke="var(--grid)" strokeWidth={.5/canvasScale}/></pattern><pattern id="grid" width={viewSettings.gridSize} height={viewSettings.gridSize} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize} 0 L 0 0 0 ${viewSettings.gridSize}`} fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
               {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="var(--bg-workspace)"/>
               <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="var(--hoop-rim)" filter="url(#hoop-shadow)"/>
@@ -1107,7 +1141,9 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
                 {densityField&&<DensityHeat field={densityField}/>}
                 {visible&&<StitchOverlays commands={visible.commands} count={visibleSewn} selection={selection} scale={canvasScale} view={viewSettings}/>}
                 {showTravel&&<g pointerEvents="none"><path d={stitchPaths.blocks.map(p=>p.jump).join('')} fill="none" stroke="var(--travel-jump)" strokeWidth={1.4/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/><path d={stitchPaths.travel} fill="none" stroke="var(--travel-line)" strokeWidth={2/canvasScale} strokeLinecap="round"/></g>}</>
-              {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||!!o.layoutOnly&&!selection.includes(o.id)||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/>{editing&&selected===o.id&&!o.hidden&&o.id!==continuation?.id&&<PointHandles o={o} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}</Fragment>)}
+              {project.objects.map(o=><Fragment key={o.id}><CanvasObject o={o} selected={selection.includes(o.id)} primary={selected===o.id} hidden={!!o.hidden||!!o.layoutOnly&&!selection.includes(o.id)||o.id===continuation?.id} editing={editing&&selected===o.id} stale={!compiled||staleIds.has(o.id)} offline={apiState==='offline'} movable={tool==='select'&&!editing} locked={!!o.locked} canvasScale={canvasScale}/></Fragment>)}
+              {/* Point handles sit above every object so overlapping shapes never hide them. */}
+              {editing&&item&&!item.hidden&&item.id!==continuation?.id&&<PointHandles o={item} pointMode={pointMode} handles={handles} activePoint={activePoint} canvasScale={canvasScale} onAdd={stableAddPoint} onSave={stableSavePoint} onRemove={stableRemovePoint} onActive={setActivePoint}/>}
               {focus&&focusCopy&&<IssueMarker focus={focus} canvasScale={canvasScale} view={threadView} title={focusCopy.title} severityLabel={t(severityNames[focus.severity])} detail={`${formatNumber(focusIndex+1)} / ${formatNumber(issues.length)}`} onOpen={()=>focusIssue(focus)} onClose={()=>setFocusKey(null)}/>}
               {angles&&item&&<AngleGuideEditor guides={item.angleGuides??[]} canvasScale={canvasScale} onChange={guides=>updateObject(withGuides(item,guides))} onExit={()=>{setAngleMode(false);svg.current?.focus({preventScroll:true});}}/>}
               {tool==='select'&&!editing&&!angles&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
@@ -1115,10 +1151,11 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
               {snapGuides.length>0&&<g pointerEvents="none" stroke="var(--accent)" strokeWidth={1/canvasScale}>{snapGuides.map(g=><path key={g.axis} d={g.axis==='x'?`M${g.value} 0V${hoop.height}`:`M0 ${g.value}H${hoop.width}`}/>)}</g>}
               {ends&&!angles&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
-              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'||tool==='holes'} closeHover={closeHover} color={item?.color||palette[3]} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} blocks={tool==='blocks'} corners={corners} canvasScale={canvasScale}/>}
+              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'||tool==='holes'} closeHover={closeHover} color={drawColour?.color??(item?.color||palette[3])} hover={bandHover} drawing={drawing} freehand={tool==='freehand'} curved={pathTool(tool)} blocks={tool==='blocks'} corners={corners} canvasScale={canvasScale}/>}
               {tool==='knife'&&shapeDraft&&<KnifeOverlay a={shapeDraft.start} b={shapeDraft.square?snapAngle(shapeDraft.start,shapeDraft.end):shapeDraft.end} canvasScale={canvasScale}/>}
               {shapePreview&&shapeDraft&&<ShapeOverlay shapePreview={shapePreview} shapeDraft={shapeDraft} canvasScale={canvasScale}/>}
               {tool==='stitch'&&stitchHover&&<path d={pathData(stitchHover,true)} fill="var(--accent)" fillOpacity=".18" fillRule="evenodd" stroke="var(--accent)" strokeWidth={1.5/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`} pointerEvents="none"/>}
+              {marquee&&<rect className="marquee" pointerEvents="none" x={Math.min(marquee.start[0],marquee.end[0])} y={Math.min(marquee.start[1],marquee.end[1])} width={Math.abs(marquee.end[0]-marquee.start[0])} height={Math.abs(marquee.end[1]-marquee.start[1])} fill="var(--accent)" fillOpacity={.08} stroke="var(--accent)" strokeWidth={1/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`}/>}
               {measure&&<MeasureOverlay measure={measure} canvasScale={canvasScale} units={viewSettings.units}/>}
               {timeline&&progress<1&&needle&&<NeedleMarker needle={needle} canvasScale={canvasScale}/>}
         </svg>
@@ -1161,7 +1198,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       </Popover>
       </div>
       {showToolHint&&<div className="tool-banner">
-        <ToolHint title={colourPick?t("Pick thread colour"):angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)!.title} text={colourPick?[t("Click the reference image to pick its colour · Esc to cancel"),pickHint].filter(Boolean).join(' · '):panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?t("Drag a point · Ctrl / ⌘: axis lock · Click path: corner · Right-click path: smooth · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:t("Left click: smooth · Right/double-click: corner · Ctrl / ⌘: 15° snap · Enter: finish")}):tool==='shape'?shapeKind==='rect'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)!.hint}/>
+        <ToolHint title={colourPick?t("Pick thread colour"):angles?t(flowGuides?"Editing flow field":"Editing angles"):editing?t("Editing points"):continuation?t("Continuing curve"):pathTarget?t("Drawing text path"):tool==='shape'?t("Drawing {v0}",{v0:t(shapeNames[shapeKind])}):tools.find(t=>t.id===tool)!.title} text={colourPick?[t("Click the reference image to pick its colour · Esc to cancel"),pickHint].filter(Boolean).join(' · '):panMode?t("Drag to pan · Click the drawing tool to resume"):angles?t(flowGuides?"Click twice to add a flow guide; stitches follow its arrow. Drag either end to move it. Delete with an end selected removes that guide.":"Click twice to add an angle guideline. Drag either end to move it. Delete with an end selected removes that guide. Crossing or touching guides turn red."):editing?pointMode==="add"?t("Click the path: add a corner · Right-click the path: add a smooth point"):pointMode==="remove"?t("Click a point to remove it, or select one and press Delete"):t("Drag a point · Ctrl / ⌘: axis lock · Delete: remove{v0}",{v0:item?.curve||item?.rails?t(' · Double-click a point to switch corner / curve'):''}):pathTarget?t("Click points along the path for your text. {v0}",{v0:t("Left click: smooth · Right/double-click: corner · Ctrl / ⌘: 15° snap · Enter: finish")}):tool==='shape'?shapeKind==='rect'||shapeKind==='rounded'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a square."):shapeKind==='oval'?t("Click to set one corner, click again to set the opposite corner. Hold Ctrl / ⌘ for a circle."):t("Click to set the center, click again to set the size."):tool==='select'&&item?.text?t("Drag to move · Double-click or Edit text to change the words."):tools.find(t=>t.id===tool)!.hint}/>
       </div>}
       </div>
       {editing&&pointBox&&!colourPick&&!selectionDragging&&!navigating&&!spacePan&&!panMode&&<SelectionAnchor
@@ -1185,7 +1222,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         <SelectionTools box={selectionBox} rotation={selectionRotation} multi={multi} disabled={hasDraft||allLocked} size={`${displayLength(selectionBox.width)} × ${displayLength(selectionBox.height)}`} onField={selectionField} onAction={selectionAction} onAlign={alignSelected}/>
         <MapToPath project={project} selection={selection} disabled={hasDraft||allLocked} onChange={commit} onSelect={setSelected} onUseTextPath={useTextPath} onDrawPath={drawMapPath}/>
         <ShapeTools focusOffset={focusOffset} project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
-        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} eyedropper={eyedropper}/><div className="selection-actions"><RedworkAction project={project} selection={selection} onRun={redwork}/></div></fieldset>:<>
+        {multi?<fieldset disabled={hasDraft||allLocked} className="panel-section settings"><ThreadPicker project={project} selection={movableIds} onChange={commit} onPick={pickDrawColour} eyedropper={eyedropper}/><div className="selection-actions"><RedworkAction project={project} selection={selection} onRun={redwork}/></div></fieldset>:<>
         {item?.text&&<fieldset disabled={hasDraft||allLocked} className="text-fieldset"><TextPanel onReady={focusTextReady} spec={item.text} fill={isFillKind(item.kind)} loading={fontLoading>0} missing={missingGlyphs} textArea={textArea}
           guides={project.objects.filter(o=>o.id!==item.id&&!o.text&&o.rings.length).map(o=>({id:o.id,name:o.name}))} guide={guide?.text===item.id&&project.objects.some(o=>o.id===guide.id)?guide:null}
           onChange={updateText} onUseGuide={useGuide} onRemoveGuide={removeGuide} onDrawPath={drawTextPath} onConvert={convertText}/></fieldset>}
@@ -1195,7 +1232,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
           <RedworkAction project={project} selection={selection} onRun={redwork}/>
           </Section>
           <Section id="thread" title={t("Thread")} summaryExtra={<span className="thread-summary"><i style={{background:item.color}}/>{item.color.toUpperCase()}</span>}>
-          <ThreadPicker hint project={project} selection={selection} onChange={commit} eyedropper={eyedropper}/>
+          <ThreadPicker hint project={project} selection={selection} onChange={commit} onPick={pickDrawColour} eyedropper={eyedropper}/>
           </Section>
           {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop} angles={{active:angles,onToggle:toggleAngles}}/>}
           {item.kind!=='fill'&&<Section id="stitch-settings" title={t("Stitch settings")} defaultOpen>

@@ -9,12 +9,13 @@ const ThreadCatalogue=dynamic(()=>import('./thread-catalogue'),{loading:Loading}
 import {type Project} from '@/lib/project';
 import {applyThread,brotherThreads,matchBrother,nearestBrother,type Thread} from '@/lib/threads';
 
-export default function ThreadPicker({project,selection,onChange,eyedropper,hint=false}:{hint?:boolean;project:Project;selection:string[];onChange:(p:Project)=>void;eyedropper:ReactNode}){
+// onPick reports a deliberately chosen colour so new objects can be drawn with it.
+export default function ThreadPicker({project,selection,onChange,onPick,eyedropper,hint=false}:{hint?:boolean;project:Project;selection:string[];onChange:(p:Project)=>void;onPick?:(color:string,thread?:Thread)=>void;eyedropper:ReactNode}){
   const {t}=useT(),id=useId(),[opened,setOpened]=useState(false);
   const items=project.objects.filter(o=>selection.includes(o.id)),item=items[0];
   const colors=useMemo(()=>[...new Map(project.objects.flatMap(o=>[o,...(o.text?.border?[o.text.border]:[])]).map(o=>[o.color.toLowerCase()+':'+(o.thread?.code??''),o])).values()],[project.objects]);
   const close=useStableCallback(()=>document.getElementById(id)?.hidePopover());
-  const choose=useStableCallback((color:string,thread?:Thread)=>{onChange(applyThread(project,selection,color,thread));close();});
+  const choose=useStableCallback((color:string,thread?:Thread)=>{onPick?.(color,thread);onChange(applyThread(project,selection,color,thread));close();});
   const matchAll=useStableCallback(()=>onChange(matchBrother(project)));
   if(!item)return null;
   const nearest=nearestBrother(item.color),mixed=items.some(o=>o.color!==item.color);

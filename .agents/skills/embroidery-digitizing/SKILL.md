@@ -49,8 +49,10 @@ Temporary cutter copies may be combined. Merge final parts only when the user ex
 ## No image yet? Generate one (on request)
 
 If the user asks you to create the artwork from a description ("make a fox and digitise it"), generate it
-first with Codex's `imagegen` skill, shaped for embroidery: transparent background, one centred subject,
-4–6 flat colours mapped to Brother threads, bold shapes, no gradients or tiny details. Follow
+first with Codex's `imagegen` skill. Give it a real art direction (linocut, folk art, storybook, cut paper,
+inked line + spot colour, crewelwork) so it looks hand-crafted and stylish, not clip art. Then add the
+embroidery guardrails: transparent background, 4–6 flat colours mapped to Brother threads, shapes big
+enough to sew, no gradients. Follow
 `references/generate-artwork.md` (prompt template, Codex hand-off, checks, import), then continue with the
 workflow below. Ask before generating if the user only described a design without asking for an image.
 

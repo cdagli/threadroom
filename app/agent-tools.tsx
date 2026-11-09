@@ -258,7 +258,7 @@ const tools:Tool[]=[
       await act(api,a=>a.commit(r.project));
       notify(api,'agentUpdated.other',{count:list.length});return outcome(api,before);
     }},
-  {name:'add_shape',inputSchema:obj({shape:{type:'string',enum:shapeKinds},center:pt,width:{type:'number',description:'mm'},height:{type:'number',description:'mm, rectangles only (default = width)'},kind:{type:'string',enum:stitchKinds,description:'stitch kind (default tatami fill)'},color:{type:'string'},name:{type:'string'}},['shape','center','width']),
+  {name:'add_shape',inputSchema:obj({shape:{type:'string',enum:shapeKinds},center:pt,width:{type:'number',description:'mm'},height:{type:'number',description:'mm, rect/oval/rounded only (default = width)'},kind:{type:'string',enum:stitchKinds,description:'stitch kind (default tatami fill)'},color:{type:'string'},name:{type:'string'}},['shape','center','width']),
     description:'Adds a basic shape (circle, rect, star, triangle, diamond, hexagon, heart) centred at center with the given size, filled with tatami unless kind says otherwise. The shape must fit inside the hoop.',
     run:async(api,{shape,center,width,height,kind,color,name})=>{
       needDraftFree(api);const before=now(api).project();if(before.objects.length>=objectLimit)throw new Error(`A design holds at most ${objectLimit} objects.`);
