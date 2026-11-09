@@ -2,8 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
 const {object,demo,validProject,resolve,kindNames,kindHints,ropeDefaults}=load('project');
-const {changeStitchKind,stitchGroups,curveRing,railSamples,railSegments,blockCentre,blockWidths,withRails,draftRails,draftBlockPaths,insertGeometryPoint,removeGeometryPoint,moveGeometry,setCorner,isCorner,closestInsertion,insertionHandles,geometryPayload,routeEnds,snapEnd}=load('curves');
-const {completeDraft}=load('drawing');
+const {changeStitchKind,stitchGroups,curveRing,railSamples,railSegments,blockCentre,blockWidths,withRails,draftRails,insertGeometryPoint,removeGeometryPoint,moveGeometry,setCorner,isCorner,closestInsertion,insertionHandles,geometryPayload,routeEnds,snapEnd}=load('curves');
 const {checkProject}=load('check');
 const {exportSVG}=load('svg-export');
 const {en,tr}=load('i18n');
@@ -32,17 +31,12 @@ test('E-stitch flip is optional, validated and exported only when set',()=>{
   assert.doesNotMatch(exportSVG(project([e])),/e-flipped/);assert.match(exportSVG(project([{...e,eFlipped:true}])),/data-threadroom-e-flipped="true"/);
 });
 
-test('The Blocks tool pairs alternate clicks into left and right rails with corner flags',()=>{
+test('Block points pair alternately into left and right rails with corner flags',()=>{
   const points=[[10,10],[10,14],[20,10],[20,16],[30,10]],corners=[true,false,true,true,false];
-  assert.equal(completeDraft('blocks',points.slice(0,3),corners,'enter'),null);
-  assert.deepEqual(completeDraft('blocks',points.slice(0,4),corners,'enter'),{closed:false,kind:'satin-block'});
   const rails=draftRails(points,corners);
   assert.deepEqual(rails.points,[[[10,10],[20,10]],[[10,14],[20,16]]],'the unpaired last click is dropped');
   assert.deepEqual(rails.corners,[[true,true],[false,true]]);
   assert.equal(draftRails(points.slice(0,3),corners),null);
-  const preview=draftBlockPaths(points,corners);
-  assert.equal(preview.length,4,'two rails and two rungs');assert.deepEqual(preview.slice(2),[[[10,10],[10,14]],[[20,10],[20,16]]]);
-  assert.equal(draftBlockPaths(points.slice(0,1),corners).length,0);
 });
 
 test('Block rails sample in pairs per rung segment; tapered widths interpolate linearly',()=>{

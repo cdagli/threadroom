@@ -10,8 +10,8 @@ const actions=entries=>entries.filter(e=>e!=='separator').map(e=>e.disabled?`-${
 
 test('Object menu offers Ember actions with sew-order and lock states',()=>{
   const p=project([item('a'),item('b',{group:'g'}),item('c',{locked:true}),item('d',{hidden:true})]);
-  assert.deepEqual(actions(objectMenu(p,['a'],false)),['cut','copy','-paste','duplicate','delete','-group','-ungroup','lock','hide','editPoints','editAngles','redwork','front','forward','-backward','-back','flipH','flipV','rotate','-cutHoles','-flatten','-union','-subtract','-intersect','offset','knife']);
-  assert.deepEqual(actions(objectMenu(p,['c'],true)),['-cut','copy','paste','duplicate','-delete','-group','-ungroup','unlock','hide','-editAngles','-redwork','front','forward','backward','back','-flipH','-flipV','-rotate','-cutHoles','-flatten','-union','-subtract','-intersect','-offset','-knife']);
+  assert.deepEqual(actions(objectMenu(p,['a'],false)),['cut','copy','-paste','duplicate','delete','-group','-ungroup','lock','hide','editPoints','editAngles','front','forward','-backward','-back','flipH','flipV','rotate','-cutHoles','-flatten','-union','-subtract','-intersect','offset','knife']);
+  assert.deepEqual(actions(objectMenu(p,['c'],true)),['-cut','copy','paste','duplicate','-delete','-group','-ungroup','unlock','hide','-editAngles','front','forward','backward','back','-flipH','-flipV','-rotate','-cutHoles','-flatten','-union','-subtract','-intersect','-offset','-knife']);
   const both=actions(objectMenu(p,['b','d'],true));assert.ok(both.includes('group')&&both.includes('ungroup')&&both.includes('hide')&&!both.includes('editPoints'));
   assert.ok(actions(objectMenu(p,['d'],true)).includes('show'));assert.ok(actions(objectMenu(p,['d'],true)).includes('-front'));
   assert.deepEqual(objectMenu(p,['gone'],true),canvasMenu(p,true));
@@ -26,22 +26,15 @@ test('Shape operations in the object menu follow the Shape tools rules; locked o
   assert.deepEqual(shapes(objectMenu(p,['line'],false)),['-cutHoles','-flatten','-union','-subtract','-intersect','-offset','knife']);
   assert.deepEqual(shapes(objectMenu(p,['blk'],false)),['-cutHoles','-flatten','-union','-subtract','-intersect','-offset','-knife']);
 });
-test('Edit angles, Edit flow field and redwork entries follow locks and the redwork rules',()=>{
-  const redworkEntries=entries=>actions(entries).filter(a=>/editAngles|editFlow|redwork|breakApart/.test(a));
+test('Edit angles and Edit flow field entries follow locks and the fill pattern',()=>{
+  const guideEntries=entries=>actions(entries).filter(a=>/editAngles|editFlow/.test(a));
   const line=item('line',{kind:'running',rings:[[[10,50],[40,50]]]}),flow=item('flow',{fillPattern:'streamlines'}),circ=item('circ',{fillPattern:'circular'});
-  const red=item('red',{kind:'redwork',rings:[[[10,60],[40,60]]],sources:[line]}),stuck=item('stuck',{kind:'redwork',rings:[[[10,60],[40,60]]],locked:true});
-  const text=item('txt',{text:{value:'A'}}),p=project([item('a'),item('h',{hidden:true}),line,flow,circ,red,stuck,text]);
-  assert.deepEqual(redworkEntries(objectMenu(p,['flow'],false)),['editFlow','redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['circ'],false)),['redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['h'],false)),['-editAngles','redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['line'],false)),['redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['red'],false)),['breakApart']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['stuck'],false)),['-redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['red','line'],false)),['redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['a','stuck'],false)),['-redwork']);
-  assert.deepEqual(redworkEntries(objectMenu(p,['txt'],false)),['editAngles','-redwork']);
-  const shapes=actions(objectMenu(p,['red'],false)).filter(a=>/cutHoles|flatten|union|subtract|intersect|offset|knife/.test(a));
-  assert.ok(shapes.every(a=>a.startsWith('-')),'redwork is left out of shape operations');
+  const text=item('txt',{text:{value:'A'}}),p=project([item('a'),item('h',{hidden:true}),line,flow,circ,text]);
+  assert.deepEqual(guideEntries(objectMenu(p,['flow'],false)),['editFlow']);
+  assert.deepEqual(guideEntries(objectMenu(p,['circ'],false)),[]);
+  assert.deepEqual(guideEntries(objectMenu(p,['h'],false)),['-editAngles']);
+  assert.deepEqual(guideEntries(objectMenu(p,['line'],false)),[]);
+  assert.deepEqual(guideEntries(objectMenu(p,['txt'],false)),['editAngles']);
 });
 test('Empty-canvas menu: paste, select all, unlock all only while something is locked, fit and grid',()=>{
   assert.deepEqual(actions(canvasMenu(project([item('a',{locked:true})]),false)),['-paste','-selectAll','unlockAll','fit','grid']);

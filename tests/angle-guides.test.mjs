@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
 const {object,defaultLocks,validProject}=load('project');
 const G=load('angle-guides'),{moveGeometry,geometryPayload,stitchGroups,changeStitchKind}=load('curves'),{exportSVG}=load('svg-export');
-const R=load('redwork'),{transformSelection}=load('editing'),{objectMenu}=load('context-menu');
+const {transformSelection}=load('editing'),{objectMenu}=load('context-menu');
 const square=[[20,20],[80,20],[80,80],[20,80]];
 const project=objects=>({version:1,name:'Guides',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:defaultLocks,trimJump:3,objects});
 const fan=[{a:[25,30],b:[75,30]},{a:[30,75],b:[70,60]}];
@@ -47,29 +47,6 @@ test('Guides move with transforms, keep one guide and the angle in step, and rea
   assert.deepEqual(moveGeometry(o,([x,y],r,i)=>r===0&&i===0?[x+1,y]:[x,y]).angleGuides,o.angleGuides);
   const payload=geometryPayload(project([{...o,angleGuides:fan}])).objects[0];assert.deepEqual(payload.angleGuides,fan);assert.equal(payload.rowShortening,false);
   assert.match(exportSVG(project([o])),/data-threadroom-angle-guides="\[\{&quot;a&quot;:\[40,50\]/);
-});
-test('Convert to redwork merges lines and fill outlines; Break apart restores them',()=>{
-  const fill={...object('Fill',[square]),group:'g'},line={...object('Line',[[[10,10],[30,10]]],'running','#123456'),thread:undefined},text={...object('Text',[square]),text:{content:'A'}};
-  const p={...project([fill,line,object('Other',[[[5,5],[6,6]]],'running')]),groups:[{id:'g',name:'G'}]};
-  assert.ok(R.canConvertToRedwork(p,[fill.id,line.id]));assert.ok(!R.canConvertToRedwork(project([text]),[text.id]));
-  assert.ok(!R.canConvertToRedwork(p,[]));assert.ok(!R.canConvertToRedwork(project([{...line,locked:true}]),[line.id]));
-  const {project:q,id}=R.convertToRedwork(p,[line.id,fill.id]),red=q.objects.find(o=>o.id===id);
-  assert.equal(q.objects.length,2);assert.equal(q.objects[0].id,id);assert.equal(red.kind,'redwork');assert.equal(red.length,2);assert.equal(red.group,'g');
-  assert.deepEqual(red.rings,[[...square,square[0]],[[10,10],[30,10]]]);assert.deepEqual(red.sources.map(s=>s.id),[fill.id,line.id]);assert.equal(red.sources[0].group,undefined);
-  assert.ok(validProject(q));assert.deepEqual(stitchGroups(red).map(g=>g.kinds),[['redwork']]);assert.equal(changeStitchKind(red,'running'),red);
-  assert.ok(!objectMenu(q,[id],false).some(e=>e.action==='editPoints'));
-  assert.equal(geometryPayload(q).objects[0].sources,undefined);
-  assert.equal(validProject({...q,objects:q.objects.map(o=>o.id===id?{...o,sources:[{...red}]}:o)}),false);
-  // Sources move with the redwork, so Break apart restores them where it now is.
-  const shifted={...q,objects:q.objects.map(o=>o.id===id?moveGeometry(o,([x,y])=>[x+1,y+2]):o)};
-  const apart=R.breakApart(shifted,id);assert.deepEqual(apart.ids,[fill.id,line.id]);
-  assert.deepEqual(apart.project.objects[0].rings[0][0],[21,22]);assert.equal(apart.project.objects[0].group,'g');assert.equal(apart.project.objects.length,3);
-  // Converting an existing redwork with more lines flattens its sources; ids in use are replaced.
-  const again=R.convertToRedwork(q,[id,q.objects[1].id]).project.objects[0];assert.equal(again.sources.length,3);
-  const copy={...q,objects:[...q.objects,{...red,id:'copy'}]},parts=R.breakApart(copy,'copy');assert.ok(parts.ids.every(i=>![fill.id,line.id].includes(i)));
-  const bare=R.breakApart(project([{...object('Red',[[[1,1],[5,5]],[[6,6],[9,9]]],'redwork'),length:2}]),project([]).objects[0]?.id??'');assert.equal(bare,null);
-  const plain=project([{...object('Red',[[[1,1],[5,5]],[[6,6],[9,9]]],'redwork'),id:'r',length:2}]);
-  assert.deepEqual(R.breakApart(plain,'r').project.objects.map(o=>[o.kind,o.length,o.rings.length]),[['running',2,1],['running',2,1]]);
 });
 test('Fill settings: Edit angles button, locked angle and Density control only while guides sweep',async()=>{
   const {createRequire}=await import('node:module'),{readFileSync,existsSync}=await import('node:fs'),ts=(await import('typescript')).default;

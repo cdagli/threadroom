@@ -348,3 +348,14 @@ test('Non-row panels render translated controls and hide settings the engine ign
     assert.ok(html.includes(t('Legacy rows')));assert.ok(!html.includes(t('Threads')));
   }
 });
+test('Saved redwork objects migrate to one running-stitch object with the same lines',async()=>{
+  const {migrateProject,validProject,object,defaultLocks}=(await import('./load-lib.mjs')).load('project');
+  const line={...object('Line',[[[10,10],[30,10]]],'running'),id:'line'},fill={...object('Fill',[[[40,40],[60,40],[50,60]]]),id:'fill'};
+  const red={...object('Redwork',[[[10,10],[30,10]],[[40,40],[60,40],[50,60],[40,40]]],'running'),id:'red',kind:'redwork',length:2,group:'g',sources:[line,fill]};
+  const old={version:1,name:'Old',machine:'brother-pr1x',hoop:'100x100',fabric:'woven',locks:defaultLocks,trimJump:3,groups:[{id:'g',name:'G'}],objects:[red,{...line,id:'other'}]};
+  assert.equal(validProject(old),false);
+  const p=migrateProject(JSON.parse(JSON.stringify(old)));assert.ok(validProject(p));
+  assert.deepEqual(p.objects.map(o=>[o.id,o.kind,o.group,o.rings.length,o.length]),[['red','running','g',2,2],['other','running',undefined,1,2.5]]);
+  assert.ok(p.objects.every(o=>!('sources' in o)));
+  const current={...old,objects:[line]};assert.equal(migrateProject(current),current,'up-to-date designs are returned unchanged');
+});

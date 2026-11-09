@@ -1,5 +1,5 @@
 import type {Kind,Point} from './project';
-export type DrawingTool='open'|'closed'|'blocks'|'points';
+export type DrawingTool='open'|'closed'|'points';
 type Click={p:Point;time:number};
 export type DraftState={points:Point[];corners:boolean[];lastLeft?:Click;lastRight?:Click};
 export const movedForDrawing=(start:Point,p:Point)=>Math.hypot(p[0]-start[0],p[1]-start[1])>=.5;
@@ -16,12 +16,11 @@ export function draftClick(state:DraftState,event:{p:Point;button:number;time:nu
   if(event.onFirst)return state.points.length>2?{...state,action:'close'}:unchanged;
   const double=event.tool!=='points'&&button===0&&(event.detail>=2||near(state.lastLeft)),points=double?state.points.slice(0,-1):[...state.points],corners=double?state.corners.slice(0,-1):[...state.corners];
   if(double&&!state.points.length)return unchanged;
-  const reference=points[points.length-(event.tool==='blocks'?2:1)];
+  const reference=points.at(-1);
   points.push(event.ctrl&&reference?snapAngle(reference,p):[...p]);corners.push(event.smoothDefault?button!==0||double:button===0&&!double);
   return {...state,points,corners,...(button===0?{lastLeft:{p:[...p] as Point,time}}:{lastRight:{p:[...p] as Point,time}}),action:'none'};
 }
 export function completeDraft(tool:DrawingTool,points:Point[],corners:boolean[],how:'enter'|'first'|'switch'):{closed:boolean;kind:Kind}|null {
-  // Blocks need two rungs (left, right, left, right); an unpaired last click is dropped.
   void corners;const closed=tool==='closed'||how==='first'&&tool==='open';
-  return points.length<(closed?3:tool==='blocks'?4:2)?null:{closed,kind:closed?'fill':tool==='blocks'?'satin-block':tool==='points'?'manual':'running'};
+  return points.length<(closed?3:2)?null:{closed,kind:closed?'fill':tool==='points'?'manual':'running'};
 }

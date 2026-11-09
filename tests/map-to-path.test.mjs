@@ -37,3 +37,28 @@ test('per-copy lock and hide survive relayout; guide moved with its copies is ap
  const path=syncPathBindings({...locked,objects:locked.objects.map(o=>o.id==='path'?moveGeometry(o,([x,y])=>[x,y+5]):o)},locked);assert.deepEqual(path.objects.filter(o=>o.group==='g').map(o=>[!!o.locked,!!o.hidden]),[[true,true],[false,true],[false,true]]);
  const all=syncPathBindings({...p,objects:p.objects.map(o=>moveGeometry(o,([x,y])=>[x+3,y+10]))},p);assert.deepEqual(all.objects.filter(o=>o.group==='g').map(centre),[[15,40],[53,40],[91,40]]);assert.ok(all.groups[0].pathBinding);
 });
+test('closed outlines guide copies evenly around them; a filled circle works as a guide',()=>{
+ const p=base(),ring=Array.from({length:48},(_,i)=>[50+30*Math.cos(i*Math.PI/24),50+30*Math.sin(i*Math.PI/24)]);
+ p.objects[1]={...object('circle',[ring],'fill'),id:'path'};
+ const n=mapped(p,{...settings,mode:'count',count:4}),copies=n.objects.filter(o=>o.group==='g');assert.equal(copies.length,4);assert.ok(validProject(n));
+ for(const c of copies.map(centre))assert.ok(Math.abs(Math.hypot(c[0]-50,c[1]-50)-30)<1.5,'each copy sits on the circle');
+ const angles=copies.map(centre).map(([x,y])=>Math.atan2(y-50,x-50)).sort((a,b)=>a-b),gaps=angles.map((a,i)=>(angles[(i+1)%4]-a+2*Math.PI)%(2*Math.PI));
+ assert.ok(gaps.every(g=>Math.abs(g-Math.PI/2)<.05),'spread evenly');
+ const filled=mapped(p,{...settings,mode:'fill',spacing:2});assert.equal(filled.groups[0].pathBinding.members.length,Math.floor(2*Math.PI*30/(4+2)));
+ const closedCurve=base();closedCurve.objects[1]={...object('loop',[[[20,20],[80,20],[80,80],[20,80]]],'running'),id:'path',curve:{points:[[20,20],[80,20],[80,80],[20,80]],closed:true,corners:[true,true,true,true]}};
+ closedCurve.objects[1].rings=[[[20,20],[80,20],[80,80],[20,80],[20,20]]];assert.equal(mapped(closedCurve).objects.filter(o=>o.group==='g').length,3);
+});
+test('bend along path makes an open line follow a curved guide and survives relayout and edits',()=>{
+ const p=base(),arc=Array.from({length:41},(_,i)=>[50+40*Math.cos(Math.PI+i*Math.PI/40),70+40*Math.sin(Math.PI+i*Math.PI/40)]);
+ p.objects[0]={...object('line',[[[10,5],[40,5]]],'running'),id:'prototype',curve:{points:[[10,5],[40,5]],closed:false,corners:[true,true]}};
+ p.objects[1]={...object('arc',[arc],'running'),id:'path'};
+ const n=mapped(p,{...settings,mode:'count',count:1,bend:true}),copy=n.objects.find(o=>o.group==='g');assert.ok(validProject(n));
+ assert.equal(copy.curve,undefined);assert.ok(copy.rings[0].length>20,'densified to follow the curve');
+ for(const q of copy.rings[0])assert.ok(Math.abs(Math.hypot(q[0]-50,q[1]-70)-40)<.05,'every point lies on the arc');
+ const rigid=mapped(p,{...settings,mode:'count',count:1}).objects.find(o=>o.group==='g');assert.ok(rigid.rings[0].some(q=>Math.abs(Math.hypot(q[0]-50,q[1]-70)-40)>1),'rigid copies stay straight');
+ const recoloured=syncPathBindings({...n,objects:n.objects.map(o=>o.id===copy.id?{...o,color:'#00ff00'}:o)},n);
+ assert.equal(recoloured.groups[0].pathBinding.prototypes[0].color,'#00ff00');assert.ok(recoloured.groups[0].pathBinding.prototypes[0].curve,'a settings edit keeps the prototype curve');
+ const nudged=syncPathBindings({...n,objects:n.objects.map(o=>o.id===copy.id?{...o,rings:[o.rings[0].map(([x,y])=>[x,y])].map(r=>r.map((q,i)=>i===0?[q[0],q[1]-.5]:q))}:o)},n);
+ assert.ok(validProject(nudged));assert.equal(nudged.groups[0].pathBinding.prototypes[0].curve,undefined,'a geometry edit unbends into the prototype');
+ assert.ok(nudged.objects.find(o=>o.group==='g').rings[0].every(q=>Number.isFinite(q[0])));
+});

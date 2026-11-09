@@ -8,7 +8,7 @@ Use this when matching supplied artwork closely or repairing a design that looks
   weight, so agree on size before a detailed texture pass.
 - Keep semantic parts independent. One whisker = one named object, including an optional retraced
   return within that object. Keep highlights and spots separately selectable where practical. Use
-  groups for organization; do not union or redwork-merge distinct parts to improve cut statistics.
+  groups for organization; do not union or merge distinct parts to improve cut statistics.
   Test one grouped child: select it in Layers, delete, verify only that ID disappears, then undo.
 - Threadroom groups must occupy contiguous sew-order slots. Sorting members apart silently removes
   later memberships. Prefer related groups within colour blocks, or accept additional colour changes

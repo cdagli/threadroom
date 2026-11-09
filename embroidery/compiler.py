@@ -43,7 +43,7 @@ CONNECT_TOLERANCE = 0.1
 FILL_KINDS = ("fill", "cross")
 WIDE_KINDS = ("satin", "zigzag", "e-stitch")
 ROPE_KINDS = ("double-rope", "triple-rope")
-KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual", *ROPE_KINDS, "satin-block", "redwork")
+KINDS = (*FILL_KINDS, "running", "bean", "backstitch", "satin", "zigzag", "e-stitch", "underlay", "manual", *ROPE_KINDS, "satin-block")
 SATIN_MAX = 12.7  # PR1X / PES single stitch limit
 # Short stitches: shorten alternate inner bites by SHORT_INSET of the width where the
 # inner rail is compressed below SHORT_RATIO of the centre line and its needle hits
@@ -1700,9 +1700,6 @@ def plan_object(obj, at, target):
             # motif floats loosen and snag, so they are split.
             return [[(path, min(LONG_STITCH-.15, max(limit, max(math.dist(a,b) for a,b in zip(path,path[1:]))+.01)))] for path in paths]
         return [[(path, limit)] for path in paths]
-    if kind == "redwork":
-        from .redwork import plan
-        return plan(obj, at, entry, exit or target)
     return route_lines(obj, at, entry, exit, exit or target)
 
 

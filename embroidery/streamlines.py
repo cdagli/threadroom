@@ -89,7 +89,7 @@ def route_streamlines(obj, at, entry, target):
     rings,rule = obj['rings'],obj.get('fillRule','evenodd')
     separation = obj.get('patternParams',{}).get('separation',1.5)
     lines = clip_lines(generate(rings,obj.get('angle',0),separation,obj.get('angleGuides')),rings,rule)
-    # Ember's redwork router doubles every streamline and every boundary ring.
+    # Every streamline and every boundary ring is sewn out and back (Ember's redwork-style routing).
     # Nearest-first routing with safe in-shape travel replaces its Euler router.
     lines += [r+[r[0]] for r in rings]
     pieces,region,length = [],C.Region(rings,rule),obj.get('fillLength',4)

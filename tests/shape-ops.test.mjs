@@ -126,14 +126,13 @@ test('Locked objects and two-rail Blocks are left out of shape operations',()=>{
   assert.equal(S.shapeRegion(block),null);
   const opts=S.shapeOptions(p,['a','b','blk']);assert.deepEqual([opts.closed,opts.combine,opts.knife],[1,false,true]);
 });
-test('Angle guides survive shape operations unchanged; redwork is never reshaped',()=>{
+test('Angle guides survive shape operations unchanged',()=>{
   const guides=[{a:[12,20],b:[38,22]},{a:[12,34],b:[38,30]}];
-  const p=project(named('a',[sq(10,10,30)],'fill',{angleGuides:guides}),named('b',[sq(30,15,20)]),named('r',[sq(10,60,20)],'redwork',{sources:[named('s',[sq(10,60,20)],'running')]}));
+  const p=project(named('a',[sq(10,10,30)],'fill',{angleGuides:guides}),named('b',[sq(30,15,20)]));
   assert.deepEqual(ok(S.combineShapes(p,['a','b'],'union')).project.objects[0].angleGuides,guides);
   assert.deepEqual(ok(S.offsetShapes(p,['a'],1,true)).project.objects.find(o=>o.name.endsWith('offset')).angleGuides,guides);
   const pieces=ok(S.knifeShapes(p,['a'],[25,0],[25,50])).project.objects.filter(o=>o.name.startsWith('a '));
   assert.equal(pieces.length,2);assert.ok(pieces.every(o=>o.angleGuides===guides));
-  assert.ok(S.offsetShapes(p,['r'],1).error);assert.ok(S.knifeShapes(p,['r'],[20,50],[20,90]).error);
 });
 
 test('Flatten removes the earlier rim at a shared outer edge and retains interior interlock',()=>{

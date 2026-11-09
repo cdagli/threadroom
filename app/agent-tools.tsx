@@ -5,6 +5,8 @@ import {useWebMCP} from '@/lib/use-webmcp';
 import {around,centre,selectionBounds,translate,type Align,type Matrix} from '@/lib/editing';
 import {designSummary,editablePoints,editPoints,en,englishMessage,findThreads,issueCounts,issueReport,makePath,makeShape,menuCommands,objectDetail,objectLimit,patchObject,reference,setSewOrder,shapeKinds,stitchKinds,checked,validateArgs,type MenuCommand,type ObjectPatch,type PathMode,type PointOp,type Schema} from '@/lib/agent-tools';
 import {defaultLocks,defaultTrimJump,demo,fabrics,hoops,lockLimits,normalizeGroups,validProject,withFabric,type Compiled,type Fabric,type Kind,type StitchObject,type Point,type Project,type RefImage} from '@/lib/project';
+import {defaultPathSettings,mapToPath,unlinkPath,updatePathSettings} from '@/lib/map-to-path';
+import type {PathSettings} from '@/lib/path-binding';
 import {combineShapes,cutHole,cutHoles,flattenOverlaps,knifeShapes,offsetShapes,type ShapeResult} from '@/lib/shape-ops';
 import {exportImage,imageFilename} from '@/lib/image-export';
 import {exportSVG} from '@/lib/svg-export';
@@ -234,7 +236,7 @@ const tools:Tool[]=[
       return {ok:true,selection:now(api).selection};
     }},
   {name:'edit_objects',inputSchema:obj({command:{type:'string',enum:[...menuCommands]},ids:idList},['command']),
-    description:'Runs an editor command on objects, exactly like the right-click menu: copy, cut, paste, duplicate, delete, group, ungroup, lock, unlock, hide, show, redwork (convert lines to redwork), breakApart (restore redwork sources), front/forward/backward/back (stitch order: front sews last), flipH, flipV, rotate (90°), selectAll, unlockAll. Each command is one undo step.',
+    description:'Runs an editor command on objects, exactly like the right-click menu: copy, cut, paste, duplicate, delete, group, ungroup, lock, unlock, hide, show, front/forward/backward/back (stitch order: front sews last), flipH, flipV, rotate (90°), selectAll, unlockAll. Each command is one undo step.',
     run:async(api,{command,ids})=>{
       if(!menuCommands.includes(command))throw new Error(`Unknown command "${command}".`);needDraftFree(api);
       const before=now(api).project();
@@ -319,15 +321,35 @@ const tools:Tool[]=[
       await act(api,a=>{a.commit(r.project);if(r.ids.length)a.select(r.ids);});
       notify(api,menuLabels[(operation==='cut_holes'||operation==='cut_hole'?'cutHoles':operation) as MenuAction]);return outcome(api,before);
     }},
+  {name:'map_to_path',inputSchema:obj({ids:idList,guide:{type:'string',description:'Guide object id: one open line, or one closed shape (no holes) to repeat around'},group:{type:'string',description:'Existing path layout group id: change its settings, or unlink it'},unlink:{type:'boolean',description:'With group: freeze the copies into ordinary objects'},
+    mode:{type:'string',enum:['fill','count','spacing'],description:'fill: as many copies as fit; count: exactly count; spacing: a fixed gap'},count:{type:'integer',minimum:1,maximum:80},spacing:{type:'number',minimum:0,maximum:100,description:'Gap between copies in mm'},offset:{type:'number',minimum:0,maximum:1000,description:'Start offset along the guide in mm'},
+    rotate:{type:'boolean',description:'Turn copies with the guide (default true)'},bend:{type:'boolean',description:'Warp each copy to follow the guide curve, e.g. a straight line becomes the curve (default false)'},reverse:{type:'boolean'},hidePath:{type:'boolean',description:'Keep the guide out of the stitches (default true)'},align:{type:'string',enum:['start','center']},name:{type:'string'}}),
+    description:'Map to path: repeat motifs along a guide as a live group that re-lays out when the guide or a copy changes. Give ids (motifs, not text: text bends with update_text layout arc or wave) and guide; or group to change settings or unlink. Around a closed guide copies spread evenly. Limited to 80 copies inside the hoop.',
+    run:async(api,{ids,guide,group,unlink,name,...patch})=>{
+      needDraftFree(api);const before=now(api).project(),settings=(base:PathSettings)=>({...base,...Object.fromEntries(Object.entries(patch).filter(([,v])=>v!==undefined))}) as PathSettings;
+      let next:Project,label:Key;
+      if(typeof group==='string'){
+        const binding=before.groups?.find(g=>g.id===group)?.pathBinding;if(!binding)throw new Error(`"${group}" is not a path layout group. get_design lists groups.`);
+        next=unlink?unlinkPath(before,group):updatePathSettings(before,group,settings(binding.settings));label=unlink?'Unlinked from path':'Objects mapped to path';
+      }else{
+        if(typeof guide!=='string')throw new Error('Give guide (a path id) with ids, or group to edit an existing layout.');
+        const list=ensureIds(api,ids).filter(id=>id!==guide);
+        if(before.objects.some(o=>list.includes(o.id)&&o.text))throw new Error('Text is not mapped to a path; bend it with update_text layout "arc" or "wave", or the user can give it a drawn path in the Text panel.');
+        next=mapToPath(before,list,guide,settings(defaultPathSettings),typeof name==='string'&&name.trim()?name.trim().slice(0,40):'Along path');label='Objects mapped to path';
+      }
+      const created=next.groups?.find(g=>g.pathBinding&&!before.groups?.some(b=>b.id===g.id));
+      await act(api,a=>{a.commit(next);if(created)a.select(created.pathBinding!.members.flat());});
+      notify(api,label);return outcome(api,before,created?{group:created.id,copies:created.pathBinding!.members.length}:{});
+    }},
   {name:'get_points',annotations:readsUserText,inputSchema:obj({id:{type:'string'}},['id']),
-    description:'The editable anchor points of one object, as the point editor shows them, addressed by ring and index for edit_points: curves (ring 0, corner flag per anchor: true sharp, false smooth), satin blocks (ring 0 left rail, ring 1 right rail; index k on both is rung k) and polylines (one ring per outline). Also the start (entry, green) and end (exit, red) points and whether they are automatic. Text and redwork are not point-editable.',
+    description:'The editable anchor points of one object, as the point editor shows them, addressed by ring and index for edit_points: curves (ring 0, corner flag per anchor: true sharp, false smooth), satin blocks (ring 0 left rail, ring 1 right rail; index k on both is rung k) and polylines (one ring per outline). Also the start (entry, green) and end (exit, red) points and whether they are automatic. Text is not point-editable.',
     run:(api,{id})=>{const p=now(api).project(),o=p.objects.find(o=>o.id===id);if(!o)throw new Error(`Unknown object id "${id}".`);return editablePoints(o,p);}},
   {name:'edit_points',inputSchema:obj({id:{type:'string'},operations:{type:'array',minItems:1,maxItems:200,items:obj({
       op:{type:'string',enum:['move','insert','remove','set_corner','set_end']},ring:{type:'integer',minimum:0,description:'default 0'},index:{type:'integer',minimum:0},
       to:{...pt,description:'move: new position [x, y] mm'},by:{...pt,description:'move: offset [dx, dy] mm'},afterIndex:{type:'integer',minimum:-1,description:'insert: new point goes after this index (-1: before the first)'},
       at:{type:['array','null'],items:{type:'number'},minItems:2,maxItems:2,description:'insert: position; set_end: point on the outline, or null for automatic'},
       corner:{type:'boolean',description:'insert / set_corner: sharp corner (true) or smooth (false)'},end:{type:'string',enum:['entry','exit'],description:'set_end: start (entry) or end (exit) of stitching'}},['op'])}},['id','operations']),
-    description:'Edits the points of one object in a single undo step, like the point editor: move {op,ring,index,to|by}, insert {op,ring,afterIndex,at,corner}, remove {op,ring,index}, set_corner {op,ring,index,corner}, set_end {op,end,at} (entry/exit snap to the outline; null resets to automatic). Operations apply in order, so later indices refer to the result of earlier ones. Call get_points first. Keeps the UI minimums (3 points for closed shapes, 2 for lines, 2 rungs for satin blocks) and the hoop; locked, hidden, text and redwork objects are refused.',
+    description:'Edits the points of one object in a single undo step, like the point editor: move {op,ring,index,to|by}, insert {op,ring,afterIndex,at,corner}, remove {op,ring,index}, set_corner {op,ring,index,corner}, set_end {op,end,at} (entry/exit snap to the outline; null resets to automatic). Operations apply in order, so later indices refer to the result of earlier ones. Call get_points first. Keeps the UI minimums (3 points for closed shapes, 2 for lines, 2 rungs for satin blocks) and the hoop; locked, hidden, and text objects are refused.',
     run:async(api,{id,operations})=>{
       needDraftFree(api);const before=now(api).project(),o=before.objects.find(o=>o.id===id);if(!o)throw new Error(`Unknown object id "${id}".`);
       const r=editPoints(o,operations as PointOp[],hoops[before.hoop]);if('error' in r)throw new Error(r.error);

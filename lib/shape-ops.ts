@@ -8,8 +8,7 @@ import {difference,intersection,offsetRegion,regionArea,regionFromRings,regionRi
 // plain-ring objects: the outer outline plus even-odd hole rings, all still editable point by point.
 // Locked objects are skipped: never changed, removed or used as cutters (an operation with nothing
 // unlocked left is refused). Two-rail satin Blocks are excluded too: their rings hold the centre line and
-// the shape lives in the rails, which these operations can't rebuild, so a Block stays as drawn. Redwork
-// is excluded as well: Break apart restores its sources, which a reshaped route would contradict.
+// the shape lives in the rails, which these operations can't rebuild, so a Block stays as drawn.
 // Angle guides are world-space directions, so every result (knife pieces included) keeps them as they are.
 export type ShapeResult={project:Project;ids:string[];message:string}|{error:string};
 export type Combine='union'|'subtract'|'intersect';
@@ -24,7 +23,7 @@ function withRegion(o:StitchObject,g:Region):StitchObject{
   delete next.curve;delete next.fillRule;return next;
 }
 const piece=(o:StitchObject,rings:Point[][],name:string,id:string):StitchObject=>{const next={...o,id,name:name.slice(0,40),rings};for(const k of ['curve','fillRule','entry','exit','center'] as const)delete next[k];return next;};
-/** @test */ export const shapeable=(o:StitchObject)=>!o.hidden&&!o.locked&&!o.rails&&o.kind!=='satin-block'&&o.kind!=='redwork';
+/** @test */ export const shapeable=(o:StitchObject)=>!o.hidden&&!o.locked&&!o.rails&&o.kind!=='satin-block';
 const chosen=(p:Project,ids:readonly string[])=>p.objects.filter(o=>ids.includes(o.id)&&shapeable(o));
 type Box=[number,number,number,number];
 const boxOf=(g:Region):Box=>{let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const [x,y] of g.flat(2)){x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}return [x0,y0,x1,y1];};

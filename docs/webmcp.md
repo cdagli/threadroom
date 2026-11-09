@@ -52,7 +52,7 @@ Where `document.modelContext` doesn't exist, registration does nothing.
 | `get_editor_state` | Tool, selection, panel, zoom, view toggles, undo depth, engine status, last message or error |
 | `capture_preview` | PNG of the design: a realistic stitch render, or shapes on the hoop |
 | `select_objects` | Select objects or a reference image, optionally panning to them |
-| `edit_objects` | Right-click commands: copy, cut, paste, duplicate, delete, group, lock, hide, redwork, order, flip, rotate… |
+| `edit_objects` | Right-click commands: copy, cut, paste, duplicate, delete, group, lock, hide, order, flip, rotate… |
 | `set_sew_order` | Listed ids fill their existing slots in the given order; unlisted objects stay in place. All ids give a full permutation in one undo step. Sew order is layer order; later objects sew on top. Group colours and minimise jumps |
 | `update_objects` | Stitch settings, colour or Brother thread, stitch kind, density, underlay, ties, entry and exit |
 | `add_shape` | Circle, rectangle, star, triangle, diamond, hexagon, heart |
@@ -61,7 +61,8 @@ Where `document.modelContext` doesn't exist, registration does nothing.
 | `get_points` | The editable anchors of one object, by ring and index: curve anchors with corner flags, satin-block rails (rung k is index k on both rails) or polyline points, plus the start and end points |
 | `edit_points` | One undo step of point edits: `move` (`to` or `by`), `insert` (`afterIndex`, `at`, `corner`), `remove`, `set_corner`, `set_end` (entry/exit, `null` for automatic) |
 | `transform_objects` | Move, scale, rotate, set position or size, align |
-| `shape_operation` | Union, subtract, intersect, flatten, cut holes, offset, knife, cut a hole |
+| `shape_operation` | Union, subtract, intersect, flatten, cut holes, offset (in place, or `keep` for a new object), knife, cut a hole |
+| `map_to_path` | Repeat motifs along an open guide or around a closed shape as a live layout; Fill, Count or fixed spacing, rotate, `bend` to warp copies along the curve, reverse, offset; change settings or unlink by `group`. Text is refused |
 | `apply_issue_fix` | Apply one issue's one-click fix, or every available fix |
 | `focus_issue` | Show an issue in the UI (select, pan, open the check panel) |
 | `update_project` | Name, hoop, fabric, sewing speed, locks, trim distance, resize the design |
@@ -86,7 +87,7 @@ for anything left (for example, `kind: "running"` for hairlines) → `capture_pr
 `[{op:"move",index:2,by:[0,-3]},{op:"set_corner",index:2,corner:false},{op:"insert",afterIndex:4,at:[42,61]}]`.
 Operations apply in order, so later indices refer to the result of earlier ones. The edit keeps the editor's
 minimums (3 points for closed shapes, 2 for lines, 2 rungs for satin blocks) and stays inside the hoop.
-Locked, hidden, text and redwork objects are refused.
+Locked, hidden and text objects are refused.
 
 **Analyse the design.** `get_stitch_report` (sewing time, colour changes, trims) → `set_view`
 (`density: true`) → `capture_preview` (`mode: "stitches"`) → suggest merging colours or reordering

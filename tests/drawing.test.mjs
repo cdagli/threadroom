@@ -25,8 +25,8 @@ test('Angle snapping retains radius; axis lock uses the dominant displacement',(
   const p=snapAngle([0,0],[10*Math.cos(Math.PI/9),10*Math.sin(Math.PI/9)]);
   assert.ok(Math.abs(p[0]-10*Math.cos(Math.PI/12))<1e-10);assert.ok(Math.abs(p[1]-10*Math.sin(Math.PI/12))<1e-10);
   assert.deepEqual(lockAxis([1,2],[8,5]),[8,2]);assert.deepEqual(lockAxis([1,2],[3,9]),[1,9]);
-  const state={points:[[0,0],[3,8]],corners:[true,true]},snapped=click(state,[10,3],100,0,{ctrl:true,tool:'blocks'});
-  assert.deepEqual(snapped.points.at(-1),snapAngle([0,0],[10,3]));
+  const state={points:[[0,0],[3,8]],corners:[true,true]},snapped=click(state,[10,3],100,0,{ctrl:true,tool:'open'});
+  assert.deepEqual(snapped.points.at(-1),snapAngle([3,8],[10,3]));
 });
 test('First-point closure and completion preserve tool topology and minimums',()=>{
   const state={points:[[0,0],[10,0]],corners:[true,true]};assert.deepEqual(click(state,[0,0],100,0,{onFirst:true}).points,state.points);

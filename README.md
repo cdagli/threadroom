@@ -32,9 +32,14 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   scissors trims, actual tie-in/off stitches and selected objects’ needle dots.
   Measure (M) shows display-unit length, clockwise degrees and inches; hold Shift
   while dragging to snap to 15°.
-- **Map to path** in object settings: select one or more motifs, choose an open
-  guide, preview and apply. Fill, Count and fixed-spacing modes support tangent
-  rotation, reverse, start offset and centre alignment. The saved group binding
+- **Map to path** in object settings: select one or more motifs, choose a guide
+  (an open line, or a closed shape such as a circle to repeat around; with two or
+  more selected the largest is suggested), preview and apply. Fill, Count and
+  fixed-spacing modes support tangent rotation, reverse, start offset and centre
+  alignment; around a closed guide copies are spread evenly. *Bend along path*
+  warps each copy to follow the guide's curve (open lines become a curve; curves
+  are sampled every 0.5 mm). Text is not mapped here: it follows a curve through
+  its own Path layout in the Text panel. The saved group binding
   re-lays all copies when a guide or placed prototype changes, keeping stitch
   settings. Edit guide path reveals a hidden guide; hidden guides are excluded
   from stitches and Layers. Unlink freezes the copies into ordinary objects.
@@ -47,7 +52,11 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   with holes and preserving the same lattice across colours, in one undo step.
   Supports 1–96 rows/columns, 1–32 colours and 1–20 mm cells (0.5 mm steps), subject
   to the existing hoop, 80-object and 12,000-point limits.
-- Draw open and closed shapes with corner and curve points, two-rail satin blocks, freehand strokes (finish on release), ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
+- **Brushes** (B): paint a freehand stroke that becomes a ready-made stitch object: Running, Bean,
+  Rope, Satin (even width), Tapered satin (swells in the middle; a pen's pressure sets the width) and
+  Fill (everything the stroke covers, overlaps merged, becomes one tatami fill). Each brush
+  remembers its own size. Strokes stay ordinary editable objects (`lib/brushes.ts`).
+- Draw open and closed shapes with corner and curve points, ready-made shapes (circle, rectangle, star, triangle, diamond, hexagon, heart), or individual stitch points. Curves retain draggable anchors and their corner/curve type in saved JSON projects. Move objects
   and edit control points; change thread colours, order, spacing, length,
   fill direction, constant-width satin, underlay, and pull compensation.
 - Shape tools (object settings, Shape tools section): Union, Subtract and Intersect
@@ -58,7 +67,7 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   (each later fill is removed from the earlier fills it overlaps, inset 0.4 mm so
   the edges interlock; fully hidden fills are deleted; also the "Flatten overlaps"
   fix on the design check's stacked-stitches warning); Offset (grow or shrink by
-  N mm with rounded joins, in place or as a new object, for outlines and appliqué
+  N mm with rounded joins, in place by default or as a new object, for outlines and appliqué
   allowances); and the Knife (K): drag a straight line across shapes to split each
   into the parts left and right of it (closed shapes need both ends outside them;
   open paths split where they cross). Each operation is one undo step. Results are
@@ -144,21 +153,8 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   undo as one step per gesture and export to SVG. Shape operations keep them as
   they are, knife pieces included, since they are directions in hoop space.
   Locked or hidden fills can't be edited; the canvas menu has *Edit angles*.
-- **Redwork** (key W, or *Convert to redwork* in the settings): merges the
-  selected lines and fill outlines (not text) into one redwork object (stitch
-  length 2 mm) that keeps its sources; *Break apart* restores them where the
-  redwork now is. The compiler splits the lines where they cross or touch and
-  sews every piece exactly twice, out and back over the same holes, as one
-  continuous walk per connected group (Tarry's rule: an Euler circuit of the
-  doubled lines, preferring unsewn pieces and the straightest continuation), so
-  there are no trims inside a group; separate groups are joined nearest-first.
-  Locked objects block the conversion; the canvas menu has *Convert to redwork*
-  or *Break apart*. Shape operations leave redwork out, so its sources stay true.
-- **Satin blocks** (Blocks tool, key 3): click rail points alternately left,
-  right, left, right (each pair is a rung; Enter finishes; at least two rungs, an
-  unpaired last click is dropped). While drawing, both rails, the rungs and a
-  band from each rail's last point show. Left click: corner, right/double-click:
-  smooth, as for curves. The satin is sewn between the two rails, so its width
+- **Satin blocks** (from converted satin lettering, or the agent's `add_path`
+  blocks mode, whose points alternate left, right rail). The satin is sewn between the two rails, so its width
   follows them: each rail is a smooth curve resampled per rung segment to the
   same count on both rails, rungs pair by that index, and spacing is measured a
   third of the way from the outer to the inner rail. Blocks use the satin
@@ -497,8 +493,8 @@ Toolbar, left to right (shortcut in brackets), as in Ember:
 | Tool | | |
 |---|---|---|
 | Select (S or V) | Pan (H, or hold Space) | Measure (M): drag to read a distance in the display units; cleared when you change tools |
-| Open shape (1) | Closed shape (2) | Blocks (3): an open shape sewn as a satin column |
-| Freehand (4) | Points (P) | Text (T) |
+| Open shape (1) | Closed shape (2) | Points (P) |
+| Brush (B) | Text (T) | |
 | Shapes (R) | Play | Realistic view |
 
 Not on the toolbar: Cut holes (O) and Knife (K) from Shape tools, Click to stitch (7) from Artwork.
@@ -681,7 +677,7 @@ to whole minutes. The 30-second manual thread change and 3-second trim allowance
 are planning constants in `lib/production.ts`, not measured machine timings.
 Hooping, bobbin changes, acceleration, thread breaks and operator pauses are excluded.
 
-- **Open shape / Closed shape / Blocks:** left-click plots a corner (straight
+- **Open shape / Closed shape:** left-click plots a corner (straight
   lines meet sharply); right-click, or double-click, plots a curve point (the path
   bends smoothly through it). Points land on release; moving at least 0.5 mm
   before release places nothing. A double-click replaces its first click with one
@@ -693,7 +689,7 @@ Hooping, bobbin changes, acceleration, thread breaks and operator pauses are exc
   stays open; Closed closes). The tool stays active and the result is selected.
   Switching tools completes a valid draft; incomplete drafts are discarded.
   Corners are blue squares, smooth points green circles. Closed shapes are fills,
-  open shapes running stitch and blocks centre-line satin; change styles afterwards.
+  open shapes running stitch; change styles afterwards.
 - **Shapes:** pick circle, rectangle, star, triangle, diamond, hexagon or heart
   above the toolbar (the last one is remembered). Rectangle: click one corner,
   then the opposite corner (hold Ctrl/⌘ for a square). The others: click the
@@ -701,9 +697,6 @@ Hooping, bobbin changes, acceleration, thread breaks and operator pauses are exc
   Escape cancels. The preview shows the outline and the radius; shapes stop at
   the hoop edge. Each becomes an ordinary editable closed curve with a fill.
 - **Points:** click to place stitch points, then **Done**.
-- **Freehand:** draw and release to fit an editable curve, simplifying jitter and
-  retaining sharp bends. Ending within 2 mm of the start closes the curve as a
-  running-stitch loop. The Freehand tool stays active for another stroke.
 - **Undo point / Backspace / Delete:** remove the last draft point. **Cancel / Escape:**
   discard the unfinished path. Exports wait until the path is finished.
 - **Select:** move an object. **Edit points** or double-click the object exposes
@@ -728,11 +721,11 @@ Hooping, bobbin changes, acceleration, thread breaks and operator pauses are exc
   drawing points. The zoom buttons and +/− keys work during a trace as well.
 - Ctrl/⌘ Z undo and Ctrl/⌘ Shift Z redo. Text fields keep normal typing.
 
-New curves (including presets and freehand) use Levien's interpolating spline;
+New curves (including presets) use Levien's interpolating spline;
 existing saved curves without `curve.spline: 'levien'` keep their Catmull–Rom
 geometry through editing and continuation. Escape-to-discard and draggable draft
 points are deliberate differences from Ember. Open paths need two points and
-closed shapes three. Two-rail Blocks remain a separate feature.
+closed shapes three.
 
 Curve previews use fine samples; running/bean PES exports sample the curve at
 the selected stitch length. Resizing and moving keep anchors and geometry in sync.

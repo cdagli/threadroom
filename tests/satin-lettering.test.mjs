@@ -99,10 +99,10 @@ test('Font generator reproduces the checked-in JSON byte for byte',()=>{
   const run=spawnSync(process.env.THREADROOM_PYTHON||'.venv/bin/python',['scripts/generate-satin-fonts.py','--check'],{encoding:'utf8'});assert.equal(run.status,0,run.stderr);
 });
 
-test('Live satin lettering with main features: locks, hiding, transform box, map to path, shape ops, redwork, SVG and design check',()=>{
-  const {shapeOptions,shapeable}=load('shape-ops'),{canConvertToRedwork}=load('redwork'),{mapToPath,defaultPathSettings}=load('map-to-path'),{transformSelection,around}=load('editing'),{objectMenu}=load('context-menu'),{visibleCommands}=load('layers');
+test('Live satin lettering with main features: locks, hiding, transform box, map to path, shape ops, SVG and design check',()=>{
+  const {shapeOptions,shapeable}=load('shape-ops'),{mapToPath,defaultPathSettings}=load('map-to-path'),{transformSelection,around}=load('editing'),{objectMenu}=load('context-menu'),{visibleCommands}=load('layers');
   const o=lettering(spec('simplex','Ab')),line={...object('guide',[[[10,80],[90,80]]],'running'),id:'guide'},p={...project(o),objects:[o,line]};
-  assert.ok(!shapeable(o));assert.deepEqual(Object.values(shapeOptions(p,[o.id])).filter(v=>v===true),[]);assert.ok(!canConvertToRedwork(p,[o.id]));
+  assert.ok(!shapeable(o));assert.deepEqual(Object.values(shapeOptions(p,[o.id])).filter(v=>v===true),[]);
   assert.ok(!objectMenu(p,[o.id],false).some(e=>e.action==='editPoints'||e.action==='editAngles'));
   const blocks=convertSatinText(p,o.id);assert.ok(blocks.objects.filter(b=>b.rails).every(b=>!shapeable(b))&&validProject(blocks));;
   const moved=transformSelection(p,[o.id],around([50,50],1.5,1,20));assert.ok(moved&&validProject(moved));

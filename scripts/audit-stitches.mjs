@@ -47,7 +47,7 @@ for (const [shape, rings] of Object.entries(fillShapes)) {
 add('fill/even@0°', 'fill', 'rect-60x40', fillShapes['rect-60x40'], {angle: 0});
 add('fill/tatami@0°', 'fill', 'rect-60x40', fillShapes['rect-60x40'], {angle: 0, fillPattern: 'tatami'});
 for (const [shape, rings] of Object.entries(lineShapes)) {
-  for (const kind of ['running', 'bean', 'backstitch', 'double-rope', 'triple-rope', 'underlay', 'redwork', 'e-stitch']) add(kind, kind, shape, rings, {});
+  for (const kind of ['running', 'bean', 'backstitch', 'double-rope', 'triple-rope', 'underlay', 'e-stitch']) add(kind, kind, shape, rings, {});
   for (const w of [1, 3, 6, 10]) add(`satin@${w}`, 'satin', shape, rings, {satinWidth: w});
   for (const w of [2, 4]) add(`zigzag@${w}`, 'zigzag', shape, rings, {satinWidth: w});
   add('running@1.5', 'running', shape, rings, {length: 1.5});
@@ -149,7 +149,7 @@ function measure(c, result, payloadObject) {
     if (d > (across ? LIMITS.satin : LIMITS.long)) m.long++;
     const h = `${Math.round(x*10)},${Math.round(y*10)}`; holes.set(h, (holes.get(h) ?? 0)+1);
   }
-  const retrace = ['bean', 'backstitch', 'redwork', 'double-rope', 'triple-rope'].includes(c.kind);
+  const retrace = ['bean', 'backstitch', 'double-rope', 'triple-rope'].includes(c.kind);
   for (const n of holes.values()) if (n >= 3 && !retrace) m.repeat += n-2;
   m.sewn = lengths.length;
   m.shortShare = lengths.length ? m.short/lengths.length : 0;

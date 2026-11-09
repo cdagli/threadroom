@@ -5,7 +5,7 @@ import {fillPatterns, validPatternParams, type FillPattern, type PatternParams} 
 import {validText, type TextSpec} from './text';
 import {validImages} from './images';
 export type Point = [number, number];
-export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual' | 'double-rope' | 'triple-rope' | 'satin-block' | 'redwork';
+export type Kind = 'fill' | 'running' | 'bean' | 'backstitch' | 'satin' | 'zigzag' | 'e-stitch' | 'cross' | 'underlay' | 'manual' | 'double-rope' | 'triple-rope' | 'satin-block';
 // A straight angle guide across a fill (Ember's Edit angles), from a to b.
 export type AngleGuide = {a: Point; b: Point};
 // Two-rail satin block: left/right rail anchors paired by index (rung k = left[k], right[k]).
@@ -39,7 +39,6 @@ export type StitchObject = {
   text?: TextSpec;
   angleGuides?: AngleGuide[]; // fills: 1 sets the angle, 2+ sweep the rows (lib/angle-guides.ts)
   rowShortening?: boolean; densityTrigger?: number; // sweep density control; unset = on, 0.5
-  sources?: StitchObject[]; // redwork: the objects Break apart restores
   rotation?:number; // accumulated editor rotation, degrees
   fillRule?: 'nonzero'; // SVG winding, also set by geometryPayload for text
 };
@@ -69,8 +68,8 @@ export const hoops: Record<string, {width: number; height: number; label: Key}> 
   '300x200': {width: 300, height: 200, label: '300 × 200 mm'},
   '60x40': {width: 60, height: 40, label: '60 × 40 mm'},
 };
-export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', 'double-rope':'Double rope run', 'triple-rope':'Triple rope run', 'satin-block':'Satin block', redwork:'Redwork', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
-export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', 'double-rope':'A zigzag rope over a hidden double run', 'triple-rope':'A twisted rope sewn out and back', 'satin-block':'Satin between two drawn rails; the width can change', redwork:'Every line sewn out and back, with no trims', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
+export const kindNames: Record<Kind, Key> = {running:'Running / straight', bean:'Bean stitch', backstitch:'Backstitch', 'double-rope':'Double rope run', 'triple-rope':'Triple rope run', 'satin-block':'Satin block', satin:'Satin line', zigzag:'Zigzag stitch', 'e-stitch':'Appliqué E-stitch', fill:'Tatami fill', cross:'Cross stitch fill', underlay:'Underlay stitch', manual:'Manual stitches'};
+export const kindHints: Record<Kind, Key> = {running:'A single pass along a line', bean:'Three passes for a stronger outline', backstitch:'Overlapping stitches for a firm outline', 'double-rope':'A zigzag rope over a hidden double run', 'triple-rope':'A twisted rope sewn out and back', 'satin-block':'Satin between two drawn rails; the width can change', satin:'Dense, smooth coverage along a line', zigzag:'Open zigzags along a line', 'e-stitch':'An open edge for appliqué', fill:'Rows of short stitches covering a shape', cross:'Small crosses covering a shape', underlay:'A light foundation or placement line', manual:'Place each needle point yourself'};
 export const isFillKind=(kind:Kind)=>kind==='fill'||kind==='cross';
 export const hasCrossStyle=(o:StitchObject)=>o.crossStyle!==undefined||(['crossSize','threadCount','coverage','dense','flipped'] as const).some(k=>o[k]!==undefined);
 export const isWideKind=(kind:Kind)=>kind==='satin'||kind==='zigzag'||kind==='e-stitch';
@@ -238,6 +237,17 @@ function validRails(r:unknown,o:StitchObject):boolean {
   if(!Array.isArray(points)||points.length!==2||!points.every(Array.isArray)||points[0].length!==points[1].length||points[0].length<2||points[0].length>100||!points.every(rail=>rail.every(validPoint)))return false;
   return corners===undefined||Array.isArray(corners)&&corners.length===2&&corners.every((c,i)=>Array.isArray(c)&&c.length===points[i].length&&c.every(v=>typeof v==='boolean'));
 }
+// Brings designs saved by older versions up to date before they are validated or edited.
+// Redwork (removed) becomes one running-stitch object with the same lines, so the object count,
+// ids, groups and Map to path layouts stay as they were and its lines become point-editable.
+type Legacy=Omit<StitchObject,'kind'>&{kind:string;sources?:unknown};
+const unRedwork=(o:Legacy):Legacy=>{if(o?.kind!=='redwork'&&o?.sources===undefined)return o;const {sources,...rest}=o;void sources;return o.kind==='redwork'?{...rest,kind:'running'}:rest;};
+export function migrateProject<T>(value:T):T{
+  if(!value||typeof value!=='object'||!Array.isArray((value as {objects?:unknown}).objects)||!JSON.stringify(value).includes('"redwork"'))return value;
+  const p=value as unknown as Omit<Project,'objects'>&{objects:Legacy[]};
+  const groups=p.groups?.map(g=>g.pathBinding?{...g,pathBinding:{...g.pathBinding,prototypes:(g.pathBinding.prototypes as unknown as Legacy[]).map(unRedwork) as unknown as StitchObject[]}}:g);
+  return {...p,objects:p.objects.map(unRedwork),...(groups&&{groups})} as unknown as T;
+}
 export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
@@ -294,8 +304,6 @@ export function validProject(value: unknown): value is Project {
     if(o.eFlipped!==undefined&&typeof o.eFlipped!=='boolean')return false;
     if(o.angleGuides!==undefined&&(!Array.isArray(o.angleGuides)||o.angleGuides.length>8||Array.from(o.angleGuides).some(g=>!g||typeof g!=='object'||!validPoint(g.a)||!validPoint(g.b)||Math.hypot(g.b[0]-g.a[0],g.b[1]-g.a[1])<.1)))return false;
     if(o.rowShortening!==undefined&&typeof o.rowShortening!=='boolean'||o.densityTrigger!==undefined&&!inRange(o.densityTrigger,.1,1))return false;
-    // Redwork sources are plain objects (no groups, no nested redwork), validated like a project.
-    if(o.sources!==undefined&&(o.kind!=='redwork'||!Array.isArray(o.sources)||!o.sources.length||Array.from(o.sources).some(s=>!s||s.kind==='redwork'||s.group!==undefined)||!validProject({...p,objects:o.sources,groups:undefined,artwork:undefined})))return false;
   }
   if (p.images !== undefined && !validImages(p.images)) return false;
   if(new Set(p.objects.map(o=>o.id)).size!==p.objects.length)return false;
@@ -303,7 +311,7 @@ export function validProject(value: unknown): value is Project {
     if(!b||typeof b.pathId!=='string'||!validPathSettings(b.settings)||!Array.isArray(b.prototypes)||!b.prototypes.length||b.prototypes.some(o=>!o||o.group!==undefined||o.layoutOnly)||!validProject({...p,groups:[],objects:b.prototypes,artwork:undefined,images:undefined}))return false;
     if(!Array.isArray(b.members)||!b.members.length||b.members.length>80||b.members.some(row=>!Array.isArray(row)||row.length!==b.prototypes.length||row.some(id=>typeof id!=='string'||!p.objects.some(o=>o.id===id&&o.group===g.id))))return false;
     const ids=b.members.flat();if(new Set(ids).size!==ids.length||ids.includes(b.pathId)||p.objects.some(o=>o.group===g.id&&!ids.includes(o.id)))return false;
-    const path=p.objects.find(o=>o.id===b.pathId);if(!path||path.text||path.rails||isFillKind(path.kind)||path.curve?.closed||path.rings.length!==1||path.rings[0].length<2||path.group&&p.groups?.some(g=>g.id===path.group&&g.pathBinding))return false;
+    const path=p.objects.find(o=>o.id===b.pathId);if(!path||path.text||path.rails||path.rings.length!==1||path.rings[0].length<2||path.group&&p.groups?.some(g=>g.id===path.group&&g.pathBinding))return false;
   }}
   if (p.artwork && (typeof p.artwork.src !== 'string' || !/^data:image\/(png|jpeg|webp|svg\+xml);/i.test(p.artwork.src) || typeof p.artwork.name !== 'string' || [p.artwork.x,p.artwork.y,p.artwork.width,p.artwork.height].some(n=>typeof n !== 'number'|| !Number.isFinite(n)))) return false;
   return true;

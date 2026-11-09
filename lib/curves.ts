@@ -78,17 +78,11 @@ const midpoints=(a:Point[],b:Point[])=>a.map((p,i)=>[(p[0]+b[i][0])/2,(p[1]+b[i]
 export const blockOutline=(rails:Rails)=>{const [l,r]=railSamples(rails);return [...l,...[...r].reverse()];};
 /** @test */ export const blockWidths=(rails:Rails)=>{const [l,r]=railSamples(rails);return l.map((p,i)=>Math.hypot(r[i][0]-p[0],r[i][1]-p[1]));};
 export const withRails=(o:StitchObject,rails:Rails):StitchObject=>({...o,rails,rings:[blockCentre(rails)]});
-// Drawn block clicks alternate left, right; an unpaired last click is dropped.
+// Agent block points alternate left, right; an unpaired last click is dropped.
 export function draftRails(points:Point[],corners:boolean[]):Rails|null {
   const rungs=Math.floor(points.length/2);if(rungs<2)return null;
   const side=(k:0|1)=>Array.from({length:rungs},(_,i)=>2*i+k);
   return {points:[side(0).map(i=>[...points[i]] as Point),side(1).map(i=>[...points[i]] as Point)],corners:[side(0).map(i=>corners[i]??true),side(1).map(i=>corners[i]??true)]};
-}
-// Draft preview: both rails as splines, the rungs, and the points of a partial rung.
-export function draftBlockPaths(points:Point[],corners:boolean[]):Point[][] {
-  const side=(k:number)=>points.flatMap((p,i)=>i%2===k?[p]:[]),flags=(k:number)=>corners.filter((_,i)=>i%2===k);
-  const rails=[0,1].map(k=>curvePoints(side(k),false,flags(k),'levien')).filter(r=>r.length>1);
-  return [...rails,...Array.from({length:Math.floor(points.length/2)},(_,k)=>[points[2*k],points[2*k+1]])];
 }
 export const isCorner=(o:StitchObject,ring:number,index:number)=>!!(o.rails?o.rails.corners?.[ring]?.[index]:o.curve?.corners?.[index]);
 
@@ -102,7 +96,6 @@ export type StitchGroup={label:string;kinds:Kind[]};
 export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGroup[] {
   const line:Kind[]=['running','bean','backstitch','double-rope','triple-rope','satin','zigzag','e-stitch','underlay'];
   if(o.rails||o.text?.satin)return [{label:t("Blocks"),kinds:['satin-block']}];
-  if(o.kind==='redwork')return [{label:t("Redwork"),kinds:['redwork']}];
   if(!isClosedShape(o))return [{label:t("Line"),kinds:[...line,'manual']}];
   if(o.text)return [{label:t("Fill"),kinds:['fill','cross']},{label:t("Outline"),kinds:line}];
   // A closed shape offers only area stitches; an outline kind it already has (e.g. imported) stays listed.
@@ -111,7 +104,7 @@ export function stitchGroups(o:StitchObject,t:Translator=createT('en')):StitchGr
 // Text is relaid out by the editor; manual curves become their anchor stitches.
 // Blocks keep their rails and kind; a rope run starts at Ember's 1.5 mm stitch length.
 export function changeStitchKind(o:StitchObject,kind:Kind):StitchObject {
-  if(kind===o.kind||o.rails||o.text?.satin||kind==='satin-block'||kind==='redwork'||o.kind==='redwork')return o;
+  if(kind===o.kind||o.rails||o.text?.satin||kind==='satin-block')return o;
   const next=switchKind(o,kind);
   return next!==o&&isRopeKind(kind)&&!isRopeKind(o.kind)?{...next,length:ropeDefaults.length}:next;
 }
@@ -201,7 +194,7 @@ export function removeGeometryPoint(o:StitchObject,ring:number,index:number):Sti
 // Entry/exit points and text specs move as ring -1, so dragging one anchor leaves them in place.
 export function moveGeometry(o:StitchObject, move:(p:Point,ring:number,index:number)=>Point):StitchObject {
   const ends={...(o.entry&&{entry:move(o.entry,-1,-1)}),...(o.exit&&{exit:move(o.exit,-1,-1)}),...(o.center&&{center:move(o.center,-1,-1)}),
-    ...transformGuides(o,p=>move(p,-1,-1)),...(o.sources&&{sources:o.sources.map(s=>moveGeometry(s,p=>move(p,-1,-1)))})};
+    ...transformGuides(o,p=>move(p,-1,-1))};
   if(o.rails)return {...withRails(o,{...o.rails,points:o.rails.points.map((rail,ri)=>rail.map((p,i)=>move(p,ri,i))) as [Point[],Point[]]}),...ends};
   if(o.text)return {...o,...ends,text:transformText(o.text,p=>move(p,-1,-1)),rings:o.rings.map((r,ri)=>r.map((p,i)=>move(p,ri,i)))};
   if(o.curve){
@@ -286,8 +279,6 @@ export const reclose=(rings:Point[][],closed:boolean)=>rings.map(r=>{const shut=
   return result;
 }
 
-// Redwork sources only matter to Break apart; the compiler sews the merged rings.
-const withoutSources=(o:StitchObject)=>{if(!o.sources)return o;const {sources,...rest}=o;void sources;return rest;};
 export function geometryPayload(project:Project):Omit<Project,'artwork'|'images'|'fabric'|'locks'|'objects'>&{objects:Resolved[]} {
   const {artwork,images,fabric,locks,...rest}=project;void artwork;void images;
   // Smooth display tessellation is finer than running stitches. Sample along
@@ -298,7 +289,7 @@ export function geometryPayload(project:Project):Omit<Project,'artwork'|'images'
   const tolerant=(o:StitchObject)=>o.tolerance!==undefined&&['running','bean','backstitch'].includes(o.kind);
   // Fabric defaults are resolved here; the compiler receives explicit values only.
   const ends=(o:Resolved):Resolved=>({...o,entry:o.entry&&snapEnd(o,o.entry)||undefined,exit:o.exit&&snapEnd(o,o.exit)||undefined});
-  return {...rest,objects:rest.objects.filter(o=>o.rings.length&&!o.layoutOnly).map(o=>ends(resolve(withoutSources(o),fabric,locks))).flatMap(o=>{
+  return {...rest,objects:rest.objects.filter(o=>o.rings.length&&!o.layoutOnly).map(o=>ends(resolve(o,fabric,locks))).flatMap(o=>{
     if(o.text?.satin){
       const {objects,characters}=satinTextShapes(o),{text,...plain}=o;void text;
       return objects.length?[{...plain,rings:objects.map(b=>b.rings[0]),satinColumns:objects.map((b,i)=>({railPaths:b.rails!.points,character:characters[i]})),entry:undefined,exit:undefined}]:[];

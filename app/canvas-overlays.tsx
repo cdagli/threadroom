@@ -2,7 +2,7 @@
 import {useT} from './i18n';
 import {memo,useMemo} from 'react';
 import {pathData,type Point,type Command} from '@/lib/project';
-import {routeEnds,draftBlockPaths} from '@/lib/curves';
+import {routeEnds} from '@/lib/curves';
 import type {Warning} from '@/lib/check';
 import {measureAngle} from '@/lib/measure';
 import {unitValue,type Units} from '@/lib/view-settings';
@@ -35,12 +35,11 @@ export const EndHandles=memo(function EndHandles({ends,canvasScale,onReset}:{end
   return <>{(['entry','exit'] as const).map(k=>{const [x,y]=ends[k],c=k==='entry'?'var(--success)':'var(--danger)',same=Math.hypot(ends.entry[0]-ends.exit[0],ends.entry[1]-ends.exit[1])*canvasScale<10,label=t(k==='entry'?'entryPoint':'exitPoint')+(ends.auto[k]?t('automatic'):'');
                 return <g key={k} className="end-handle" data-end={k} role="button" tabIndex={0} aria-label={label} onKeyDown={e=>{if((e.key==='Delete'||e.key==='Backspace')&&!ends.auto[k]){e.preventDefault();e.stopPropagation();onReset(k);}}}><circle cx={x} cy={y} r={(k==='exit'&&same?6:12)/canvasScale} fill="transparent"/><circle cx={x} cy={y} r={(k==='entry'&&same?6.5:4.5)/canvasScale} fill={ends.auto[k]?'var(--surface-raised)':c} stroke={c} strokeWidth={1.6/canvasScale} pointerEvents="none"/><title>{t("{v0} · drag along the outline{v1}",{v0:label,v1:ends.auto[k]?'':t(' · Delete to reset')})}</title></g>;})}</>;
 });
-// Blocks preview both rails, the rungs, and a band from each rail's last point to the cursor.
-export const DraftOverlay=memo(function DraftOverlay({draft,displayDraft,closeable,closeHover,color,hover,drawing,freehand,curved,blocks=false,corners,canvasScale}:{draft:Point[];displayDraft:Point[];closeable:boolean;closeHover:boolean;color:string;hover:Point|null;drawing:boolean;freehand:boolean;curved:boolean;blocks?:boolean;corners:boolean[];canvasScale:number}){
+export const DraftOverlay=memo(function DraftOverlay({draft,displayDraft,closeable,closeHover,color,hover,drawing,freehand,brushWidth,curved,corners,canvasScale}:{draft:Point[];displayDraft:Point[];closeable:boolean;closeHover:boolean;color:string;hover:Point|null;drawing:boolean;freehand:boolean;brushWidth?:number;curved:boolean;corners:boolean[];canvasScale:number}){
   const {t}=useT();
-  const paths=useMemo(()=>blocks?draftBlockPaths(draft,corners):[displayDraft],[blocks,draft,corners,displayDraft]);
-  const bands=!hover||drawing?[]:blocks?(draft.length<3?[draft[0]]:draft.slice(-2)).map(p=>[p,hover]):[[draft[draft.length-1],hover]];
-  return <><path d={pathData(paths,false)} fill="none" stroke={color} strokeWidth={freehand?.1:1/canvasScale} pointerEvents="none"/>{bands.length>0&&<path d={pathData(bands,false)} fill="none" stroke="var(--draft-cursor)" strokeWidth={1/canvasScale} pointerEvents="none"/>}{!freehand&&draft.map(([x,y],i)=>{
+  const paths=useMemo(()=>[displayDraft],[displayDraft]);
+  const bands=!hover||drawing?[]:[[draft[draft.length-1],hover]];
+  return <><path d={pathData(paths,false)} fill="none" stroke={color} strokeWidth={brushWidth??(freehand?.1:1/canvasScale)} strokeOpacity={brushWidth?.45:undefined} strokeLinecap={brushWidth?'round':undefined} strokeLinejoin={brushWidth?'round':undefined} pointerEvents="none"/>{bands.length>0&&<path d={pathData(bands,false)} fill="none" stroke="var(--draft-cursor)" strokeWidth={1/canvasScale} pointerEvents="none"/>}{!freehand&&draft.map(([x,y],i)=>{
     const first=i===0&&closeable&&draft.length>2,corner=!curved||corners[i],r=(corner?3:3.5)/canvasScale,c='var(--draft-node)';
     return <g key={i} data-draft-point={i} transform={`translate(${x} ${y})`}><g className="node-marker" style={{transform:first&&closeHover?'scale(2)':'scale(1)'}}>{corner?<rect x={-r} y={-r} width={2*r} height={2*r} fill="none" stroke={c} strokeWidth={2/canvasScale}/>:<circle r={r} fill="none" stroke={c} strokeWidth={2/canvasScale}/>}</g><circle r={12/canvasScale} fill="transparent"><title>{first?t("Click to close shape · drag to move point"):t("Drag to adjust point")}</title></circle></g>;
   })}</>;

@@ -14,6 +14,7 @@ Each step was tried on a generated cats-and-pothos scene (Nov 2026); results are
 | Hand-stitch accents | White `running`, `length` 2.6, as a band on the pot. Small `bean` "z Z" above a sleeping animal. Tabby stripes as short `satin` 1.5 mm, `underlay:'none'`. | ✅ Cosy, cheap: one object each. |
 | Sheen on black | Tapered `satin-block` crescents (width 0.7 → 1.6 → 0.7) in Pewter (19), 3 mm inside the edge. `__paths.satinCrescent`. | ✅ Subtle depth. |
 | Fill texture | `fillPattern:'rainfall'` (chaos 5, density 55, `spacing` 0.38) on fur. | ✅ Furry, but slow to stitch (see SKILL.md). |
+| Repeated motifs | Borders, wreaths and vines: draw one motif, then `map_to_path` onto an open guide or around a closed shape (e.g. a circle). `bend:true` warps the motif along the curve (vine stems, scallops); keep `hidePath` so the guide doesn't sew. | Untested in a design pass; one live, editable layout instead of many hand-placed copies. |
 | Satin fill on leaves | `fillPattern:'sweepSatin'` | ⚠️ Pretty, but shows fabric between rows. Tighter spacing and any underlay give "invalid design". Use Tatami + `underlay:'tatami'`, `fillLength` 4. |
 | Satin fill on big shapes | `sweepSatin` on a 40 mm cat | ❌ "invalid design". |
 | Scattered fur strands | Random 3–5 mm strokes chained by nearest neighbour | ❌ The travel stitches between strokes read as a scribbly web. Barely visible tone-on-tone. Use fuzzy edges or crescents instead. |

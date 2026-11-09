@@ -54,13 +54,12 @@ export function designSummary(p:Project,extra:Record<string,unknown>={},fonts:Ca
 
 // Full settings for one object; geometry (rings, curve anchors, rails) only when asked, rounded to 0.01 mm.
 export function objectDetail(o:StitchObject,p:Project,geometry=false){
-  const {rings,curve,rails,sources,text,...settings}=o;
+  const {rings,curve,rails,text,...settings}=o;
   const resolved=resolve(o,p.fabric,p.locks);
   return {
     ...settings,bounds:objectBox(o),closed:isClosedShape(o),
     resolved:{spacing:r2(resolved.spacing),underlay:resolved.underlay,underlayOptions:underlayOptions(o.kind),pullCompensation:r2(resolved.pullCompensation),splitLength:resolved.splitLength,shortStitches:resolved.shortStitches,tieIn:resolved.tieIn,tieOff:resolved.tieOff,lockSize:resolved.lockSize},
     ...(text&&{text:{...text,font:text.font.family,fontRef:text.font,path:undefined}}),
-    ...(sources&&{redworkSources:sources.length}),
     pointCount:rings.reduce((n,r)=>n+r.length,0),
     ...(geometry&&{geometry:{rings:rings.map(r=>r.map(roundPoint)),...(curve&&{curve:{...curve,points:curve.points.map(roundPoint)}}),...(rails&&{rails:{...rails,points:rails.points.map(s=>s.map(roundPoint))}})}}),
   };
@@ -77,7 +76,7 @@ export function issueReport(list:Warning[],p:Project,engineMessage='',t:Translat
 }
 export const issueCounts=(list:Warning[])=>({fail:list.filter(w=>w.severity==='fail').length,check:list.filter(w=>w.severity==='check').length});
 
-export const menuCommands=['copy','cut','paste','duplicate','delete','group','ungroup','lock','unlock','hide','show','redwork','breakApart','front','forward','backward','back','flipH','flipV','rotate','selectAll','unlockAll'] as const;
+export const menuCommands=['copy','cut','paste','duplicate','delete','group','ungroup','lock','unlock','hide','show','front','forward','backward','back','flipH','flipV','rotate','selectAll','unlockAll'] as const;
 export type MenuCommand=typeof menuCommands[number];
 export const shapeKinds=Object.keys(shapeNames) as ShapeKind[];
 export const stitchKinds=Object.keys(kindNames) as Kind[];
@@ -140,7 +139,7 @@ export function patchObject(o:StitchObject,patch:ObjectPatch):{object:StitchObje
   if(kind!==undefined&&!stitchKinds.includes(kind))return {error:`Unknown stitch kind "${kind}".`};
   if(kind&&kind!==o.kind&&isFillKind(kind)&&!isClosedShape(o))return {error:`"${o.name}" is an open line; ${kind} needs a closed shape.`};
   let next:StitchObject=o;
-  if(kind&&kind!==o.kind){next=changeStitchKind(o,kind);if(next.kind!==kind&&!(o.text&&kind==='manual'))return {error:`"${o.name}" can't change from ${o.kind} to ${kind} (satin blocks, satin lettering and redwork keep their kind).`};}
+  if(kind&&kind!==o.kind){next=changeStitchKind(o,kind);if(next.kind!==kind&&!(o.text&&kind==='manual'))return {error:`"${o.name}" can't change from ${o.kind} to ${kind} (satin blocks, and satin lettering keep their kind).`};}
   const rest:Record<string,unknown>={...patch};delete rest.kind;delete rest.threadCode;delete rest.matchThread;
   next={...next,...rest} as StitchObject;
   if(next.text&&Object.hasOwn(patch,'fillPattern'))next.text={...next.text,autoStitch:false};
@@ -254,7 +253,6 @@ export function englishMessage(message:string):string{
 // left rail and ring 1 the right rail; index k on both rails is rung k. Plain outlines: one ring per path.
 function pointEditBlock(o:StitchObject):string|null{
   if(o.text)return 'Text is laid out from its font; change it with update_text, or convert it to shapes first.';
-  if(o.kind==='redwork')return 'Redwork points can\'t be edited. Break it apart (edit_objects breakApart) to edit the source lines.';
   if(o.locked)return `"${o.name}" is locked. Unlock it first.`;
   if(o.hidden)return `"${o.name}" is hidden. Show it first.`;
   if(!o.rings.length)return `"${o.name}" has no points.`;

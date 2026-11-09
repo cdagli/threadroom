@@ -21,7 +21,7 @@ function rdp(points:Point[],tol:number):Point[]{
   return best<=tol?[a,b]:[...rdp(points.slice(0,index+1),tol).slice(0,-1),...rdp(points.slice(index),tol)];
 }
 // Drops repeated, collinear and near-collinear points (within tol mm) of a closed ring.
-/** @test */ export function cleanRing(ring:Point[],tol=.005):Point[]{
+export function cleanRing(ring:Point[],tol=.005):Point[]{
   const r=open(ring).filter((p,i,a)=>{const q=a[(i+a.length-1)%a.length];return a.length<2||Math.hypot(p[0]-q[0],p[1]-q[1])>1e-7;});
   if(r.length<3)return r.map(p=>[p[0],p[1]]);
   let far=0,best=-1;for(let i=1;i<r.length;i++){const d=Math.hypot(r[i][0]-r[0][0],r[i][1]-r[0][1]);if(d>best){best=d;far=i;}}

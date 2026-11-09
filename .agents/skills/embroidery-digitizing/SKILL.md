@@ -43,7 +43,7 @@ phase below, and `tone:'done'` at the end.
 
 **Preserve editability.** Keep independently editable parts as separate, named objects: one whisker
 per path, separate eyes, highlights, spots and logical fur regions. Group related paths with `group`;
-do not union, concatenate or convert distinct parts into one redwork object just to reduce trims.
+do not union or concatenate distinct parts into one object just to reduce trims.
 Temporary cutter copies may be combined. Merge final parts only when the user explicitly requests it.
 
 ## No image yet? Generate one (on request)

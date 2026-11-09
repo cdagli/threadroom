@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
 import {pool} from './db';
 import {diffProjects,type Change} from './project-diff';
-import {validProject,type Project} from './project';
+import {migrateProject,validProject,type Project} from './project';
 import {maxThumbnailLength} from './project-thumbnail';
 
 // Autosaves by the same person within this window amend their latest edit version.
@@ -28,7 +28,7 @@ const summary=(r:ProjectRow):ProjectSummary=>({id:r.id,name:r.name,revision:r.re
 export function checkThumbnail(value:unknown):string|null{
   return typeof value==='string'&&value.startsWith('<svg')&&value.length<=maxThumbnailLength&&!/<script|\son\w+=|href="(?!#)/i.test(value)?value:null;
 }
-export const checkProject=(value:unknown):Project|null=>validProject(value)?value:null;
+export const checkProject=(input:unknown):Project|null=>{const value=migrateProject(input);return validProject(value)?value:null;};
 
 export async function listProjects():Promise<ProjectSummary[]>{
   const {rows}=await pool.query<ProjectRow>(`select ${projectColumns} ${projectJoins} order by p.updated_at desc`);
@@ -37,7 +37,7 @@ export async function listProjects():Promise<ProjectSummary[]>{
 
 export async function getProject(id:string):Promise<ProjectRecord|null>{
   const {rows:[row]}=await pool.query<ProjectRow&{data:Project}>(`select ${projectColumns},p.data ${projectJoins} where p.id=$1`,[id]);
-  return row?{...summary(row),data:row.data}:null;
+  return row?{...summary(row),data:migrateProject(row.data)}:null;
 }
 
 export async function getThumbnail(id:string,version?:number):Promise<string|null>{
@@ -56,7 +56,7 @@ export async function listVersions(id:string):Promise<VersionSummary[]>{
 
 export async function getVersion(id:string,number:number):Promise<{data:Project;thumbnail:string|null}|null>{
   const {rows:[row]}=await pool.query<{data:Project;thumbnail:string|null}>('select data,thumbnail from project_version where project_id=$1 and number=$2',[id,number]);
-  return row??null;
+  return row?{...row,data:migrateProject(row.data)}:null;
 }
 
 async function transaction<T>(work:(client:PoolClient)=>Promise<T>):Promise<T>{
@@ -81,7 +81,7 @@ export async function duplicateProject(userId:string,id:string,name:string,versi
       ?await client.query<{data:Project;thumbnail:string|null;name:string}>('select data,thumbnail,name from project where id=$1',[id])
       :await client.query<{data:Project;thumbnail:string|null;name:string}>('select v.data,v.thumbnail,p.name from project_version v join project p on p.id=v.project_id where v.project_id=$1 and v.number=$2',[id,version]);
     if(!source)return null;
-    return insertProject(client,userId,{...source.data,name},source.thumbnail,'duplicated',[{op:'duplicated',name:source.name}]);
+    return insertProject(client,userId,{...migrateProject(source.data),name},source.thumbnail,'duplicated',[{op:'duplicated',name:source.name}]);
   });
 }
 
@@ -121,8 +121,9 @@ export async function saveProject(userId:string,id:string,data:Project,thumbnail
 export async function restoreVersion(userId:string,id:string,number:number):Promise<{revision:number;version:number;data:Project}|null>{
   return transaction(async client=>{
     if(!await lockProject(client,id))return null;
-    const {rows:[target]}=await client.query<{data:Project;thumbnail:string|null}>('select data,thumbnail from project_version where project_id=$1 and number=$2',[id,number]);
-    if(!target)return null;
+    const {rows:[row]}=await client.query<{data:Project;thumbnail:string|null}>('select data,thumbnail from project_version where project_id=$1 and number=$2',[id,number]);
+    if(!row)return null;
+    const target={...row,data:migrateProject(row.data)};
     const last=await latestVersion(client,id),next=last.number+1;
     await client.query('insert into project_version (id,project_id,number,kind,data,thumbnail,summary,author_id) values ($1,$2,$3,$4,$5,$6,$7,$8)',
       [randomUUID(),id,next,'restored',target.data,target.thumbnail,JSON.stringify([{op:'restored',number}]),userId]);

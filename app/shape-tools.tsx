@@ -10,7 +10,7 @@ import {type Project} from '@/lib/project';
 // keep (Keep cutting shapes) lives in the studio so the canvas menu's Cut holes follows the same choice.
 export function ShapeTools({project,selection,disabled,keep,onKeep,onResult,onMode,focusOffset=0}:{project:Project;selection:string[];disabled:boolean;keep:boolean;onKeep:(keep:boolean)=>void;onResult:(run:()=>ShapeResult)=>void;onMode:(mode:'holes'|'knife')=>void;focusOffset?:number}){
   useEffect(()=>{if(focusOffset)requestAnimationFrame(()=>{const field=document.querySelector<HTMLInputElement>('.shape-offset input');field?.focus();field?.select();});},[focusOffset]);
-  const {t}=useT(),[mm,setMm]=useState(1),[copy,setCopy]=useState(true);
+  const {t}=useT(),[mm,setMm]=useState(1),[copy,setCopy]=useState(false);
   const can=shapeOptions(project,selection),single=selection.length===1;
   const amount=Math.abs(mm);
   const group=(label:Key,hint:Key,body:ReactNode)=><div className="tool-group"><div className="tool-group-label">{t(label)}<Hint text={t(hint)}/></div>{body}</div>;

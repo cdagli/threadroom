@@ -2,10 +2,9 @@ import type {Project} from './project';
 import {unlockedIds} from './layers';
 import {shapeOptions} from './shape-ops';
 import {guideMode} from './angle-guides';
-import {canBreakApart,canConvertToRedwork} from './redwork';
 
 // Canvas right-click menu: pure item lists, keyboard movement and viewport placement.
-export type MenuAction='cut'|'copy'|'paste'|'duplicate'|'delete'|'group'|'ungroup'|'lock'|'unlock'|'hide'|'show'|'editPoints'|'editAngles'|'editFlow'|'redwork'|'breakApart'|'front'|'forward'|'backward'|'back'|'flipH'|'flipV'|'rotate'|'cutHoles'|'flatten'|'union'|'subtract'|'intersect'|'offset'|'knife'|'selectAll'|'unlockAll'|'fit'|'grid';
+export type MenuAction='cut'|'copy'|'paste'|'duplicate'|'delete'|'group'|'ungroup'|'lock'|'unlock'|'hide'|'show'|'editPoints'|'editAngles'|'editFlow'|'front'|'forward'|'backward'|'back'|'flipH'|'flipV'|'rotate'|'cutHoles'|'flatten'|'union'|'subtract'|'intersect'|'offset'|'knife'|'selectAll'|'unlockAll'|'fit'|'grid';
 export type MenuEntry={action:MenuAction;disabled?:boolean}|'separator';
 export function objectMenu(p:Project,ids:readonly string[],canPaste:boolean):MenuEntry[]{
   const chosen=p.objects.filter(o=>ids.includes(o.id)),editable=unlockedIds(p,ids).length>0,first=p.objects[0]?.id,last=p.objects.at(-1)?.id;
@@ -13,10 +12,9 @@ export function objectMenu(p:Project,ids:readonly string[],canPaste:boolean):Men
   const entries:MenuEntry[]=[{action:'cut',disabled:!editable},{action:'copy'},{action:'paste',disabled:!canPaste},{action:'duplicate'},'separator',
     {action:'delete',disabled:!editable},'separator',{action:'group',disabled:chosen.length<2},{action:'ungroup',disabled:!chosen.some(o=>o.group!==undefined)},
     {action:locked?'unlock':'lock'},{action:hidden?'show':'hide'}];
-  if(single&&!single.text&&!single.locked&&!single.hidden&&single.kind!=='redwork')entries.push({action:'editPoints'});
-  // Edit angles (Edit flow field for Streamlines) for one visible, unlocked fill; Convert to redwork or Break apart (W).
+  if(single&&!single.text&&!single.locked&&!single.hidden)entries.push({action:'editPoints'});
+  // Edit angles (Edit flow field for Streamlines) for one visible, unlocked fill.
   const mode=single&&guideMode(single);if(single&&mode)entries.push({action:mode==='flow'?'editFlow':'editAngles',disabled:single.locked||single.hidden});
-  entries.push(canBreakApart(p,ids)?{action:'breakApart'}:{action:'redwork',disabled:!canConvertToRedwork(p,ids)});
   entries.push('separator',{action:'front',disabled:ids.includes(last??'')},{action:'forward',disabled:ids.includes(last??'')},{action:'backward',disabled:ids.includes(first??'')},{action:'back',disabled:ids.includes(first??'')},
     'separator',{action:'flipH',disabled:!editable},{action:'flipV',disabled:!editable},{action:'rotate',disabled:!editable});
   // Shape operations, enabled as in the Shape tools section (locked objects and satin Blocks don't count).
