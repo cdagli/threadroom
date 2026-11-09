@@ -45,3 +45,75 @@ export function sewnStitches(compiled:Compiled,count:number){
   let prefix=stitchCounts.get(compiled);if(!prefix){prefix=new Uint32Array(compiled.commands.length+1);compiled.commands.forEach((c,i)=>{prefix![i+1]=prefix![i]+Number(c.type==='stitch');});stitchCounts.set(compiled,prefix);}
   return prefix[count];
 }
+
+// While the stitch engine catches up, an object that was only moved, rotated, scaled or flipped
+// keeps its previous stitches under the same transform. Anything else stays stale.
+type Affine=[number,number,number,number,number,number];
+const apply=(m:Affine,x:number,y:number):Point=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]];
+// Fields a transform rewrites; every other sewing field must be unchanged. Name, lock and group never affect stitches.
+const transformed=new Set(['rings','rails','curve','entry','exit','center','angleGuides','angle','rotation','text','name','locked','group','hidden']);
+const cosmetic=new Set(['name','locked','group','hidden']);
+const textTransformed=new Set(['origin','rotation','size','path','affine']);
+function sameExcept(a:object,b:object,skip:Set<string>){
+  const ka=Object.keys(a).filter(k=>!skip.has(k)&&(a as Record<string,unknown>)[k]!==undefined),kb=Object.keys(b).filter(k=>!skip.has(k)&&(b as Record<string,unknown>)[k]!==undefined);
+  return ka.length===kb.length&&ka.every(k=>JSON.stringify((a as Record<string,unknown>)[k])===JSON.stringify((b as Record<string,unknown>)[k]));
+}
+function anchors(o:StitchObject){
+  const lists=[...o.rings,...(o.rails?.points??[]),...(o.curve?[o.curve.points]:[]),...[o.entry,o.exit,o.center].filter(Boolean).map(p=>[p!])];
+  return {shape:lists.map(l=>l.length).join(','),points:lists.flat()};
+}
+function solve(from:Point[],to:Point[],tolerance:number):Affine|null{
+  const [p0]=from;let i1=0,i2=0,best=0;
+  from.forEach((p,i)=>{const d=Math.hypot(p[0]-p0[0],p[1]-p0[1]);if(d>best){best=d;i1=i;}});
+  if(best<1e-6)return null;
+  const p1=from[i1],ex=p1[0]-p0[0],ey=p1[1]-p0[1];best=0;
+  from.forEach((p,i)=>{const area=Math.abs(ex*(p[1]-p0[1])-ey*(p[0]-p0[0]));if(area>best){best=area;i2=i;}});
+  const q0=to[0],q1=to[i1];let m:Affine;
+  if(best>.05*Math.hypot(ex,ey)){
+    // Map the triangle p0 p1 p2 onto q0 q1 q2.
+    const p2=from[i2],q2=to[i2],fx=p2[0]-p0[0],fy=p2[1]-p0[1],det=ex*fy-ey*fx;
+    const ux=q1[0]-q0[0],uy=q1[1]-q0[1],vx=q2[0]-q0[0],vy=q2[1]-q0[1];
+    const a=(ux*fy-vx*ey)/det,c=(vx*ex-ux*fx)/det,b=(uy*fy-vy*ey)/det,d=(vy*ex-uy*fx)/det;
+    m=[a,b,c,d,q0[0]-a*p0[0]-c*p0[1],q0[1]-b*p0[0]-d*p0[1]];
+  }else{
+    // Collinear anchors: the similarity that maps the segment p0 p1 onto q0 q1.
+    const ux=q1[0]-q0[0],uy=q1[1]-q0[1],n=ex*ex+ey*ey,cos=(ux*ex+uy*ey)/n,sin=(uy*ex-ux*ey)/n;
+    m=[cos,sin,-sin,cos,q0[0]-cos*p0[0]+sin*p0[1],q0[1]-sin*p0[0]-cos*p0[1]];
+  }
+  return from.every((p,i)=>{const [x,y]=apply(m,p[0],p[1]);return Math.abs(x-to[i][0])<=tolerance&&Math.abs(y-to[i][1])<=tolerance;})?m:null;
+}
+export function objectTransform(before:StitchObject,after:StitchObject):Affine|null{
+  if(before===after)return [1,0,0,1,0,0];
+  if(!sameExcept(before,after,transformed)||!!before.text!==!!after.text||before.text&&!sameExcept(before.text,after.text!,textTransformed))return null;
+  const a=anchors(before),b=anchors(after);
+  if(a.shape!==b.shape||a.points.length<2)return null;
+  const m=solve(a.points,b.points,.02);
+  if(!m)return null;
+  // Three anchors fit any affine map, so a dragged point would pass; small shapes must keep their proportions.
+  const similar=Math.abs(m[0]*m[0]+m[1]*m[1]-m[2]*m[2]-m[3]*m[3])<1e-6&&Math.abs(m[0]*m[2]+m[1]*m[3])<1e-6;
+  if(a.points.length<=3&&!similar)return null;
+  // An identity fit with other changes means a sewing setting changed (an angle or text field), so the stitches did too.
+  if(Math.abs(m[0]-1)+Math.abs(m[1])+Math.abs(m[2])+Math.abs(m[3]-1)+Math.abs(m[4])+Math.abs(m[5])<1e-9&&!sameExcept(before,after,cosmetic))return null;
+  return m;
+}
+// Commands of the last compile with transformed objects moved into place, and the ids now shown that way.
+export function projectCommands(commands:Command[],source:Project|null,current:Project,stale:ReadonlySet<string>){
+  const moves=new Map<string,Affine>();
+  if(source&&stale.size){
+    const before=new Map(source.objects.map(o=>[o.id,o]));
+    for(const o of current.objects){
+      if(!stale.has(o.id))continue;const old=before.get(o.id),m=old&&objectTransform(old,o);
+      if(m){moves.set(o.id,m);if(o.text?.border)moves.set(`${o.id}-border`,m);}
+    }
+  }
+  if(!moves.size)return {commands,moved:moves as ReadonlyMap<string,Affine>};
+  const projected=commands.map(c=>{
+    const to=c.objectId===undefined?undefined:moves.get(c.objectId),from=moves.get(c.fromObjectId??c.objectId??'');
+    if(!to&&!from)return c;
+    // A connector between a moved and an unmoved object would stretch across the design; hide it until the engine reroutes.
+    if(!to||!from||to!==from&&to.some((v,i)=>Math.abs(v-from[i])>1e-6)){const [x,y]=to?apply(to,c.x,c.y):[c.x,c.y];return {...c,type:'jump' as const,travel:false,trim:false,x,y,fromX:x,fromY:y};}
+    const [x,y]=to?apply(to,c.x,c.y):[c.x,c.y],[fromX,fromY]=from?apply(from,c.fromX,c.fromY):[c.fromX,c.fromY];
+    return {...c,x,y,fromX,fromY};
+  });
+  return {commands:projected,moved:moves as ReadonlyMap<string,Affine>};
+}

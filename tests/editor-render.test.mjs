@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {load} from './load-lib.mjs';
-const {objectGeometry,designBounds,changedObjectIds,commandPaths,sewnStitches}=load('editor-render');
+const {objectGeometry,designBounds,changedObjectIds,commandPaths,sewnStitches,objectTransform,projectCommands}=load('editor-render');
 const {demo,object,bounds,pathData,isFillKind}=load('project');
 const {visibleCommands}=load('layers');
 const item=id=>({...object(id,[[[10,10],[20,10],[20,20]]]),id});
@@ -51,4 +51,34 @@ test('Stitch paths cache by command array, block count and playback count withou
   assert.equal(commandPaths(commands,2,1).blocks[1].stitch,'');assert.equal(commandPaths(commands,2,0).blocks[0].stitch,'');
   assert.equal(commandPaths(commands,0,3).blocks.length,0);assert.notEqual(commandPaths([...commands],2,3),full);
   const compiled={commands};assert.equal(sewnStitches(compiled,0),0);assert.equal(sewnStitches(compiled,1),1);assert.equal(sewnStitches(compiled,3),2);assert.equal(sewnStitches(compiled,2),2);
+});
+
+test('Moved, rotated and flipped objects keep their last stitches transformed; other edits stay stale',()=>{
+  const a=item('a'),moved={...a,rings:a.rings.map(r=>r.map(([x,y])=>[x+5,y-2]))};
+  assert.deepEqual(objectTransform(a,moved).map(v=>Math.round(v*1e6)/1e6+0),[1,0,0,1,5,-2]);
+  const rotated={...a,rings:a.rings.map(r=>r.map(([x,y])=>[-y,x])),angle:a.angle+90};
+  assert.deepEqual(objectTransform(a,rotated).map(v=>Math.round(v*1e6)/1e6+0),[0,1,-1,0,0,0]);
+  const flipped={...a,rings:a.rings.map(r=>r.map(([x,y])=>[30-x,y]))};
+  assert.deepEqual(objectTransform(a,flipped).map(v=>Math.round(v*1e6)/1e6+0),[-1,0,0,1,30,0]);
+  // A sewing setting, an angle on its own, or reshaped points cannot be previewed.
+  assert.equal(objectTransform(a,{...moved,spacing:.2}),null);
+  assert.equal(objectTransform(a,{...a,angle:a.angle+10}),null);
+  assert.equal(objectTransform(a,{...a,rings:[[[10,10],[25,10],[20,20]]]}),null);
+  assert.equal(objectTransform(a,{...a,rings:[[[10,10],[20,10],[20,20],[10,20]]]}),null);
+  assert.deepEqual(objectTransform(a,{...a,name:'Renamed'}).map(v=>v+0),[1,0,0,1,0,0]);
+  // Straight lines are collinear: a similarity is fitted instead.
+  const line={...item('l'),kind:'running',rings:[[[0,0],[10,0],[20,0]]]};
+  assert.deepEqual(objectTransform(line,{...line,rings:[[[0,0],[0,10],[0,20]]]}).map(v=>Math.round(v*1e6)/1e6+0),[0,1,-1,0,0,0]);
+
+  const p=project(),next={...p,objects:[moved,{...p.objects[1],spacing:.2}]};
+  const commands=[command('a',{fromObjectId:'a'}),command('b',{fromObjectId:'a',type:'jump'}),command('b',{fromObjectId:'b'})];
+  const stale=changedObjectIds(p,next),{commands:out,moved:ids}=projectCommands(commands,p,next,stale);
+  assert.deepEqual([...ids.keys()],['a']);
+  assert.deepEqual(out[0],{...commands[0],x:25,y:8,fromX:15,fromY:8});
+  // The connector to an unmoved object is hidden rather than stretched.
+  assert.deepEqual(out[1],{...commands[1],type:'jump',travel:false,trim:false,fromX:20,fromY:10});
+  const both={...p,objects:[moved,{...p.objects[1],rings:p.objects[1].rings.map(r=>r.map(([x,y])=>[x+5,y-2]))}]};
+  assert.deepEqual(projectCommands(commands,p,both,changedObjectIds(p,both)).commands[1],{...commands[1],x:25,y:8,fromX:15,fromY:8});
+  assert.equal(out[2],commands[2]);
+  assert.equal(projectCommands(commands,p,p,changedObjectIds(p,p)).commands,commands);
 });

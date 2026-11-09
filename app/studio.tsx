@@ -62,7 +62,7 @@ const ShapeTools=dynamic(()=>import('./shape-tools').then(m=>m.ShapeTools),{load
 import {combineShapes,cutHole,cutHoles,flattenOverlaps,knifeShapes,shapeRegion,type ShapeResult} from '@/lib/shape-ops';
 import {AngleGuideEditor} from './angle-guides';
 import {guideMode,seedGuide,withGuides} from '@/lib/angle-guides';
-import {changedObjectIds, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
+import {changedObjectIds, projectCommands, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
 import {brushDefaults,brushIds,brushObject,brushSize,brushStroke,brushes,type BrushId} from '@/lib/brushes';
 import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
@@ -383,14 +383,22 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   useEffect(()=>{if(!ready)return;const timer=setTimeout(()=>setDesignIssues(checkProject(project)),250);return()=>clearTimeout(timer);},[project,ready]);
   const cannotSew=designIssues.some(w=>w.code==='outside-hoop')||!project.objects.some(o=>o.rings.length);
   const compileFresh=!!compiled&&(compiled.engine==='Imported PES'||compiledSource===project);
-  const staleIds=useMemo(()=>changedObjectIds(compiledSource,project),[compiledSource,project]);
+  const changedIds=useMemo(()=>changedObjectIds(compiledSource,project),[compiledSource,project]);
+  // Moved, rotated, scaled or flipped objects show their last stitches transformed until the engine catches up.
+  const projection=useMemo(()=>compiled&&compiled.engine!=='Imported PES'?projectCommands(compiled.commands,compiledSource,project,changedIds):null,[compiled,compiledSource,project,changedIds]);
+  const staleIds=useMemo(()=>projection?.moved.size?new Set([...changedIds].filter(id=>!projection.moved.has(id))):changedIds,[changedIds,projection]);
+  const shownCommands=projection?.commands??compiled?.commands;
+  // One background compile at a time: edits during a request wait for it, then compile the latest state.
+  // Drags compile as fast as the engine answers; other edits after a short pause (typing, sliders).
+  const [compileDone,setCompileDone]=useState(0);
   useEffect(()=>{
-    if(!ready||apiState!=='ready'||compileFresh||hasDraft||cannotSew)return;
-    const version=revision.current,timer=setTimeout(()=>{void compile(current.current,version).catch(()=>{});},350);
+    if(!ready||apiState!=='ready'||compileFresh||hasDraft||cannotSew||checkError||compiling.current)return;
+    const timer=setTimeout(()=>{if(!compiling.current)void compile(current.current,revision.current,true).catch(()=>{});},selectionDragging?0:120);
     return()=>clearTimeout(timer);
-  },[project,compileFresh,ready,apiState,hasDraft,cannotSew]);
+  },[project,compileFresh,ready,apiState,hasDraft,cannotSew,checkError,compileDone,selectionDragging]);
   useEffect(()=>()=>compiling.current?.controller.abort(),[]);
-  function compile(p:Project,version:number):Promise<Compiled|null>{
+  // background: a result that arrives after further edits is still shown (outdated objects stay marked stale).
+  function compile(p:Project,version:number,background=false):Promise<Compiled|null>{
     const old=compiling.current;if(old?.version===version&&!old.controller.signal.aborted)return old.promise;
     old?.controller.abort();const controller=new AbortController();
     const promise=(async()=>{
@@ -400,11 +408,13 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       try{
         const response=await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(geometryPayload(p)),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])});
         if(!response.headers.get('Content-Type')?.includes('application/json'))throw new TranslationError(t,"The export URL returned a web page (HTTP {v0}), rather than the embroidery API. Restart npm run dev to reconnect Python and Next.js.",{v0:response.status});
-        const result=await response.json();if(controller.signal.aborted||version!==revision.current)return null;
-        connected=true;setApiState('ready');if(!response.ok){const message=errorText(result.error,t,'The stitch engine rejected this design.');setCheckError(typeof result.error==='string'?result.error:'The stitch engine rejected this design.');throw new Error(message);}
+        const result=await response.json();if(controller.signal.aborted)return null;
+        connected=true;setApiState('ready');
+        if(version!==revision.current){if(background&&response.ok&&current.current.objects.length){setCompiledSource(p);setCompiled(result);}return null;}
+        if(!response.ok){const message=errorText(result.error,t,'The stitch engine rejected this design.');setCheckError(typeof result.error==='string'?result.error:'The stitch engine rejected this design.');throw new Error(message);}
         setCompiledSource(p);setCompiled(result);setProgress(1);setCheckError('');return result as Compiled;
       }catch(e){if(controller.signal.aborted||version!==revision.current)return null;if(!connected)setApiState('offline');throw e;}
-    })().finally(()=>{if(compiling.current?.promise===promise)compiling.current=null;});
+    })().finally(()=>{if(compiling.current?.promise===promise){compiling.current=null;setCompileDone(n=>n+1);}});
     compiling.current={version,controller,promise};return promise;
   }
   useEffect(()=>{
@@ -424,7 +434,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     current.current=next;setProject(next);setSelection(ids=>ids.filter(id=>next.objects.some(o=>o.id===id)));invalidate();if(label)setMessage(label);
   }
   function stopPlayback(){playRequest.current++;setPlaying(false);setProgress(1);}
-  function invalidate(){revision.current++;traceTask.cancel();svgTask.cancel();hoverTask.cancel();clickTask.cancel();lastStitch.current=null;setStitchHover(null);compiling.current?.controller.abort();if(!current.current.objects.length||compiled?.engine==='Imported PES'){setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
+  function invalidate(){revision.current++;traceTask.cancel();svgTask.cancel();hoverTask.cancel();clickTask.cancel();lastStitch.current=null;setStitchHover(null);if(!current.current.objects.length||compiled?.engine==='Imported PES'){compiling.current?.controller.abort();setCompiled(null);setCompiledSource(null);}setCheckError('');stopPlayback();setError('');}
   function layoutObject(o:StitchObject):StitchObject{
     if(!o.text)return o;if(o.text.satin)return layoutTextObject(o);
     // A restored project has no fonts loaded yet: fetch them and relay out once ready instead of keeping stale outlines.
@@ -1030,10 +1040,10 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const sewn=compiled?Math.floor(compiled.commands.length*progress):0;
   const staleKey=JSON.stringify([...staleIds].sort());
   const stableStaleIds=useMemo(()=>new Set<string>(JSON.parse(staleKey)),[staleKey]);
-  const visible=useMemo(()=>compiled?visibleCommands(compiled.commands,project.objects,stableStaleIds):null,[compiled,project.objects,stableStaleIds]);
+  const visible=useMemo(()=>shownCommands?visibleCommands(shownCommands,project.objects,stableStaleIds):null,[shownCommands,project.objects,stableStaleIds]);
   // Realistic view retains the previous full scene during edits, preserving incremental playback.
   const densityField=useDensity(density&&compileFresh?compiled:null,densityRadius);
-  const threadVisible=useMemo(()=>compiled?visibleCommands(compiled.commands,project.objects):null,[compiled,project.objects]);
+  const threadVisible=useMemo(()=>shownCommands?visibleCommands(shownCommands,project.objects):null,[shownCommands,project.objects]);
   const preview=useMemo(()=>compiled&&threadVisible?{...compiled,commands:threadVisible.commands}:null,[compiled,threadVisible]);
   const visibleSewn=visible?(sewn===compiled!.commands.length?visible.indices.length:visible.indices.filter(i=>i<sewn).length):0;
   const threadSewn=threadVisible?(sewn===compiled!.commands.length?threadVisible.indices.length:threadVisible.indices.filter(i=>i<sewn).length):0;
