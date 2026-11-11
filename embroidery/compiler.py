@@ -30,7 +30,7 @@ import heapq
 import time
 from bisect import bisect_left, bisect_right
 
-from .threads import valid_thread
+from .threads import BY_LABEL, LABELS, valid_thread
 from .patterns import FILL_PATTERNS, pattern_cycle
 from .cache import ObjectPlanCache
 
@@ -95,7 +95,7 @@ def validate(project):
         if not isinstance(obj.get("color"), str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", obj["color"]):
             raise ValueError("Thread colours must use six-digit hex values.")
         if "thread" in obj and not valid_thread(obj["thread"], obj["color"]):
-            raise ValueError("Choose a valid Brother PEC thread matching the colour.")
+            raise ValueError("Choose a valid catalogue thread for the colour.")
         rings = obj.get("rings")
         if not isinstance(rings, list) or not 1 <= len(rings) <= 500:
             raise ValueError("An object needs at least one path.")
@@ -1982,8 +1982,7 @@ def compile_project(project, *, cache=None):
             if catalogue is not None:
                 thread.description = catalogue["name"]
                 thread.catalog_number = catalogue["code"]
-                thread.brand = "Brother"
-                thread.chart = "Brother"
+                thread.brand = thread.chart = LABELS[catalogue["brand"]]
             pattern.add_thread(thread)
         if last is None or trim:
             # Land with a stitch: pystitch encodes the first stitch after a trim as
@@ -2016,8 +2015,9 @@ def compile_project(project, *, cache=None):
     commands, threads = [], []
     for thread in decoded.threadlist:
         entry = {"color": thread.hex_color(), "name": thread.description or "Thread"}
-        if thread.brand == "Brother" and valid_thread({"brand": "brother", "code": thread.catalog_number, "name": thread.description}, thread.hex_color()):
-            entry["thread"] = {"brand": "brother", "code": thread.catalog_number, "name": thread.description}
+        reference = {"brand": BY_LABEL.get(thread.chart or thread.brand), "code": thread.catalog_number, "name": thread.description or ""}
+        if valid_thread(reference, thread.hex_color()):
+            entry["thread"] = reference
         threads.append(entry)
     block, cut = 0, False
     last = [width/2, height/2]

@@ -64,7 +64,7 @@ export const unlockAll=(p:Project):Project=>p.objects.some(o=>o.locked)?{...p,ob
 
 // Colour runs: consecutive objects sewn with the same thread merge into one row (one PES colour block).
 export type ColourRun={key:string;color:string;thread?:Thread;ids:string[];index:number;end:number;stitches:number|null};
-const runKey=(o:StitchObject)=>`${o.color.toLowerCase()}|${o.thread?.code??''}`;
+const runKey=(o:StitchObject)=>`${o.color.toLowerCase()}|${o.thread?`${o.thread.brand}/${o.thread.code}`:''}`;
 const stitchCache=new WeakMap<Command[],Map<string,number>>();
 function objectStitches(commands:Command[]){
   let counts=stitchCache.get(commands);if(counts)return counts;counts=new Map();

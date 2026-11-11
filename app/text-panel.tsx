@@ -1,10 +1,13 @@
 'use client';
-import {Button,Hint,Icon,Input,Section,SegmentedControl,Select,Textarea} from '@/design-system';
+import {Button,Hint,Icon,Input,Popover,Section,SegmentedControl,Select,Textarea} from '@/design-system';
 import {useT} from './i18n';
 import dynamic from 'next/dynamic';
 import {Loading} from './panel-loading';
 import type {Translator} from '@/lib/i18n';
-import {useEffect, useState, type RefObject} from 'react';
+import {useEffect, useId, useState, type RefObject} from 'react';
+import ThreadPalette from './thread-palette';
+import {threadLabel} from './thread-label';
+import {defaultThread,defaultThreadColour,type Thread} from '@/lib/threads';
 import {loadCatalog, previewRef, weightNames, minSize, weightFor, type CatalogFont} from '@/lib/fonts';
 import {satinFonts,satinLetteringDefaults,columnLimits,columnWidth,type SatinFontId} from '@/lib/satin-lettering';
 import {textLimits, type TextLayout, type TextSpec} from '@/lib/text';
@@ -101,11 +104,22 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
     {spec.layout!=='path'&&<Range label={t("Rotation")} value={Math.round(spec.rotation)} min={-180} max={180} format={n=>`${formatNumber(n)}°`} onChange={rotation=>onChange({rotation},'rotation')}/>}
     </Section>
     {fill&&!spec.satin&&<Section id="text-border" title={t("Border")} summaryExtra={spec.border?undefined:t("None")}><div className="border-options">
-      <label>{t("Border")}<Select value={spec.border?.kind||'none'} onChange={e=>onChange({border:e.target.value==='none'?undefined:{thread:spec.border?.thread,color:spec.border?.color||'#664538',width:spec.border?.width||1,kind:e.target.value as NonNullable<TextSpec['border']>['kind']}})}><option value="none">{t("None")}</option><option value="running">{t("Running outline")}</option><option value="bean">{t("Bean outline")}</option><option value="satin">{t("Satin border")}</option></Select></label>
+      <label>{t("Border")}<Select value={spec.border?.kind||'none'} onChange={e=>onChange({border:e.target.value==='none'?undefined:{...(spec.border?{thread:spec.border.thread,color:spec.border.color}:{thread:defaultThread,color:defaultThreadColour}),width:spec.border?.width||1,kind:e.target.value as NonNullable<TextSpec['border']>['kind']}})}><option value="none">{t("None")}</option><option value="running">{t("Running outline")}</option><option value="bean">{t("Bean outline")}</option><option value="satin">{t("Satin border")}</option></Select></label>
       {spec.border&&<div className="setting-grid">
-        <label>{t("Colour")}<div className="colour-picker"><Input type="color" aria-label={t("Border colour")} value={spec.border.color} onChange={e=>onChange({border:{...spec.border!,color:e.target.value,thread:undefined}},'borderColor')}/><span>{spec.border.color.toUpperCase()}</span></div></label>
+        <div className="border-colour"><span className="field-heading">{t("Colour")}</span><BorderThread border={spec.border} onChoose={(color,thread)=>onChange({border:{...spec.border!,color,thread}},'borderColor')}/></div>
         {spec.border.kind==='satin'&&<label>{t("Width · mm")}<Input type="number" min={textLimits.borderWidth[0]} max={textLimits.borderWidth[1]} step=".1" value={spec.border.width} onChange={e=>{const n=number(e.target.value,textLimits.borderWidth);if(n!==null)onChange({border:{...spec.border!,width:n}},'borderWidth');}}/></label>}
       </div>}
     </div></Section>}
   </section>;
+}
+
+// Border thread: the current thread opens the brand palette in a popover.
+function BorderThread({border,onChoose}:{border:NonNullable<TextSpec['border']>;onChoose:(color:string,thread:Thread)=>void}){
+  const {t}=useT(),id=useId(),[open,setOpen]=useState(false),label=border.thread?threadLabel(t,border.thread):border.color.toUpperCase();
+  return <>
+    <Button variant="secondary" size="sm" type="button" className="border-thread-button" popoverTarget={id} aria-label={t('Border colour')} title={label}><span className="thread-swatch" style={{background:border.color}}/><span>{label}</span></Button>
+    <Popover id={id} className="thread-popover" role="dialog" aria-label={t('Border colour')} onToggle={e=>setOpen(e.newState==='open')}>
+      {open&&<ThreadPalette selected={border.thread} onChoose={(color,thread)=>{onChoose(color,thread);document.getElementById(id)?.hidePopover();}}/>}
+    </Popover>
+  </>;
 }

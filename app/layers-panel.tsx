@@ -3,7 +3,7 @@ import {Button,Icon,IconButton,Input,SegmentedControl} from '@/design-system';
 import {useT} from './i18n';
 import {memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode} from 'react';
 import {colourRuns, stackRows, stackTarget, type ColourRun, type LayerRow} from '@/lib/layers';
-import {brotherThreads} from '@/lib/threads';
+import {threadLabel} from './thread-label';
 import {satinFonts} from '@/lib/satin-lettering';
 import {objectGeometry} from '@/lib/editor-render';
 import {useStableCallback} from './use-stable-callback';
@@ -112,8 +112,7 @@ const LayerGroupRow=memo(function LayerGroupRow({group,name,count,collapsed,hidd
 });
 
 const ColourRunRow=memo(function ColourRunRow({run,selected,disabled,onDown,onClick}:{run:ColourRun;selected:boolean;disabled:boolean;onDown:(key:string,e:ReactPointerEvent<HTMLDivElement>)=>void;onClick:(key:string)=>void}){
-  const {t}=useT(),b=run.thread&&brotherThreads.find(b=>b.code===run.thread!.code);
-  const name=b?t('Brother {code} {name}',{code:b.code,name:t(`thread.${b.name}`)}):t('Custom thread · {color}',{color:run.color.toUpperCase()});
+  const {t}=useT(),name=run.thread?threadLabel(t,run.thread):t('Custom thread · {color}',{color:run.color.toUpperCase()});
   const detail=[t('objects.other',{count:run.ids.length}),...(run.stitches!==null?[t('stitchCount.other',{count:run.stitches})]:[])].join(' · ');
   return <div data-layer={run.key} className={`object-row colour-run ${selected?'selected':''}`} role="button" tabIndex={disabled?-1:0} aria-label={`${name}, ${detail}`} aria-pressed={selected} aria-disabled={disabled} title={t('Drag to move these objects together in sew order')} onPointerDown={e=>onDown(run.key,e)} onClick={()=>onClick(run.key)} onKeyDown={e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onClick(run.key);}}}>
     <span className="thread-swatch run-swatch" style={{background:run.color}}/>

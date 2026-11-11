@@ -37,7 +37,7 @@ test('Object patches mirror the settings panel rules',()=>{
   assert.match(patchObject(line,{kind:'fill'}).error,/closed shape/);
   assert.match(patchObject(line,{bogus:1}).error,/Unknown/);
   const satin=patchObject(line,{kind:'satin',satinWidth:3}).object;assert.equal(satin.kind,'satin');assert.equal(satin.satinWidth,3);
-  const threaded=patchObject(line,{threadCode:'2'}).object;assert.equal(threaded.color,'#0a55a3');assert.equal(threaded.thread.code,'2');
+  const threaded=patchObject(line,{threadCode:'586'}).object;assert.equal(threaded.color,'#0a53c6');assert.equal(threaded.thread.code,'586');
   const recoloured=patchObject(threaded,{color:'#ff0000'}).object;assert.equal(recoloured.thread,undefined);
   const reset=patchObject({...line,spacing:.5},{spacing:null}).object;assert.equal('spacing' in reset,false);
   assert.match(patchObject({...line,locked:true},{name:'x'}).error,/locked/);
@@ -56,20 +56,20 @@ test('Explicit fill pattern patches disable automatic text stitching, including 
 });
 test('Thread search returns the nearest CIEDE2000 matches with rounded distances',()=>{
   assert.deepEqual(findThreads({color:'#123456'}).threads,[
-    {code:'21',name:'Ultramarine',color:'#0b3d91',deltaE:8.1},
-    {code:'1',name:'Prussian Blue',color:'#0e1f7c',deltaE:10.5},
-    {code:'2',name:'Blue',color:'#0a55a3',deltaE:13.2},
-    {code:'23',name:'Dark Gray',color:'#293133',deltaE:14.3},
-    {code:'59',name:'Electric Blue',color:'#095ba6',deltaE:14.9},
+    {code:'575',name:'Ultramarine',color:'#0a3e91',deltaE:8.2},
+    {code:'588',name:'Prussian Blue',color:'#111f77',deltaE:10.3},
+    {code:'747',name:'Dark Grey',color:'#2a3133',deltaE:14.3},
+    {code:'564',name:'Electric Blue',color:'#0c5ba5',deltaE:14.8},
+    {code:'586',name:'Blue',color:'#0a53c6',deltaE:15.9},
   ]);
-  assert.equal(findThreads({color:'#123456',limit:64}).threads.length,64);
-  const exact=findThreads({color:'#0A55A3'}).threads[0];
-  assert.deepEqual(exact,{code:'2',name:'Blue',color:'#0a55a3',deltaE:0});
+  assert.equal(findThreads({color:'#123456',limit:64}).threads.length,61);
+  const exact=findThreads({color:'#0A53C6'}).threads[0];
+  assert.deepEqual(exact,{code:'586',name:'Blue',color:'#0a53c6',deltaE:0});
 });
 test('Thread queries match name substrings without case or exact codes and filter before ranking',()=>{
   const {threads}=findThreads({query:'bLuE',limit:64});
   assert.deepEqual(threads,brotherThreads.filter(t=>t.name.toLowerCase().includes('blue')).map(({code,name,color})=>({code,name,color})));
-  assert.deepEqual(findThreads({query:'2'}).threads,[{code:'2',name:'Blue',color:'#0a55a3'}]);
+  assert.deepEqual(findThreads({query:'586'}).threads,[{code:'586',name:'Blue',color:'#0a53c6'}]);
   assert.deepEqual(findThreads({query:'not a thread'}).threads,[]);
   const filtered=findThreads({color:'#ed171f',query:'blue',limit:3}).threads;
   assert.deepEqual(filtered,findThreads({color:'#ed171f',limit:64}).threads.filter(t=>t.name.toLowerCase().includes('blue')).slice(0,3));
@@ -176,7 +176,7 @@ test('Point editing mirrors the point editor and is one atomic change',()=>{
 // and PNG rendering are replaced; execution and schema validation use the production code.
 function toolHarness(name='agent-tools',fonts=[]){
   const nodeRequire=createRequire(import.meta.url),module={exports:{}},calls=[];
-  const pixels={width:2,height:2,data:new Uint8ClampedArray(Array.from({length:4},()=>[10,85,163,255]).flat())};
+  const pixels={width:2,height:2,data:new Uint8ClampedArray(Array.from({length:4},()=>[10,83,198,255]).flat())};
   const source=readFileSync(new URL(`../app/${name}.tsx`,import.meta.url),'utf8')+'\nexport const testTools=tools;';
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
   const require=id=>{
@@ -207,7 +207,7 @@ test('Read-only reference tools resolve selection before the top image and never
   const p={...blank([]),images:[base,top]},api={project:()=>p,imageSelection:'selected'};
   const r=await invoke('trace_outline',api,{});assert.equal(r.area,4);assert.equal(calls.at(-1),'selected-pixels');
   api.imageSelection=null;await invoke('trace_outline',api,{});assert.equal(calls.at(-1),'top-pixels');
-  const samples=await invoke('sample_colors',api,{imageId:'selected',points:[[11,11]]});assert.equal(samples[0].nearest.code,'2');assert.equal(calls.at(-1),'selected-pixels');
+  const samples=await invoke('sample_colors',api,{imageId:'selected',points:[[11,11]]});assert.equal(samples[0].nearest.code,'586');assert.equal(calls.at(-1),'selected-pixels');
   await assert.rejects(invoke('sample_colors',api,{imageId:'missing',points:[[11,11]]}),/Unknown reference image/);
   assert.equal(p.objects.length,0);assert.equal(p.images[0],base);
 });

@@ -6,7 +6,7 @@ const {ringArea,simplifyRing}=load('click-to-stitch');
 const {imageToWorld}=load('images');
 const mask=rows=>({data:Uint8Array.from(rows.join(''),c=>c==='#'?1:0),width:rows[0].length,height:rows.length});
 const trace=(rows,opts)=>{const m=mask(rows);return traceMask(m.data,m.width,m.height,opts);};
-const pixels=rows=>{const m=mask(rows),data=new Uint8ClampedArray(m.width*m.height*4);m.data.forEach((v,k)=>data.set([10,85,163,v?255:0],k*4));return {width:m.width,height:m.height,data};};
+const pixels=rows=>{const m=mask(rows),data=new Uint8ClampedArray(m.width*m.height*4);m.data.forEach((v,k)=>data.set([10,83,198,v?255:0],k*4));return {width:m.width,height:m.height,data};};
 const image={id:'ref',src:'',name:'test',x:10,y:20,width:4,height:3,opacity:0};
 
 test('Masks select the largest four-connected component and preserve all when requested',()=>{
@@ -48,11 +48,11 @@ test('Colour flood requires a seed and uses the stitch-region tolerance',()=>{
 test('Sampling returns exact threads, transparent/outside null, rotation and circular alpha-weighted averages',()=>{
   const px=pixels(['####','####','####']);
   const r=sampleColors(px,{...image,rotation:90},[imageToWorld({...image,rotation:90},[.25,.5]),[0,0]],.5);
-  assert.equal(r[0].color,'#0a55a3');assert.equal(r[0].nearest.code,'2');assert.equal(r[0].nearest.deltaE,0);assert.equal(r[1].color,null);assert.equal(r[1].nearest,null);
+  assert.equal(r[0].color,'#0a53c6');assert.equal(r[0].nearest.code,'586');assert.equal(r[0].nearest.deltaE,0);assert.equal(r[1].color,null);assert.equal(r[1].nearest,null);
   const two={width:2,height:1,data:new Uint8ClampedArray([255,0,0,255,0,0,255,85])};
   assert.equal(sampleColors(two,{...image,width:2,height:1},[[10.5,20.5]],2)[0].color,'#bf0040');
   two.data[3]=0;assert.equal(sampleColors(two,{...image,width:2,height:1},[[10.5,20.5]],2)[0].color,null);
-  assert.equal(sampleColors(px,image,[[10.1,20.1]],0)[0].color,'#0a55a3');
+  assert.equal(sampleColors(px,image,[[10.1,20.1]],0)[0].color,'#0a53c6');
 });
 test('View mapping preserves axes and longest side with useful automatic grids',()=>{
   for(const [span,grid] of [[25,1],[80,5],[81,10]]){

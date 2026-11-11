@@ -137,7 +137,7 @@ export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
 }
 // Edge walks stay in the legacy underlay flag; this list contains row passes only.
 export const fillUnderlayPreset=(underlay:Underlay,length:number):FillUnderlay[]=>underlay.includes('tatami')?[{angle:90,spacing:2,length,inset:.4}]:[];
-export const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '#a6bdca'];
+const palette = ['#c99d72', '#f4e5cc', '#d8949b', '#664538', '#849984', '#a6bdca'];
 export function object(name: string, rings: Point[][], kind: Kind = 'fill', color = palette[0]): StitchObject {
   return {id: crypto.randomUUID(), name, rings, kind, color, length: 2.5, angle: 35, satinWidth: 2};
 }

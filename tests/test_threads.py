@@ -2,51 +2,49 @@ import base64
 import copy
 import hashlib
 import io
-import json
-from pathlib import Path
 import unittest
 from pystitch import read_pes
-from pystitch.EmbThreadPec import get_thread_set
 from embroidery.compiler import compile_project
-from embroidery.threads import THREADS, delta_e_2000, nearest_brother, rgb_to_lab
+from embroidery.threads import BROTHER, LABELS, valid_thread
 from test_compiler import project
 
 
 class ThreadTests(unittest.TestCase):
-    def test_ciede2000_reference_pairs(self):
-        for a, b, expected in json.loads(Path('tests/ciede2000-pairs.json').read_text())["pairs"]:
-            self.assertAlmostEqual(delta_e_2000(a, b), expected, delta=.00005)
-            self.assertAlmostEqual(delta_e_2000(b, a), expected, delta=.00005)
-            self.assertEqual(delta_e_2000(a, a), 0)
-        self.assertEqual(rgb_to_lab('#000000'), (0, 0, 0))
-
-    def test_catalogue_is_the_installed_pystitch_pec_table(self):
-        actual = [t for t in get_thread_set() if t]
-        self.assertEqual(len(THREADS), 64)
-        for t, source in zip(THREADS, actual):
-            self.assertEqual((t['code'], t['name'], t['color']), (source.catalog_number, source.description, source.hex_color()))
-            self.assertEqual(nearest_brother(t['color']), t)
-
     def test_metadata_survives_real_pes_write_and_read(self):
-        t = THREADS[42]
-        p = project(color=t['color'], thread={'brand': 'brother', 'code': t['code'], 'name': t['name']})
+        code, (name, color) = '155', BROTHER['155']
+        p = project(color=color, thread={'brand': 'brother', 'code': code, 'name': name})
         result = compile_project(p)
         decoded = read_pes(io.BytesIO(base64.b64decode(result['pes'])))
         actual = decoded.threadlist[0]
-        self.assertEqual((actual.brand, actual.chart, actual.catalog_number, actual.description), ('Brother', 'Brother', t['code'], t['name']))
+        self.assertEqual((actual.brand, actual.chart, actual.catalog_number, actual.description), ('Brother Embroidery', 'Brother Embroidery', code, name))
         self.assertEqual(result['threads'][0]['thread'], p['objects'][0]['thread'])
         # A custom first object in the same RGB block must not swallow catalogue metadata.
-        p['objects'].insert(0, {**copy.deepcopy(p['objects'][0]), 'name': 'Custom', 'thread': None})
+        p['objects'].insert(0, {**copy.deepcopy(p['objects'][0]), 'name': 'Custom'})
         del p['objects'][0]['thread']
         result = compile_project(p)
         self.assertEqual(result['stats']['colorChanges'], 0)
-        self.assertEqual(result['threads'][0]['thread']['code'], t['code'])
+        self.assertEqual(result['threads'][0]['thread']['code'], code)
+
+    def test_other_brands_round_trip_through_pes(self):
+        thread = {'brand': 'madeira-rayon', 'code': '1147', 'name': ''}
+        result = compile_project(project(color='#123456', thread=thread))
+        self.assertEqual(result['threads'][0]['thread'], thread)
+        self.assertEqual(LABELS['madeira-rayon'], 'Madeira Rayon')
 
     def test_unset_metadata_keeps_legacy_pes_bytes(self):
         data = base64.b64decode(compile_project(project())['pes'])
         self.assertEqual(hashlib.sha256(data).hexdigest(), '919979d842b4a22d2cef4b693536a90482ee02f24873008e956c47547e466c33')
 
     def test_invalid_thread_is_rejected(self):
-        for thread in (None, {}, {'brand': 'brother', 'code': [], 'name': 'Pink'}, {'brand': 'other', 'code': '43', 'name': 'Pink'}, {'brand': 'brother', 'code': '43', 'name': 'Wrong'}, {'brand': 'brother', 'code': '43', 'name': 'Pink'}):
-            with self.subTest(thread=thread), self.assertRaisesRegex(ValueError, 'valid Brother PEC'):
+        name, color = BROTHER['155']
+        self.assertTrue(valid_thread({'brand': 'brother', 'code': '155', 'name': name}, color))
+        for thread in (None, {}, {'brand': 'brother', 'code': [], 'name': name}, {'brand': 'other', 'code': '155', 'name': name},
+                       {'brand': 'brother', 'code': '155', 'name': 'Wrong'}, {'brand': 'brother', 'code': '999', 'name': name}, {'brand': 'madeira-rayon', 'code': '', 'name': ''}):
+            with self.subTest(thread=thread), self.assertRaisesRegex(ValueError, 'valid catalogue thread'):
                 compile_project(project(thread=thread))
+        with self.assertRaisesRegex(ValueError, 'valid catalogue thread'):
+            compile_project(project(color='#123456', thread={'brand': 'brother', 'code': '155', 'name': name}))
+
+
+if __name__ == '__main__':
+    unittest.main()

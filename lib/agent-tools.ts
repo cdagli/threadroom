@@ -1,8 +1,8 @@
-import {bounds,fabrics,hoops,isFillKind,kindHints,kindNames,lockLimits,lockNames,normalizeGroups,object,palette,resolve,ropeLimits,satinLimits,underlayNames,underlayOptions,validProject,type Kind,type Point,type Project,type StitchObject} from './project';
+import {bounds,fabrics,hoops,isFillKind,kindHints,kindNames,lockLimits,lockNames,normalizeGroups,object,resolve,ropeLimits,satinLimits,underlayNames,underlayOptions,validProject,type Kind,type Point,type Project,type StitchObject} from './project';
 import {blockOutline,changeStitchKind,curveRing,draftRails,insertGeometryPoint,isClosedShape,moveGeometry,removeGeometryPoint,routeEnds,setCorner,withEnd,withRails} from './curves';
 import {explain,fixFor,type Warning} from './check';
 import {fillPatterns} from './fill-patterns';
-import {brotherThreads,deltaE2000,nearestBrother,rgbToLab,threadReference,type Thread} from './threads';
+import {brotherThreads,defaultThreadColour,deltaE2000,nearestBrother,rgbToLab,threadReference,type Thread} from './threads';
 import {boxShape,isBoxShape,radialShapes,shapeNames,type ShapeKind} from './shapes';
 import {textLimits} from './text';
 import {minSize,type CatalogFont} from './fonts';
@@ -92,13 +92,13 @@ export function reference(){
     fabrics:Object.entries(fabrics).map(([id,f])=>({id,name:en(f.label),fillSpacing:f.fill,satinSpacing:f.satin,pullCompensation:f.pull,stabilizer:en(f.stabilizer),topping:en(f.topping)})),
     locks:{types:Object.fromEntries(Object.entries(lockNames).map(([k,v])=>[k,en(v)])),size:lockLimits.size,trimJump:lockLimits.trim},
     limits:{satinWidth:satinLimits.width,splitLength:satinLimits.split,ropeWidth:ropeLimits.width,text:textLimits,sewingSpeed:[production.minSpeed,production.maxSpeed]},
-    shapes:shapeKinds,menuCommands,palette,
-    threads:`${brotherThreads.length} Brother PEC catalogue threads; use find_threads to search by colour or name/code, then apply a result with update_objects settings.threadCode (e.g. "${brotherThreads[0].code}") or use settings.matchThread:true`,
+    shapes:shapeKinds,menuCommands,
+    threads:`${brotherThreads.length} Brother Embroidery threads (retail spool numbers); use find_threads to search by colour or name/code, then apply a result with update_objects settings.threadCode (e.g. "${brotherThreads[0].code}") or use settings.matchThread:true`,
     workflow:['get_reference (once)','set_status before each multi-step phase: one short sentence in the user UI language','For hand digitising: view_reference (mm grid) → sample_colors → trace_outline (silhouette polygons) → add_path / shape_operation (intersect to clip; union/offset/subtract to cut the base) → shape_operation flatten → find_threads / update_objects settings.threadCode → set_sew_order → list_issues','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','find_threads then update_objects settings.threadCode to choose threads','set_sew_order to reorder listed objects within their existing slots; later layers sew on top, group colours to minimise jumps','capture_preview to look at the result','export_design'],
   };
 }
 
-// Searches use five results by default; without filters, expose the whole PEC catalogue.
+// Searches use five results by default; without filters, expose the whole Brother chart.
 export function findThreads({color,query,limit}:{color?:string;query?:string;limit?:number}={}):{threads:{code:string;name:string;color:string;deltaE?:number}[]}|{error:string}{
   if(color!==undefined&&!/^#[0-9a-f]{6}$/i.test(color))return {error:'color must be a #rrggbb hex colour.'};
   const count=limit??(color!==undefined||query!==undefined?5:64);
@@ -166,7 +166,7 @@ export function makeShape(kind:ShapeKind,center:Point,width:number,height:number
   const shape=isBoxShape(kind)?boxShape(kind,[center[0]-width/2,center[1]-height/2],[center[0]+width/2,center[1]+height/2]):radialShapes[kind](center,width/2);
   const curve={points:shape.points,closed:true,corners:shape.corners,spline:'levien' as const};
   const ring=curveRing(curve);if(outside([ring],hoops[p.hoop]))return {error:'The shape would extend outside the hoop. Move it inward or make it smaller.'};
-  let o:StitchObject={...object(opts.name??en(shapeNames[kind]),[ring],'fill',opts.color??palette[3]),fillPattern:'tatami',curve};
+  let o:StitchObject={...object(opts.name??en(shapeNames[kind]),[ring],'fill',opts.color??defaultThreadColour),fillPattern:'tatami',curve};
   if(opts.kind&&opts.kind!=='fill'){const r=patchObject(o,{kind:opts.kind});if('error' in r)return r;o=r.object;}
   return {object:o};
 }
@@ -179,7 +179,7 @@ export function makePath(mode:PathMode,points:Point[],p:Project,opts:{corners?:b
   if(points.length<min)return {error:`A ${mode} path needs at least ${min} points.`};
   if(points.length>2000)return {error:'Use at most 2000 points.'};
   if(points.some(q=>!Array.isArray(q)||q.length!==2||!q.every(Number.isFinite)))return {error:'Points must be [x, y] pairs in mm.'};
-  const corners=opts.corners??points.map(()=>!opts.smooth),color=opts.color??palette[3],hoop=hoops[p.hoop];
+  const corners=opts.corners??points.map(()=>!opts.smooth),color=opts.color??defaultThreadColour,hoop=hoops[p.hoop];
   let o:StitchObject;
   if(mode==='blocks'){
     const rails=draftRails(points,corners);if(!rails)return {error:'Blocks need pairs of points: left, right, left, right…'};

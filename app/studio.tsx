@@ -23,7 +23,7 @@ import {Fragment, Profiler, useEffect, useLayoutEffect, useRef, useState, useMem
 
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
 import {NewProjectDialog} from './new-project-dialog';
-import {migrateProject, blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, palette, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {migrateProject, blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {layoutObject as layoutTextObject, curvePoints, curveRing, setCorner, isCorner, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {clientToWorld, fitViewport, keepViewportOnResize, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
@@ -50,7 +50,9 @@ const TextPanel=dynamic(()=>import('./text-panel'),{loading:Loading});
 import ThreadView from './thread-view';
 const ThreadPicker=dynamic(()=>import('./thread-picker'),{loading:Loading});
 import {SewingSpeed,SewingTime,WorksheetButton} from './worksheet';
-import {recolorObject,type Thread} from '@/lib/threads';
+import {brandLabel,defaultThread,defaultThreadColour,ensureThreads,loadThreads,nearestThread,recolorObject,threadReference,type Thread} from '@/lib/threads';
+import {threadLabel} from './thread-label';
+import {readThreadBrand} from './use-thread-brand';
 import LayersPanel from './layers-panel';
 import {IssueMarker, EndHandles, DraftOverlay, ShapeOverlay, MeasureOverlay, NeedleMarker} from './canvas-overlays';
 import {CanvasObject} from './canvas-object';
@@ -316,7 +318,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     let p:Project=migrateProject(initialProject);
     let live=true;
     // Normalising on load is not an edit, so it becomes the saved baseline.
-    const restore=()=>{if(!live)return;try{p=syncPathBindings(migrateImages(normalizeGroups(p)));}catch{p=migrateImages(normalizeGroups(initialProject));}saveRef.current.saved=p;current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);};
+    const restore=()=>{if(!live)return;try{p=ensureThreads(syncPathBindings(migrateImages(normalizeGroups(p))));}catch{p=ensureThreads(migrateImages(normalizeGroups(initialProject)));}saveRef.current.saved=p;current.current=p;setProject(p);setSelected(p.objects[0]?.id||null);setReady(true);if(narrowScreen())setPanelOpen(false);};
     if(p.objects.some(o=>o.text?.satin))void ensureSatinFonts().then(restore).catch(e=>{if(!live)return;restore();setError(errorText(e,initialT,'The font could not be loaded.'));});else restore();
     fetch('/api/export').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>setApiState(data.python?'ready':'offline')).catch(()=>setApiState('offline'));
     return()=>{live=false;};
@@ -426,7 +428,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   },[playing,compiled,speed]);
 
   function commit(next:Project, label='', merge?:string) {
-    try{next=syncPathBindings(migrateImages(normalizeGroups(next)),current.current);}catch(e){setError(errorText(e,t,'Map to path exceeds the hoop or design limits.'));return;}
+    // No custom colours: anything arriving without a thread (imports, agent edits) snaps to Brother.
+    try{next=ensureThreads(syncPathBindings(migrateImages(normalizeGroups(next)),current.current));}catch(e){setError(errorText(e,t,'Map to path exceeds the hoop or design limits.'));return;}
     // Typing and slider drags coalesce into one undo step per field.
     const now=performance.now(),same=!!merge&&lastMerge.current?.key===merge&&now-lastMerge.current.time<1500;
     lastMerge.current=merge?{key:merge,time:now}:null;
@@ -536,8 +539,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     if(mapSelection)setSelection([...mapSelection,next.id]);return true;
   }
   function newObject(name:string,rings:Point[][],kind:Kind):StitchObject{
-    const o=object(name,rings,kind,drawColour?.color??(item?.color||palette[3]));
-    return drawColour?.thread?{...o,thread:drawColour.thread}:o;
+    const pick=drawColour??(item?.thread?{color:item.color,thread:item.thread}:{color:defaultThreadColour,thread:defaultThread});
+    return {...object(name,rings,kind,pick.color),...(pick.thread&&{thread:pick.thread})};
   }
   function finishBrush(){
     const {points,pressures}=brushSamples.current;brushSamples.current={points:[],pressures:[]};
@@ -643,8 +646,11 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       const pixels=await artworkPixels(art.src,t);
       if(colourPickRef.current!==session||!current.current.images?.includes(art))return;
       const color=sampleArtwork(pixels,art,toImageFrame(art,p));if(!color){setPickHint(t("No visible image pixels here. Try another point."));return;}
-      const before=current.current;cancelColourPick();setDrawColour({color});
-      commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?recolorObject(o,color):o)},t("Thread colour picked: {v0}",{v0:color.toUpperCase()}));
+      // Snap the sampled colour to the nearest thread of the chosen brand.
+      const brand=readThreadBrand(),match=nearestThread(color,await loadThreads(brand)),thread=threadReference(match,brand);
+      if(colourPickRef.current!==session)return;
+      const before=current.current;cancelColourPick();setDrawColour({color:match.color,thread});
+      commit({...before,objects:before.objects.map(o=>session.ids.includes(o.id)?recolorObject(o,match.color,thread):o)},t("Thread colour picked: {v0}",{v0:threadLabel(t,thread)}));
     }catch(e){if(colourPickRef.current===session)setPickHint(errorText(e,t,'Could not read the reference image.'));}
   }
   function reorderSelection(where:'top'|'up'|'down'|'bottom'){
@@ -1174,7 +1180,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
               {snapGuides.length>0&&<g className="snap-guides" pointerEvents="none" strokeWidth={1/canvasScale}>{snapGuides.map(g=>{const m=3/canvasScale,end=(v:number)=>g.axis==='x'?`M${g.value-m} ${v-m}l${2*m} ${2*m}m0 ${-2*m}l${-2*m} ${2*m}`:`M${v-m} ${g.value-m}l${2*m} ${2*m}m0 ${-2*m}l${-2*m} ${2*m}`;return <path key={g.axis} d={(g.axis==='x'?`M${g.value} ${g.from}V${g.to}`:`M${g.from} ${g.value}H${g.to}`)+end(g.from)+end(g.to)}/>;})}</g>}
               {ends&&!angles&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
-              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'||tool==='holes'} closeHover={closeHover} color={drawColour?.color??(item?.color||palette[3])} hover={bandHover} drawing={drawing} freehand={tool==='brush'} brushWidth={tool==='brush'&&brushId!=='running'&&brushId!=='bean'?brushSizes[brushId]*(brushId==='rope'?2:1):undefined} curved={pathTool(tool)} corners={corners} canvasScale={canvasScale}/>}
+              {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'||tool==='holes'} closeHover={closeHover} color={drawColour?.color??(item?.thread?item.color:defaultThreadColour)} hover={bandHover} drawing={drawing} freehand={tool==='brush'} brushWidth={tool==='brush'&&brushId!=='running'&&brushId!=='bean'?brushSizes[brushId]*(brushId==='rope'?2:1):undefined} curved={pathTool(tool)} corners={corners} canvasScale={canvasScale}/>}
               {tool==='knife'&&shapeDraft&&<KnifeOverlay a={shapeDraft.start} b={shapeDraft.square?snapAngle(shapeDraft.start,shapeDraft.end):shapeDraft.end} canvasScale={canvasScale}/>}
               {shapePreview&&shapeDraft&&<ShapeOverlay shapePreview={shapePreview} shapeDraft={shapeDraft} canvasScale={canvasScale}/>}
               {tool==='stitch'&&stitchHover&&<path d={pathData(stitchHover,true)} fill="var(--accent)" fillOpacity=".18" fillRule="evenodd" stroke="var(--accent)" strokeWidth={1.5/canvasScale} strokeDasharray={`${4/canvasScale} ${3/canvasScale}`} pointerEvents="none"/>}
@@ -1249,8 +1255,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         <fieldset disabled={hasDraft||allLocked} className="panel-section settings object-settings">
           {/* A closed shape is always a fill (cross stitch is a fill pattern) and satin blocks have one style, so only real choices are shown. */}
           {!(item.kind==='fill'&&stitchGroups(item,t).every(g=>g.kinds.every(isFillKind)))&&stitchGroups(item,t).flatMap(g=>g.kinds).length>1&&<StitchSelector value={item.kind} groups={stitchGroups(item,t)} onChange={kind=>updateObject({kind,spacing:undefined,underlay:undefined})}/>}
-          <Section id="thread" title={t("Thread colour")} summaryExtra={<span className="thread-summary"><i style={{background:item.color}}/>{item.color.toUpperCase()}</span>}>
-          <ThreadPicker hint project={project} selection={selection} onChange={commit} onPick={pickDrawColour} eyedropper={eyedropper}/>
+          <Section id="thread" title={<>{t("Thread colour")}<Hint text={t('hint.thread')}/></>} summaryExtra={<span className="thread-summary"><i style={{background:item.color}}/>{item.thread?`${item.thread.code}${item.thread.brand===defaultThread.brand?'':` · ${brandLabel(item.thread.brand)}`}`:item.color.toUpperCase()}</span>}>
+          <ThreadPicker heading={false} project={project} selection={selection} onChange={commit} onPick={pickDrawColour} eyedropper={eyedropper}/>
           </Section>
           {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop} angles={{active:angles,onToggle:toggleAngles}} baseSpacing={baseSpacing} finish={startFinish}/>}
           {item.kind!=='fill'&&<>
