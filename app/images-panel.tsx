@@ -16,6 +16,7 @@ export default memo(function ImagesPanel({images,selected,disabled,onSelect,onCh
         <img src={i.src} alt="" width={36} height={36}/><span>{i.name}</span>
       </SelectionRow>
       <div className="image-row-actions">
+      <IconButton variant="ghost" className="image-toggle" size="sm" aria-pressed={!i.hidden} aria-label={t(i.hidden?'Show “{v0}”':'Hide “{v0}”',{v0:i.name})} title={t(i.hidden?'Show image':'Hide image')} disabled={disabled} onClick={()=>onChange(i.id,{hidden:i.hidden?undefined:true})}><Icon name={i.hidden?'eyeOff':'eye'} size={15}/></IconButton>
       <IconButton className="image-toggle" size="sm" aria-pressed={!!i.locked} aria-label={i.locked?t("Unlock “{v0}”",{v0:i.name}):t("Lock “{v0}”",{v0:i.name})} title={i.locked?t("Unlock image"):t("Lock image: it can’t be selected on the canvas")} disabled={disabled} onClick={()=>onChange(i.id,{locked:i.locked?undefined:true})}>{path(i.locked?'M6 11h12v10H6V11m2 0V8a4 4 0 0 1 8 0v3':'M6 11h12v10H6V11m2 0V8a4 4 0 0 1 7.7-1.5')}</IconButton>
       <IconButton className="image-toggle" size="sm" aria-label={t("Bring “{v0}” forward",{v0:i.name})} title={t("Bring forward")} disabled={disabled||row===0} onClick={()=>onMove(i.id,1)}>↑</IconButton>
       <IconButton className="image-toggle" size="sm" aria-label={t("Send “{v0}” backward",{v0:i.name})} title={t("Send backward")} disabled={disabled||row===rows.length-1} onClick={()=>onMove(i.id,-1)}>↓</IconButton>
