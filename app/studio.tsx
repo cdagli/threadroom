@@ -1,5 +1,5 @@
 'use client';
-import {StatusBar,type StatusTone,Button,EmptyState,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Modal,Popover,Section,SubSection,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
+import {StatusBar,type StatusTone,Button,Hint,Icon,IconButton,Input,MenuGroup,MenuItem,MenuPopover,Modal,Popover,Section,SubSection,SegmentedControl,Select,ToolButton,ToolGroupButton,ToolHint,Toolbar,ToolbarDivider} from '@/design-system';
 import dynamic from 'next/dynamic';
 import {authClient} from '@/lib/auth-client';
 import {projectThumbnail} from '@/lib/project-thumbnail';
@@ -14,7 +14,7 @@ import {measurePoint} from '@/lib/measure';
 import {MapToPath} from './map-to-path-control';
 import {syncPathBindings} from '@/lib/map-to-path';
 import {useT} from './i18n';
-import {TransformBox,SelectionTools,ViewControls,CanvasRulers,ShortcutHelp} from './editing-controls';
+import {TransformBox,SelectionTools,CanvasRulers,ShortcutHelp} from './editing-controls';
 import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,marqueeIds,pickObject,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
 import {defaultView,formatLength,playbackRate,playbackSpeeds,readViewSettings,type ViewSettings} from '@/lib/view-settings';
 import {createT,errorText,TranslationError} from '@/lib/i18n';
@@ -23,7 +23,7 @@ import {Fragment, Profiler, useEffect, useLayoutEffect, useRef, useState, useMem
 
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
 import {NewProjectDialog} from './new-project-dialog';
-import {migrateProject, blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fabrics, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, withFabric, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {migrateProject, blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {layoutObject as layoutTextObject, curvePoints, curveRing, setCorner, isCorner, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {clientToWorld, fitViewport, keepViewportOnResize, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
@@ -36,6 +36,8 @@ import {artworkPixels, traceArtworkPixels, sampleArtwork} from '@/lib/artwork-co
 import {defaultTolerance, toleranceLimits, type Pixels} from '@/lib/click-to-stitch';
 import {activeImage, imageBounds, imageLimits, insideImage, migrateImages, moveImage, removeImage, toImageFrame, transformImage, updateImage} from '@/lib/images';
 import ImagesPanel from './images-panel';
+import ImageSettings from './image-settings';
+import SetupPanel from './setup-panel';
 import {parse} from '@/lib/pes-parser';
 import {SVGImportChoice,ExportImageButton} from './io-controls';
 import {DensityHeat,DensityLegend,StitchDiagnostics,useDensity} from './density-view';
@@ -49,7 +51,7 @@ import StitchSelector from './stitch-selector';
 const TextPanel=dynamic(()=>import('./text-panel'),{loading:Loading});
 import ThreadView from './thread-view';
 const ThreadPicker=dynamic(()=>import('./thread-picker'),{loading:Loading});
-import {SewingSpeed,SewingTime,WorksheetButton} from './worksheet';
+import {SewingTime,WorksheetButton} from './worksheet';
 import {brandLabel,defaultThread,defaultThreadColour,ensureThreads,loadThreads,nearestThread,recolorObject,threadReference,type Thread} from '@/lib/threads';
 import {threadLabel} from './thread-label';
 import {readThreadBrand} from './use-thread-brand';
@@ -68,12 +70,12 @@ import {changedObjectIds, projectCommands, commandPaths, designBounds, objectGeo
 import {brushDefaults,brushIds,brushObject,brushSize,brushStroke,brushes,type BrushId} from '@/lib/brushes';
 import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
-type PanelTab = 'layers' | 'artwork' | 'setup' | 'info';
+type PanelTab = 'layers' | 'setup' | 'info';
 type Tool = 'select' | 'pan' | 'measure' | 'open' | 'closed' | 'brush' | 'points' | 'text' | 'shape' | 'holes' | 'knife' | 'stitch';
 // Open and closed draw curves whose points are corners (left click) or smooth (right/double-click).
 const pathTool=(t:Tool)=>t==='open'||t==='closed'||t==='holes';
-// Cut holes and the knife are reached from the Shape tools section, click to stitch from the Artwork
-// tab; all three also have shortcuts, not dock buttons.
+// Cut holes and the knife are reached from the Shape tools section, click to stitch from image
+// settings; all three also have shortcuts, not dock buttons.
 const drawTool=(t:Tool)=>['open','closed','points'].includes(t);
 const dockTool=(t:Tool)=>t!=='holes'&&t!=='knife'&&t!=='stitch';
 const shapeKinds=Object.keys(shapeNames) as ShapeKind[];
@@ -120,8 +122,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const saveRef=useRef({saved:initialProject,revision:initialRevision,inFlight:false});
   const [saveState,setSaveState]=useState<'saved'|'saving'|'unsaved'|'error'|'too-large'>('saved');
   const [conflict,setConflict]=useState<{name:string;updatedAt:string;dismissed?:boolean}|null>(null),[historyOpen,setHistoryOpen]=useState(false),[creating,setCreating]=useState<'open'|'busy'|null>(null);
-  const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>('select');
-  const [lastDraw,setLastDraw]=useState<Tool>('open');
+  const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>(initialProject.objects.length||initialProject.images?.length?'select':'closed');
+  const [lastDraw,setLastDraw]=useState<Tool>('closed');
   useEffect(()=>{if(drawTool(tool))setLastDraw(tool);},[tool]);
   const selected=selection.at(-1)??null,anchor=useRef<string|null>(null);
   function setSelected(id:string|null){setSelection(id?[id]:[]);anchor.current=id;}
@@ -225,8 +227,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const touchStart=useRef<{draft:Point[];corners:boolean[];project:Project}|null>(null);
   const touchNavigation=useRef(false);
   const pinch=useRef<{view:Viewport;anchor:Point;center:Point;distance:number}|null>(null);
-  const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected), resolved=item&&resolve(item,project.fabric,project.locks), fabric=fabrics[project.fabric];
-  const emptyCanvas=!project.objects.length&&!images.length&&!compiled;
+  const hoop=hoops[project.hoop], item=project.objects.find(o=>o.id===selected), resolved=item&&resolve(item,project.fabric,project.locks);
   const items=selection.flatMap(id=>project.objects.filter(o=>o.id===id)),multi=items.length>1,allLocked=items.length>0&&items.every(o=>o.locked);
   // Transforms act on the unlocked part of the selection; a locked-only selection is read-only.
   const movableIds=useMemo(()=>unlockedIds(project,selection),[project.objects,selection.join('|')]);
@@ -631,7 +632,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   // Reference images: one undo step per change; opacity and size fields coalesce while dragging.
   function changeImage(id:string,patch:Partial<RefImage>,merge?:string){commit(updateImage(current.current,id,patch),'',merge&&`image:${id}:${merge}`);}
   function deleteImage(id:string){commit(removeImage(current.current,id));if(imageSel===id)setImageSel(null);}
-  function selectImage(id:string|null){setSelected(null);setEditPoints(false);setImageSel(id);}
+  function selectImage(id:string|null){chooseTool('select');setSelected(null);setEditPoints(false);setImageSel(id);setSettingsCollapsed(false);setShowImage(true);if(narrowScreen())setPanelOpen(false);if(id&&current.current.images?.find(i=>i.id===id)?.hidden)changeImage(id,{hidden:undefined});}
   function toggleColourPick(){
     if(colourPickRef.current){cancelColourPick();return;}
     if(!art||!unlockedIds(current.current,selection).length||hasDraft)return;
@@ -1019,7 +1020,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     const ratio=img.naturalHeight/img.naturalWidth, width=Math.min(60,hoop.width*0.75,hoop.height*0.75/ratio),height=width*ratio;
     // Images are added on top of the list; an empty design takes the image's name.
     const image:RefImage={id:crypto.randomUUID(),src,name,width,height,x:(hoop.width-width)/2,y:(hoop.height-height)/2,opacity:.65};
-    commit({...p,...(!p.objects.length&&!list.length&&{name:name.replace(/\.[^.]+$/,'').slice(0,40)}),images:[...list,image]});selectImage(image.id);setShowImage(true);fitArtwork(width,height);setTool('closed');
+    commit({...p,...(!p.objects.length&&!list.length&&{name:name.replace(/\.[^.]+$/,'').slice(0,40)}),images:[...list,image]});selectImage(image.id);setShowImage(true);fitArtwork(width,height);
   }
   async function trace(){
     if(!art||hasDraft)return;const request=++traceRequest.current;traceTask.cancel();setBusy(true);setError('');
@@ -1102,7 +1103,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
 <div className="ends-row"><span className="field-heading"><span><i className="end-dot entry"/>{t("Entry ·")} <i className="end-dot exit"/>{t("exit")}</span><Hint text={t("hint.entryExit")}/></span>{item.entry||item.exit?<Button variant="link" type="button" className="field-value reset" title={t("Return to automatic entry and exit")} onClick={()=>updateObject({entry:undefined,exit:undefined})}>{t("Reset")}</Button>:<span className="field-value inherited">{t("Auto")}</span>}</div></SubSection>:null;
   const setLocks=(patch:Partial<Locks>,merge?:string)=>commit({...project,locks:{...project.locks,...patch}},'',merge&&`setup:${merge}`);
   const inRange=(v:string,[a,b]:readonly [number,number])=>v!==''&&Number(v)>=a&&Number(v)<=b;
-  const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:t("Layers")},{id:'artwork',icon:'image',label:t("Artwork")},{id:'setup',icon:'settings',label:t("Setup")},{id:'info',icon:'info',label:t("Info")}];
+  const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:t("Layers")},{id:'setup',icon:'settings',label:t("Setup")},{id:'info',icon:'info',label:t("Info")}];
   const eyedropper=<IconButton variant="ghost" type="button" className="image-eyedropper" aria-label={t("Pick thread colour from reference image")} title={art?t("Pick original reference image colour"):t("Import reference artwork to pick a colour")} aria-pressed={!!colourPick} disabled={!art} onClick={toggleColourPick}><Icon name="eyedropper" size={17}/></IconButton>;
   // WebMCP: rebuilt every render so agent tools always call the newest closures (see app/agent-tools.tsx).
   agentApi.current={
@@ -1120,7 +1121,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     setTraceOptions:(n,ignore)=>{setColours(n);setIgnoreBg(ignore);},trace,stitchRegion,generate:(exportFile=false)=>generate(exportFile),
     placeText,updateText:patch=>updateText(patch),convertText,editSelection:(m,rotation=0)=>editSelection(m,rotation),selectionField,alignSelected,
     changeImage:(id,patch)=>changeImage(id,patch),deleteImage,setViewSettings:patch=>setViewSettings(v=>({...v,...patch})),setDensity,setLook,setShowImage,
-    openPanel:tab=>{setPanelTab(tab);setPanelOpen(true);},play,download,
+    openPanel:tab=>{setPanelTab(tab==='artwork'?'layers':tab);setPanelOpen(true);},play,download,
   };
   const saveLabel=saveState==='saved'?t('Saved'):saveState==='saving'?t('Saving…'):saveState==='error'?t('Could not save. Retrying…'):saveState==='too-large'?t('This project is too large to save. Remove or shrink reference images.'):t('Unsaved');
   // Keep the canvas mounted for measurement, but hide placeholder content until restoration
@@ -1191,12 +1192,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         {densityField&&<DensityLegend field={densityField} radius={densityRadius} travel={showTravel} onRadius={setDensityRadius} onClose={()=>setDensity(false)}/>}
         {viewSettings.rulers&&<CanvasRulers width={canvasSize.width} height={canvasSize.height} scale={canvasScale} units={viewSettings.units} hoop={hoop} selection={selection.length?selectionBounds(project,selection):selImage&&!selImage.hidden?imageBounds(selImage):null} origin={[hoop.width/2+pan[0]-canvasSize.width/2/canvasScale,hoop.height/2+pan[1]-canvasSize.height/2/canvasScale]}/>}
         {cursor&&<output className="cursor-position" aria-label={t('Cursor position')}>X {displayLength(cursor[0])} · Y {displayLength(cursor[1])}</output>}
-        {emptyCanvas&&tool==='select'&&!hasDraft&&!shapeDraft&&!drawing&&!panMode&&<div className="empty-canvas" style={{left:(hoop.width/2-viewX)*canvasScale,top:(hoop.height/2-viewY)*canvasScale,width:Math.min(344,hoop.width*canvasScale-16)}}>
-          <EmptyState icon={<Icon name="needle" size={24}/>} title={t("Your canvas is ready")} description={t("Add an image to trace, or draw your own design.")} hint={t("You can also drop a file here.")}>
-            <Button variant="primary" size="lg" onClick={()=>file.current?.click()}><Icon name="upload" size={16}/>{t("Add artwork")}</Button>
-            <Button variant="secondary" size="lg" onClick={()=>{chooseTool('closed');requestAnimationFrame(()=>svg.current?.focus());}}><Icon name="pen" size={16}/>{t("Start drawing")}</Button>
-          </EmptyState>
-        </div>}
+
       </div>
       {tool==='select'&&items.length>0&&!hasDraft&&!shapeDraft&&!drawing&&!editing&&!angles&&!colourPick&&!selectionDragging&&!navigating&&!spacePan&&!panMode&&<SelectionBar
         box={selectionBox} view={view} hoop={hoop} canvas={svg} container={stage} rail={rail}
@@ -1288,6 +1284,12 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         <ShapeTools focusOffset={focusOffset} project={project} selection={selection} disabled={hasDraft||allLocked} keep={cutKeep} onKeep={setCutKeep} onResult={run=>applyShape(run)} onMode={shapeMode}/>
         </div>}
       </aside>}
+      {selImage&&<aside className={`settings-overlay ${settingsCollapsed?'collapsed':''}`} aria-label={t("Image settings")}>
+        <div className="overlay-heading"><Icon name="image" size={16}/><h2 title={selImage.name}>{selImage.name}</h2><IconButton variant="ghost" className={`icon-button collapse-button ${settingsCollapsed?'':'open'}`} aria-label={settingsCollapsed?t("Expand settings"):t("Collapse settings")} aria-expanded={!settingsCollapsed} onClick={()=>setSettingsCollapsed(c=>!c)}><Icon name="chevron" size={16}/></IconButton></div>
+        {!settingsCollapsed&&<div className="overlay-body"><ImageSettings image={selImage} disabled={hasDraft} busy={busy} colours={colours} ignoreBackground={ignoreBg}
+          onChange={(patch,merge)=>changeImage(selImage.id,patch,merge)} onDelete={()=>deleteImage(selImage.id)} onFit={()=>fitArtwork(selImage.width,selImage.height)}
+          onTrace={()=>void trace()} onStitch={()=>{chooseTool('stitch');setShowImage(true);leavePanel();}} onColours={setColours} onIgnoreBackground={setIgnoreBg}/></div>}
+      </aside>}
       <div className="dock-area">
         <StatusBar label={t("AI agent")} text={agentStatus?.text??''} tone={agentStatus?.tone}/>
         {(error||message)&&<div className={`feedback ${error?'error':''}`} role={error?'alert':'status'}>{error||message}<IconButton variant="ghost" aria-label={t("Dismiss message")} onClick={()=>{setError('');setMessage('');}}>×</IconButton></div>}
@@ -1321,6 +1323,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
               options={shapeKinds.map(k=>({id:k,icon:k,label:t(shapeNames[k])}))} onActivate={()=>chooseTool('shape')} onSelect={k=>{chooseTool('shape');setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}/>;
             return <span key={toolInfo.id} className="tool-slot">{toolInfo.id==='text'&&<ToolbarDivider/>}<ToolButton variant="ghost" className={active?'tool active':'tool'} title={`${toolInfo.label} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key}) — ${toolInfo.hint}`} aria-label={toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.icon}/><span>{toolInfo.label}</span></ToolButton></span>;
           })}
+          <ToolbarDivider/><ToolButton variant="ghost" className="tool" aria-label={t("Add artwork")} title={t("Import file")} disabled={hasDraft||busy} onClick={()=>file.current?.click()}><Icon name="image"/><span>{t("Add artwork")}</span></ToolButton>
         </Toolbar>
       </div>
       <div className="corner-controls">
@@ -1339,32 +1342,12 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       <div className="panel-heading"><h2>{tabs.find(t=>t.id===panelTab)!.label}</h2>{panelTab==='layers'&&<><span className="count-badge">{formatNumber(project.objects.length)}</span>{project.objects.some(o=>o.locked)&&<IconButton variant="ghost" className="icon-button" type="button" disabled={hasDraft} title={t('Unlock all objects')} aria-label={t('Unlock all objects')} onClick={unlockEverything}><Icon name="lock" size={15}/></IconButton>}</>}</div>
       {panelTab==='layers'&&<>
         <LayersPanel project={project} compiled={compileFresh?compiled:null} selection={selection} disabled={hasDraft} imported={imported} onSelect={selectObject} onSelection={ids=>{setSelection(ids);anchor.current=ids[0]??null;setEditPoints(false);}} onRename={renameObject} onHide={hideObjects} onLock={lockSelection} onPlace={(ids,index)=>commit(placeObjects(project,ids,index))} onPosition={(id,n)=>commit(placeObjects(project,[id],positionIndex(project,id,n)))} onMove={(ids,index,group,whole)=>commit(whole!==undefined?moveGroup(project,whole,index):moveObjects(project,ids,index,group))} children={null}/>
+        {images.length>0&&<section className="panel-section reference-images-section"><h2>{t("Reference images")}</h2>
+          <ImagesPanel images={images} selected={imageSel} disabled={hasDraft} onSelect={selectImage} onChange={changeImage} onMove={(id,delta)=>commit(moveImage(current.current,id,delta))} onDelete={deleteImage}/>
+        </section>}
 
       </>}
-      {panelTab==='artwork'&&<section className="panel-section">
-        <Button variant="secondary" className="upload-box" disabled={hasDraft} onClick={()=>file.current?.click()}><Icon name="upload"/><strong>{t("Import file")}</strong></Button>
-        {!images.length&&<p className="section-copy">{t("PNG, JPG, WebP or SVG to trace; PES or PEC to preview; a Threadroom JSON project to edit. You can also drop a file on the canvas.")}</p>}
-        {images.length>0&&<ImagesPanel images={images} active={art?.id??null} selected={imageSel} disabled={hasDraft} onSelect={selectImage} onChange={changeImage} onMove={(id,delta)=>commit(moveImage(current.current,id,delta))} onDelete={deleteImage}/>}
-        {art&&<div className="artwork-settings">
-          <Button variant="primary" loading={busy} disabled={hasDraft} style={{width:"100%"}} onClick={()=>void trace()}><Icon name="region"/>{t("Auto trace")}</Button>
-          <div className="manual-trace"><Button variant="secondary" disabled={hasDraft||art.hidden} title={t("Click to stitch (7): click a colour area to fill it")} onClick={()=>{chooseTool('stitch');leavePanel();}}>{t("Click to stitch")}</Button></div>
-          <div className="manual-trace"><Button variant="secondary" disabled={hasDraft} title={t("Closed shape (2)")} onClick={()=>{chooseTool('closed');setShowImage(true);leavePanel();}}>{t("Trace outline")}</Button><Button variant="secondary" disabled={hasDraft} title={t("Open shape (1)")} onClick={()=>{chooseTool('open');setShowImage(true);leavePanel();}}>{t("Trace line")}</Button></div>
-          <label className="check-label"><Input type="checkbox" checked={showImage} onChange={e=>setShowImage(e.target.checked)}/>{t("Show reference")}</label>
-          <Button variant="link" className="text-button" onClick={()=>fitArtwork()}>{t("Fit image")}</Button>
-          <details className="trace-options"><summary>{t("Trace settings")}</summary><label>{t("Colours")}<Select value={colours} onChange={e=>setColours(Number(e.target.value))}>{[2,3,4,5,6,8].map(n=><option key={formatNumber(n)} value={formatNumber(n)}>{formatNumber(n)}</option>)}</Select></label><label className="check-label"><Input type="checkbox" checked={ignoreBg} onChange={e=>setIgnoreBg(e.target.checked)}/>{t("Remove background")}</label></details>
-        </div>}
-      </section>}
-      {panelTab==='setup'&&<section className="panel-section">
-        <ViewControls value={viewSettings} onChange={patch=>setViewSettings(v=>({...v,...patch}))}/>
-        <Button variant="link" className="text-button setup-shortcuts" onClick={()=>setShortcutHelp(true)}>{t('Keyboard shortcuts')} (?)</Button>
-        <label>{t("Machine")}<Select value={project.machine} onChange={()=>{}}><option value="brother-pr1x">{t("Brother PR1X")}</option></Select></label>
-        <label>{t("Hoop")}<Select disabled={hasDraft} value={project.hoop} onChange={e=>changeHoop(e.target.value)}>{Object.entries(hoops).map(([key,h])=><option key={key} value={key}>{t(h.label)}</option>)}</Select></label>
-        <label>{t("Fabric")}<Select disabled={hasDraft} value={project.fabric} onChange={e=>commit(withFabric(project,e.target.value as Fabric))}>{Object.entries(fabrics).map(([key,f])=><option key={key} value={key}>{t(f.label)}</option>)}</Select></label>
-        <SewingSpeed project={project} onChange={commit}/>
-        <p className="fabric-advice">{t("Stabilizer:")} {t(fabric.stabilizer)} {t("· Topping:")} {t(fabric.topping)}</p>
-        <div className="setting-grid setup-locks"><label>{t("Tie-in")}<Select disabled={hasDraft} value={project.locks.tieIn} onChange={e=>setLocks({tieIn:e.target.value as Lock})}>{lockOptions}</Select></label><label>{t("Tie-off")}<Select disabled={hasDraft} value={project.locks.tieOff} onChange={e=>setLocks({tieOff:e.target.value as Lock})}>{lockOptions}</Select></label>
-          <label>{t("Lock size · mm")}<Input type="number" disabled={hasDraft} min={lockLimits.size[0]} max={lockLimits.size[1]} step=".1" value={project.locks.lockSize} onChange={e=>{if(inRange(e.target.value,lockLimits.size))setLocks({lockSize:Number(e.target.value)},'lockSize');}}/></label><label>{t("Trim jumps longer than · mm")}<Input type="number" disabled={hasDraft} min={lockLimits.trim[0]} max={lockLimits.trim[1]} step=".5" value={project.trimJump} title={t("Shorter jumps sew as one stitch only where later stitches cover it; over bare fabric, moves longer than 1 mm are trimmed")} onChange={e=>{if(inRange(e.target.value,lockLimits.trim))commit({...project,trimJump:Number(e.target.value)},'','setup:trimJump');}}/></label></div>
-      </section>}
+      {panelTab==='setup'&&<SetupPanel project={project} disabled={hasDraft} view={viewSettings} onView={patch=>setViewSettings(v=>({...v,...patch}))} onProject={commit} onHoop={changeHoop} onLocks={setLocks} onTrim={value=>commit({...project,trimJump:value},'','setup:trimJump')} onShortcuts={()=>setShortcutHelp(true)}/>}
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>
         {compiled&&<p className="section-copy" title={t("Jumps: moves without sewing. Trims: thread cuts. Use the overlay controls in Setup or playback to see them.")}>{t('travelStatsUnits',{jumps:compiled.stats.jumps,length:displayLength(compiled.stats.jumpLength),trims:compiled.stats.trims})}</p>}

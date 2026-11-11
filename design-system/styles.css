@@ -122,6 +122,7 @@
   .ds-menu-check {margin-left:auto;display:flex;align-items:center;width:16px}
   /* Content rows and dye swatches retain their content-specific layout. */
   .ds-button--item {border-radius:var(--control-radius);font:inherit}
+  .ds-selection-row {display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-width:0;min-height:var(--button-height);padding:8px;border:1px solid var(--border-control);background:var(--surface);color:var(--text);text-align:left;font-size:var(--button-font)}
   /* Choice cards: an item that picks one option from a small visual set (e.g. hoop size). */
   .ds-choice-card {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-width:0;padding:12px 6px 10px;border:1px solid var(--border-control);background:var(--surface-raised);color:var(--text);font-size:12px;line-height:1.3;cursor:pointer}
   .ds-choice-card:is([aria-pressed=true],[aria-checked=true]) {border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
@@ -211,6 +212,8 @@
 }
 
 @layer components {
+  .ds-help-text {margin:0;font-size:11px;font-weight:400;line-height:1.5;color:var(--text-muted);overflow-wrap:anywhere}
+  .ds-help-text--soft {padding:12px;border:1px solid var(--border);border-radius:var(--control-radius);background:var(--surface-sunken)}
   .ds-status-bar {display:flex;align-items:center;gap:8px;max-width:min(560px,calc(100vw - 32px));padding:8px 12px;border:1px solid var(--border);border-radius:var(--surface-radius);background:var(--surface-raised);color:var(--text);box-shadow:var(--shadow-overlay);font-size:12px;line-height:1.4;overflow-wrap:anywhere;pointer-events:none}
   .ds-status-bar:empty {display:none}
   .ds-status-bar .ds-spinner {width:12px;height:12px;flex-shrink:0}

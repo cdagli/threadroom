@@ -1,6 +1,21 @@
 // English phrases are stable translation keys; model IDs and saved content are never translated.
 export type Lang='tr'|'en';
 export const en={
+  "Choose your hoop and fabric. You can leave the other settings as they are to get started.": "Choose your hoop and fabric. You can leave the other settings as they are to get started.",
+  "Use the size of the hoop attached to your machine.": "Use the size of the hoop attached to your machine.",
+  "Stitch defaults adapt to the fabric you choose.": "Stitch defaults adapt to the fabric you choose.",
+  "Suggested fabric support": "Suggested fabric support",
+  "Topping:": "Topping:",
+  "Stitch details": "Stitch details",
+  "Show thread movements and needle points on the canvas. These options only change the preview.": "Show thread movements and needle points on the canvas. These options only change the preview.",
+  "Advanced sewing settings": "Advanced sewing settings",
+  "These defaults suit most designs. Change them only when you need a different sewing speed or thread finish.": "These defaults suit most designs. Change them only when you need a different sewing speed or thread finish.",
+  "Used to estimate sewing time.": "Used to estimate sewing time.",
+  "Small locking stitches secure the thread at the start and end of each section.": "Small locking stitches secure the thread at the start and end of each section.",
+  "Thread trimming": "Thread trimming",
+  "Grid spacing": "Grid spacing",
+  "Adjust the distance between grid lines and the number of smaller divisions.": "Adjust the distance between grid lines and the number of smaller divisions.",
+
   "Created the project": "Created the project",
   "Duplicated from {name}": "Duplicated from {name}",
   "Restored version {number}": "Restored version {number}",
@@ -1259,6 +1274,7 @@ export const en={
   "stitchCount.other": "{count} stitches",
   "Drag to move these objects together in sew order": "Drag to move these objects together in sew order",
   "Playback speed": "Playback speed",
+  "Image settings": "Image settings",
   "Reference images": "Reference images",
   "Locked images can be selected here, not on the canvas": "Locked images can be selected here, not on the canvas",
   "Select to move, scale or rotate on the canvas": "Select to move, scale or rotate on the canvas",
@@ -1384,6 +1400,21 @@ export const en={
 } as const;
 export type Key=keyof typeof en;
 export const tr={
+  "Choose your hoop and fabric. You can leave the other settings as they are to get started.": "Kasnak ve kumaşınızı seçerek başlayın. Diğer ayarları şimdilik olduğu gibi bırakabilirsiniz.",
+  "Use the size of the hoop attached to your machine.": "Makinenize taktığınız kasnağın ölçüsünü seçin.",
+  "Stitch defaults adapt to the fabric you choose.": "Dikiş ayarları seçtiğiniz kumaşa göre otomatik belirlenir.",
+  "Suggested fabric support": "Kumaş için öneriler",
+  "Topping:": "Üst film:",
+  "Stitch details": "Dikiş ayrıntıları",
+  "Show thread movements and needle points on the canvas. These options only change the preview.": "İplik hareketlerini ve iğne batışlarını tuvalde gösterin. Bu seçenekler yalnızca önizlemeyi değiştirir.",
+  "Advanced sewing settings": "Gelişmiş dikiş ayarları",
+  "These defaults suit most designs. Change them only when you need a different sewing speed or thread finish.": "Mevcut ayarlar çoğu tasarım için uygundur. Dikiş hızı veya iplik sabitleme biçimini değiştirmek isterseniz bu bölümü kullanın.",
+  "Used to estimate sewing time.": "Tahmini dikiş süresini hesaplamak için kullanılır.",
+  "Small locking stitches secure the thread at the start and end of each section.": "Küçük sabitleme dikişleri, her bölümün başında ve sonunda ipliğin sökülmesini önler.",
+  "Thread trimming": "İplik kesimi",
+  "Grid spacing": "Izgara aralığı",
+  "Adjust the distance between grid lines and the number of smaller divisions.": "Izgara çizgileri arasındaki mesafeyi ve ara çizgi sayısını ayarlayın.",
+
   "Created the project": "Proje oluşturuldu",
   "Duplicated from {name}": "“{name}” projesinden kopyalandı",
   "Restored version {number}": "{number}. sürüm geri yüklendi",
@@ -2642,6 +2673,7 @@ export const tr={
   "stitchCount.other": "{count} dikiş",
   "Drag to move these objects together in sew order": "Bu nesneleri dikiş sırasında birlikte taşımak için sürükleyin",
   "Playback speed": "Oynatma hızı",
+  "Image settings": "Görsel ayarları",
   "Reference images": "Referans görselleri",
   "Locked images can be selected here, not on the canvas": "Kilitli görseller tuvalde değil, yalnızca burada seçilebilir",
   "Select to move, scale or rotate on the canvas": "Tuvalde taşımak, ölçeklemek veya döndürmek için seçin",

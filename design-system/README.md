@@ -25,6 +25,7 @@ import {Button, Icon, IconButton, Input, Toolbar} from '@/design-system';
 | `Button` | Ordinary actions; defaults to `secondary`, `md`, and `type="button"` |
 | `IconButton` | Square button; requires `aria-label`; defaults to `ghost` |
 | `ToolButton` | Vertical icon and label in the editor dock; `ghost`, 44px |
+| `SelectionRow` | Content-rich selection with a leading preview and label; use ARIA selection state |
 | `MenuItem` | Full-width, left-aligned menu action; accepts native menu roles. `compact` gives 24px rows for long menus such as the canvas context menu |
 | `Input`, `Textarea` | Native fields, including checkbox, range, colour, and file inputs |
 | `Select` | Styled native dropdown and option list; normal-weight text, custom chevron, shared focus/disabled/invalid states |
@@ -33,6 +34,7 @@ import {Button, Icon, IconButton, Input, Toolbar} from '@/design-system';
 | `MenuPopover`, `MenuGroup` | Grouped action menus with labeled sections, arrow-key navigation, and compact inline choices |
 | `Popover` | Native popover surface; positioning and trigger remain with the caller |
 | `Dialog`, `Modal` | Native dialog surface; `Modal` adds a title, portal, and modal lifecycle |
+| `HelpText` | Persistent field guidance; `tone="soft"` groups a note; connect an `id` with `aria-describedby` |
 | `Hint`, `ToolHint` | Focus/hover help and tool guidance |
 | `Section` | Collapsible section with remembered expansion |
 | `Icon` | Shared 24-unit stroke icons; accepts a named icon or custom `path` |

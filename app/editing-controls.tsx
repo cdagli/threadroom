@@ -1,6 +1,5 @@
 'use client';
-import {Button,Input,Section,Select} from '@/design-system';
-import {OverlayControls} from './stitch-overlays';
+import {Button,HelpText,Input,Section,Select} from '@/design-system';
 import {memo} from 'react';
 import {useT} from './i18n';
 import {scaleHandles,handlePoint,type Rect,type Align} from '@/lib/editing';
@@ -18,7 +17,17 @@ export function SelectionTools({box,rotation,multi,disabled,size,onField,onActio
   return <fieldset disabled={disabled} className="tool-section selection-tools"><Section id="transform" title={t('Transform selection')} summaryExtra={size}><div className="setting-grid">{(Object.keys(fields) as (keyof typeof fields)[]).map(key=><label key={key}>{t(fields[key])}<Input key={(key==='rotation'?rotation:box[key]).toFixed(3)} type="number" step={key==='rotation'?1:.1} min={key==='width'||key==='height'?.01:undefined} defaultValue={Number((key==='rotation'?rotation:box[key]).toFixed(3))} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}} onBlur={e=>{const n=e.currentTarget.valueAsNumber;if(Number.isFinite(n))onField(key,n);e.currentTarget.value=String(Number((key==='rotation'?rotation:box[key]).toFixed(3)));}}/></label>)}</div><div className="selection-actions">{(['flipH','flipV','rotate'] as const).map((a,i)=><Button variant="secondary" key={a} title={t((['Flip horizontal','Flip vertical','Rotate 90°'] as const)[i])+(i<2?` (Shift+${i?'V':'H'})`:'')} onClick={()=>onAction(a)}>{t((['Flip horizontal','Flip vertical','Rotate 90°'] as const)[i])}</Button>)}</div>{multi&&<div className="align-tools" role="group" aria-label={t('Align and distribute')}>{(Object.keys(alignments) as Align[]).map(mode=><Button variant="secondary" key={mode} onClick={()=>onAlign(mode)}>{t(alignments[mode])}</Button>)}</div>}</Section></fieldset>;
 }
 export function ViewControls({value,onChange}:{value:ViewSettings;onChange:(patch:Partial<ViewSettings>)=>void}){
-  const {t}=useT();return <><h2 className="view-settings-heading">{t('View settings')}</h2><label>{t('Display units')}<Select value={value.units} onChange={e=>onChange({units:e.target.value as ViewSettings['units']})}>{(['mm','cm','in'] as const).map((unit,i)=><option key={unit} value={unit}>{t((['Millimetres','Centimetres','Inches'] as const)[i])}</option>)}</Select></label><div className="setting-grid"><label>{t('Grid size · mm')}<Input type="number" min=".5" max="50" step=".5" value={value.gridSize} onChange={e=>{const n=e.target.valueAsNumber;if(n>=.5&&n<=50)onChange({gridSize:n});}}/></label><label>{t('Fine grid subdivisions')}<Input type="number" min="1" max="10" step="1" value={value.subdivisions} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isInteger(n)&&n>=1&&n<=10)onChange({subdivisions:n});}}/></label></div>{(['showGrid','snapGrid','smartGuides','rulers'] as const).map((key,i)=><label className="check-label" key={key}><Input type="checkbox" checked={value[key]} onChange={e=>onChange({[key]:e.target.checked})}/>{t((['Show grid','Snap to grid','Smart guides','Show rulers'] as const)[i])}</label>)}<OverlayControls value={value} onChange={onChange}/></>;
+  const {t}=useT();return <>
+    <label>{t('Display units')}<Select value={value.units} onChange={e=>onChange({units:e.target.value as ViewSettings['units']})}>{(['mm','cm','in'] as const).map((unit,i)=><option key={unit} value={unit}>{t((['Millimetres','Centimetres','Inches'] as const)[i])}</option>)}</Select></label>
+    <div className="setup-toggles">{(['showGrid','snapGrid','smartGuides','rulers'] as const).map((key,i)=><label className="check-label" key={key}><Input type="checkbox" checked={value[key]} onChange={e=>onChange({[key]:e.target.checked})}/>{t((['Show grid','Snap to grid','Smart guides','Show rulers'] as const)[i])}</label>)}</div>
+    <Section id="setup-grid" title={t('Grid spacing')}>
+      <HelpText>{t('Adjust the distance between grid lines and the number of smaller divisions.')}</HelpText>
+      <div className="setting-grid">
+        <label>{t('Grid size · mm')}<Input type="number" min=".5" max="50" step=".5" value={value.gridSize} onChange={e=>{const n=e.target.valueAsNumber;if(n>=.5&&n<=50)onChange({gridSize:n});}}/></label>
+        <label>{t('Fine grid subdivisions')}<Input type="number" min="1" max="10" step="1" value={value.subdivisions} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isInteger(n)&&n>=1&&n<=10)onChange({subdivisions:n});}}/></label>
+      </div>
+    </Section>
+  </>;
 }
 export const CanvasRulers=memo(function CanvasRulers({width,height,scale,origin,units,hoop,selection}:{width:number;height:number;scale:number;origin:Point;units:ViewSettings['units'];hoop:{width:number;height:number};selection:Rect|null}){
   const {formatNumber}=useT();let step=units==='in'?2.54:1;while(step*scale<56)step*=2;

@@ -1,4 +1,4 @@
-export {Button,IconButton,ToolButton,MenuItem,type ButtonProps,type IconButtonProps} from './button';
+export {Button,IconButton,ToolButton,SelectionRow,MenuItem,type ButtonProps,type IconButtonProps} from './button';
 export {Input,Textarea} from './fields';
 export {Select,type SelectProps} from './select';
 export {Toolbar,ToolbarDivider,SegmentedControl,Popover,Dialog} from './surfaces';
@@ -12,3 +12,4 @@ export {AnnotationLabel} from './annotation-label';
 export {LoadingState} from './loading-state';
 export {EmptyState} from './empty-state';
 export {StatusBar,type StatusTone} from './status-bar';
+export {HelpText} from './help-text';

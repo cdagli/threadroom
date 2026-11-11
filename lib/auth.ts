@@ -7,7 +7,7 @@ const vercelOrigins=[process.env.VERCEL_URL,process.env.VERCEL_BRANCH_URL,proces
 
 export const auth=betterAuth({
   database:pool,
-  emailAndPassword:{enabled:true},
+  emailAndPassword:{enabled:true,disableSignUp:true},
   trustedOrigins:vercelOrigins,
   plugins:[nextCookies()],
 });
