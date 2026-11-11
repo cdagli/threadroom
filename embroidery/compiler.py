@@ -642,6 +642,13 @@ class Grid:
         return result
 
 
+HAND_STITCH_MAX = .5
+
+
+def hand_stitch_amplitude(intensity):
+    return HAND_STITCH_MAX*(intensity/5)**1.2
+
+
 def hand_stitch(path, angle, length, intensity, shape_id, index=0, region=None):
     if not intensity:
         return path
@@ -658,7 +665,9 @@ def hand_stitch(path, angle, length, intensity, shape_id, index=0, region=None):
         seed = (seed*0x846ca68b) & 0xffffffff
         seed ^= seed >> 16
         r = seed/2**32-.5
-        offset = .1*(math.copysign(abs(r)**1.5,r)*length**2+.02*intensity)*(intensity/5)**1.2
+        # Up to HAND_STITCH_MAX mm across the row at level 5, independent of stitch length,
+        # so even short default stitches visibly wander. Most offsets stay small.
+        offset = math.copysign(abs(2*r)**1.3, r)*hand_stitch_amplitude(intensity)
         q = [p[0]-math.sin(t)*offset, p[1]+math.cos(t)*offset]
         # Near holes or a curved edge, reduce jitter until the needle stays inside.
         if region is not None:

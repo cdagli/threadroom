@@ -59,21 +59,21 @@ test('Fill settings: Edit angles button, locked angle and Density control only w
     const t=createT(lang),require=id=>id==='@/design-system'?loadDesignSystem():id==='next/dynamic'?dynamic:id==='./i18n'?{useT:()=>({t,formatNumber:n=>String(n)})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?compile(id.slice(2),require):requireNode(id);
     const {FillSettings}=compile('fill-settings',require);
     await Promise.all(pending);
-    const render=patch=>{const item={...object('Fill',[square]),...patch};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100},angles:{active:false,onToggle:()=>{}}}));};
+    const render=patch=>{const item={...object('Fill',[square]),...patch};return renderToStaticMarkup(React.createElement(FillSettings,{item,resolved:resolve(item,'woven',defaultLocks),onChange:()=>{},source:()=>null,hoop:{width:100,height:100},angles:{active:false,onToggle:()=>{}},baseSpacing:.42,finish:null}));};
     const plain=render({}),one=render({angleGuides:[fan[0]]}),sweep=render({angleGuides:fan});
-    assert.ok(plain.includes(t('Edit angles')));assert.ok(plain.includes(t('Gradient')));assert.ok(!plain.includes(t('Density control')));
+    assert.ok(plain.includes(t('Edit angles')));assert.ok(plain.includes(t('Fade the density')));assert.ok(!plain.includes(t('Density control')));
     assert.ok(!one.includes(t('Density control')));assert.ok(!one.includes(t('More than one stitch angle. Change them with Edit angles.')));
     assert.ok(sweep.includes(t('Density control')));assert.ok(sweep.includes(t('Row shortening')));assert.ok(!sweep.includes(t('Gradient mode'))&&!sweep.includes(`>${t('Gradient')}<`));
     assert.ok(sweep.includes(t('More than one stitch angle. Change them with Edit angles.')));
     assert.ok(render({fillPattern:'streamlines'}).includes(t('Edit flow field')));assert.ok(!render({fillPattern:'circular'}).includes(t('Edit angles')));
-    // Core controls sit in the open Stitch settings section; every other section starts collapsed, including during SSR.
+    // Beginner order: Pattern and Density start open; Direction and Advanced start collapsed, including during SSR.
     for(const html of [plain,one,sweep,render({fillPattern:'sweepSatin'})]){
-      const details=[...html.matchAll(/<details\b([^>]*)>/g)],isOpen=attrs=>/\bopen(?:[=\s]|$)/.test(attrs);assert.ok(details.length>1);
-      assert.ok(details[0][1].includes('data-section="stitch-settings"')&&isOpen(details[0][1]));
-      assert.ok(details.slice(1).every(([,attrs])=>!isOpen(attrs)));
+      const details=[...html.matchAll(/<details\b([^>]*)>/g)],isOpen=attrs=>/\bopen(?:[=\s]|$)/.test(attrs);
+      assert.deepEqual(details.map(([,attrs])=>attrs.match(/data-section="([^"]+)"/)[1]),['fill-pattern','fill-direction','fill-density','advanced']);
+      assert.deepEqual(details.map(([,attrs])=>isOpen(attrs)),[true,false,true,false]);
       assert.ok(html.indexOf(t('Fill pattern'))<html.indexOf('<details',html.indexOf('<details')+1));
     }
-    assert.ok(plain.includes('data-section="density-texture"'));assert.ok(plain.includes('data-section="underlays"'));
+    assert.ok(plain.includes(t('Density level')));assert.ok(plain.includes(t('Underlays')));
     const ramp=render({gradient:{mode:'ramp',start:0,end:1,endSpacing:2}}),plateau=render({gradient:{mode:'plateau',center:.5,width:.2,endSpacing:2}});
     const hint=key=>renderToStaticMarkup(React.createElement('span',{'aria-label':t(`hint.${key}`)})).match(/aria-label="[^"]*"/)[0];
     for(const key of ['fillPattern','stitchAngle','rowSpace','stitchLength','pullCompensation','handStitch','gradient','underlays','edgeWalk','underlayAngle','underlaySpacing','underlayLength','underlayInset'])assert.ok(plain.includes(hint(key)),key);

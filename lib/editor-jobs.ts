@@ -2,7 +2,6 @@ import type {Lang} from './i18n';
 import type {Artwork,Command,Point,Project,RefImage,StitchObject} from './project';
 import type {ImagePixels} from './artwork-color';
 import type {Pixels,ClickResult} from './click-to-stitch';
-import type {PixelGrid} from './pixel-cross';
 import type {Density} from './density';
 import type {SVGSources} from './svg-import';
 
@@ -10,13 +9,12 @@ export type EditorJob=
   |{kind:'trace';pixels:ImagePixels;art:Artwork;colours:number;ignoreBackground:boolean;lang:Lang}
   |{kind:'downsample';pixels:Pixels}
   |{kind:'click';pixels:Pixels;image:Pick<RefImage,'x'|'y'|'width'|'height'|'rotation'>;point:Point;tolerance:number}
-  |{kind:'pixel';pixels:ImagePixels;columns:number;rows:number;colours:number;brother:boolean}
   |{kind:'density';commands:Command[];radius:number}
   |{kind:'svg';sources:SVGSources;filename:string;project:Project;lang:Lang};
-export type EditorResult<J extends EditorJob>=J extends {kind:'trace'}?StitchObject[]:J extends {kind:'downsample'}?Pixels:J extends {kind:'click'}?ClickResult|null:J extends {kind:'pixel'}?PixelGrid:J extends {kind:'density'}?Density:Project;
+export type EditorResult<J extends EditorJob>=J extends {kind:'trace'}?StitchObject[]:J extends {kind:'downsample'}?Pixels:J extends {kind:'click'}?ClickResult|null:J extends {kind:'density'}?Density:Project;
 
 // Only wrappers live here. Tests and non-worker consumers call the same pure functions.
-export async function runEditorJob(job:EditorJob):Promise<StitchObject[]|Pixels|ClickResult|null|PixelGrid|Density|Project>{
+export async function runEditorJob(job:EditorJob):Promise<StitchObject[]|Pixels|ClickResult|null|Density|Project>{
   switch(job.kind){
     case 'trace':{
       const [{tracePixels},{createT}]=await Promise.all([import('./trace'),import('./i18n')]);
@@ -24,7 +22,6 @@ export async function runEditorJob(job:EditorJob):Promise<StitchObject[]|Pixels|
     }
     case 'downsample':return (await import('./click-to-stitch')).downsample(job.pixels);
     case 'click':return (await import('./click-to-stitch')).clickToStitch(job.pixels,job.image,job.point,job.tolerance);
-    case 'pixel':return (await import('./pixel-cross')).pixelGrid(job.pixels,job.columns,job.rows,job.colours,job.brother);
     case 'density':return (await import('./density')).needleDensity(job.commands,job.radius);
     case 'svg':{
       const [{importSVGSources},{createT}]=await Promise.all([import('./svg-import'),import('./i18n')]);

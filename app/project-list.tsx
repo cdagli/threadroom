@@ -3,11 +3,12 @@ import {useMemo,useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {Button,EmptyState,Icon,IconButton,Input,Modal,SegmentedControl,Select} from '@/design-system';
 import {authClient} from '@/lib/auth-client';
-import {blankProject,demo} from '@/lib/project';
+import {blankProject,demo,type Fabric} from '@/lib/project';
 import {relativeTime} from '@/lib/project-diff';
 import {projectThumbnail} from '@/lib/project-thumbnail';
 import type {ProjectSummary} from '@/lib/project-store';
 import {useT} from './i18n';
+import {NewProjectDialog} from './new-project-dialog';
 import {createProject,deleteProject,duplicateProject,thumbnailURL} from './project-api';
 
 type Props={projects:ProjectSummary[];user:{id:string;name:string}};
@@ -18,16 +19,16 @@ export default function ProjectList({projects:initialProjects,user}:Props){
   const [projects,setProjects]=useState(initialProjects);
   const [query,setQuery]=useState(''),[mine,setMine]=useState(false);
   const [busy,setBusy]=useState<string|null>(null),[error,setError]=useState('');
-  const [confirm,setConfirm]=useState<ProjectSummary|null>(null);
+  const [confirm,setConfirm]=useState<ProjectSummary|null>(null),[creating,setCreating]=useState(false);
   const shown=useMemo(()=>{
     const q=query.trim().toLocaleLowerCase(lang);
     return projects.filter(p=>(!mine||p.createdBy.id===user.id)&&(!q||p.name.toLocaleLowerCase(lang).includes(q)||p.createdBy.name.toLocaleLowerCase(lang).includes(q)));
   },[projects,query,mine,user.id,lang]);
 
-  async function create(sample:boolean){
+  async function create(sample:boolean,hoop?:string,fabric?:Fabric){
     setBusy(sample?'sample':'new');setError('');
     try{
-      const data=sample?demo(t):blankProject(t('Untitled embroidery'));
+      const data=sample?demo(t):blankProject(t('Untitled embroidery'),hoop,fabric);
       const {id}=await createProject(data,projectThumbnail(data));
       router.push(`/projects/${id}`);
     }catch{setError(t('The project could not be created.'));setBusy(null);}
@@ -62,11 +63,11 @@ export default function ProjectList({projects:initialProjects,user}:Props){
       </SegmentedControl>
       <span className="projects-spacer"/>
       <Button variant="secondary" loading={busy==='sample'} disabled={!!busy} onClick={()=>void create(true)}><Icon name="needle" size={16}/>{t('Start from sample')}</Button>
-      <Button variant="primary" loading={busy==='new'} disabled={!!busy} onClick={()=>void create(false)}><Icon name="plus" size={16}/>{t('New project')}</Button>
+      <Button variant="primary" disabled={!!busy} onClick={()=>{setError('');setCreating(true);}}><Icon name="plus" size={16}/>{t('New project')}</Button>
     </div>
     {error&&<p className="projects-error" role="alert">{error}</p>}
     {!projects.length?<div className="projects-empty"><EmptyState icon={<Icon name="needle" size={24}/>} title={t('No projects yet')} description={t('Create a project to start digitising. Everyone signed in can see and edit it.')}>
-      <Button variant="primary" disabled={!!busy} onClick={()=>void create(false)}><Icon name="plus" size={16}/>{t('New project')}</Button>
+      <Button variant="primary" disabled={!!busy} onClick={()=>{setError('');setCreating(true);}}><Icon name="plus" size={16}/>{t('New project')}</Button>
     </EmptyState></div>
     :!shown.length?<div className="projects-empty"><EmptyState icon={<Icon name="info" size={24}/>} title={t('No matching projects')} description={t('Try another name or show all projects.')}>
       <Button variant="secondary" onClick={()=>{setQuery('');setMine(false);}}>{t('All projects')}</Button>
@@ -88,6 +89,7 @@ export default function ProjectList({projects:initialProjects,user}:Props){
         </div>
       </li>;
     })}</ul>}
+    {creating&&<NewProjectDialog busy={busy==='new'} error={busy?undefined:error||undefined} onCreate={(hoop,fabric)=>void create(false,hoop,fabric)} onClose={()=>{if(busy!=='new')setCreating(false);}}/>}
     {confirm&&<Modal title={t('Delete project?')} onClose={()=>setConfirm(null)}>
       <p>{t('“{name}” and its version history will be deleted for everyone. This cannot be undone.',{name:confirm.name})}</p>
       <div className="io-actions"><Button variant="secondary" onClick={()=>setConfirm(null)}>{t('Cancel')}</Button><Button variant="danger" onClick={()=>void remove(confirm)}><Icon name="trash" size={16}/>{t('Delete')}</Button></div>

@@ -37,7 +37,6 @@ test('worker wrappers preserve the pure pixel, flood, trace, density and SVG fun
   const cases=[
     [{kind:'downsample',pixels},()=>load('click-to-stitch').downsample(pixels)],
     [{kind:'click',pixels,image,point:[25,25],tolerance:12},()=>load('click-to-stitch').clickToStitch(pixels,image,[25,25],12)],
-    [{kind:'pixel',pixels,columns:8,rows:8,colours:2,brother:true},()=>load('pixel-cross').pixelGrid(pixels,8,8,2,true)],
     [{kind:'trace',pixels,art:image,colours:2,ignoreBackground:false,lang:'tr'},()=>load('trace').tracePixels(pixels,image,2,false,createT('tr'))],
     [{kind:'density',commands,radius:1.5},()=>load('density').needleDensity(commands,1.5)],
     [{kind:'svg',sources,filename:'art.svg',project:p,lang:'tr'},()=>load('svg-import').importSVGSources(sources,'art.svg',p,createT('tr'))],

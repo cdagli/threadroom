@@ -28,3 +28,7 @@ export function Section({id,title,summaryExtra,defaultOpen=false,forceOpen=false
   useEffect(()=>{if(openSignal)details.current!.open=true;},[openSignal]);
   return <details ref={details} className="fill-section" data-section={id} open={defaultOpen||forceOpen} onToggle={e=>{const open=e.currentTarget.open;onToggle?.(open);if(forced.current){forced.current=false;return;}if(!ready.current)return;sections.set(id,open);try{localStorage.setItem(storageKey,JSON.stringify(Object.fromEntries(sections)));}catch{/* The in-memory preference still works. */}}}><summary><span className="section-title">{title}</span>{summaryExtra!==undefined&&<span className="section-extra">{summaryExtra}</span>}</summary><div className="section-content">{children}</div></details>;
 }
+// A titled group inside a Section, for related settings that do not need their own toggle.
+export function SubSection({title,children}:{title:ReactNode;children:ReactNode}){
+  return <div className="ds-subsection"><h3 className="ds-subsection-title">{title}</h3>{children}</div>;
+}

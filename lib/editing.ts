@@ -57,16 +57,25 @@ export function alignSelection(p:Project,ids:readonly string[],mode:Align):Proje
   }
   return result;
 }
-export type SnapGuide={axis:'x'|'y';value:number};
+// Smart guides (as in Figma): edges and centres line up with other objects and the hoop.
+// from/to is the guide's extent along the other axis, spanning the moved box and every box it lines up with.
+export type SnapGuide={axis:'x'|'y';value:number;from:number;to:number};
 export function snapBounds(b:Rect,others:Rect[],threshold:number,grid:number|null,objects:boolean,point=false):{delta:Point;guides:SnapGuide[]}{
-  const delta:Point=[0,0],guides:SnapGuide[]=[];
-  for(const [i,axis,dim] of [[0,'x','width'],[1,'y','height']] as const){
-    const features=point?[b[axis]]:[b[axis],b[axis]+b[dim]/2,b[axis]+b[dim]];
+  const delta:Point=[0,0],found:[0|1,number][]=[];
+  const axes=[[0,'x','width'],[1,'y','height']] as const,lines=(r:Rect,axis:'x'|'y',dim:'width'|'height')=>[r[axis],r[axis]+r[dim]/2,r[axis]+r[dim]];
+  for(const [i,axis,dim] of axes){
+    const features=point?[b[axis]]:lines(b,axis,dim);
     let best=threshold+1,offset=0,guide:number|undefined;
-    if(objects)for(const other of others)for(const target of [other[axis],other[axis]+other[dim]/2,other[axis]+other[dim]])for(const source of features){const d=target-source;if(Math.abs(d)<=threshold&&Math.abs(d)<best){best=Math.abs(d);offset=d;guide=target;}}
-    if(guide!==undefined){delta[i]=offset;guides.push({axis,value:guide});}
+    if(objects)for(const other of others)for(const target of lines(other,axis,dim))for(const source of features){const d=target-source;if(Math.abs(d)<=threshold&&Math.abs(d)<best){best=Math.abs(d);offset=d;guide=target;}}
+    if(guide!==undefined){delta[i]=offset;found.push([i,guide]);}
     else if(grid&&grid>0)delta[i]=Math.round(b[axis]/grid)*grid-b[axis];
   }
+  const moved={...b,x:b.x+delta[0],y:b.y+delta[1]};
+  const guides=found.map(([i,value]):SnapGuide=>{
+    const [,axis,dim]=axes[i],[,cross,crossDim]=axes[1-i];let from=moved[cross],to=moved[cross]+moved[crossDim];
+    for(const other of others)if(lines(other,axis,dim).some(v=>Math.abs(v-value)<1e-6)){from=Math.min(from,other[cross]);to=Math.max(to,other[cross]+other[crossDim]);}
+    return {axis,value,from,to};
+  });
   return {delta,guides};
 }
 

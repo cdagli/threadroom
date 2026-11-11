@@ -59,10 +59,13 @@ test('All alignment modes and equal-gap distribution operate on selection bounds
 });
 test('Snapping uses edges/centres in screen tolerance and fine-grid subdivisions without mutation',()=>{
   const b={x:10.2,y:20.3,width:10,height:10},others=[{x:20.5,y:30.5,width:10,height:10}];
-  const snap=snapBounds(b,others,.5,1,true);pt(snap.delta,[.3,.2]);assert.deepEqual(snap.guides,[{axis:'x',value:20.5},{axis:'y',value:30.5}]);
+  const snap=snapBounds(b,others,.5,1,true);pt(snap.delta,[.3,.2]);assert.deepEqual(snap.guides,[{axis:'x',value:20.5,from:20.5,to:40.5},{axis:'y',value:30.5,from:10.5,to:30.5}]);
   pt(snapBounds(b,[],.5,5/10,false).delta,[-.2,.2]);
   assert.deepEqual(snapBounds(b,others,.01,null,true),{delta:[0,0],guides:[]});
-  assert.deepEqual(snapBounds({x:20.4,y:30.4,width:0,height:0},others,.5,null,true,true).guides,[{axis:'x',value:20.5},{axis:'y',value:30.5}]);
+  assert.deepEqual(snapBounds({x:20.4,y:30.4,width:0,height:0},others,.5,null,true,true).guides.map(({axis,value})=>({axis,value})),[{axis:'x',value:20.5},{axis:'y',value:30.5}]);
+  // A centred box lines up with the hoop centre; the guide spans from the hoop edge across the box.
+  const hoop={x:0,y:0,width:100,height:100},centred=snapBounds({x:44.6,y:10,width:10,height:4},[hoop],1,null,true);
+  pt(centred.delta,[.4,0]);assert.deepEqual(centred.guides,[{axis:'x',value:50,from:0,to:100}]);
 });
 test('Browser clipboard round-trips stitch settings; whole groups get fresh IDs and partial groups detach',()=>{
   const a={...rectangle(10,10,10,10),group:'g',spacing:.45,entry:[10,10],fillUnderlays:[{angle:0,spacing:2,length:3,inset:.2}]},b={...rectangle(30,30,10,10),group:'g'},p={...project([a,b]),groups:[{id:'g',name:'My group'}]};

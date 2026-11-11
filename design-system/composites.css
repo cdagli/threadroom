@@ -24,4 +24,5 @@
 .tool-group-flyout button{display:flex;align-items:center;gap:9px;width:100%;min-height:36px;padding:6px 9px;text-align:left}
 .tool-group-flyout kbd{margin-left:auto;font:10px Arial;color:var(--text-muted)}
 
+.ds-subsection{border-top:1px solid var(--border);padding-top:16px;margin-top:20px}.ds-subsection:first-child{border-top:0;padding-top:0;margin-top:0}.ds-subsection-title{display:flex;align-items:center;gap:4px;margin:0 0 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:none}
 }

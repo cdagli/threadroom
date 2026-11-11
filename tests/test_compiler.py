@@ -1145,10 +1145,13 @@ class FillSettingsTests(unittest.TestCase):
             self.assertEqual(changed,C.hand_stitch(path,0,4,intensity,"shape"))
             self.assertEqual(changed[0],path[0])
             self.assertEqual(changed[-1],path[-1])
-            bound = .1*(.5**1.5*16+.02*intensity)*(intensity/5)**1.2
+            bound = C.hand_stitch_amplitude(intensity)
             self.assertTrue(all(abs(p[1]-q[1]) <= bound+1e-9 and p[0] == q[0] for p,q in zip(changed,path)))
         self.assertNotEqual(C.hand_stitch(path,0,4,5,"shape"),C.hand_stitch(path,0,4,5,"other"))
         self.assertEqual(C.hand_stitch(path,0,4,0,"shape"),path)
+        # Visible even at a short 2.5 mm stitch: level 5 moves stitches by tenths of a millimetre.
+        short = C.hand_stitch(path,0,2.5,5,"shape")
+        self.assertGreater(max(abs(p[1]-q[1]) for p,q in zip(short,path)), .2)
         p = project(id="stable", handStitch=5, fillPattern="tatami", fillLength=4, underlay="tatami")
         self.assertEqual(compile_project(p)["pes"],compile_project(p)["pes"])
         self.assertEqual(compile_project(project(handStitch=0))["pes"],compile_project(project())["pes"])

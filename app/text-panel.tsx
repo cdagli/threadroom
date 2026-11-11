@@ -1,5 +1,5 @@
 'use client';
-import {Button,Icon,Input,Section,SegmentedControl,Select,Textarea} from '@/design-system';
+import {Button,Hint,Icon,Input,Section,SegmentedControl,Select,Textarea} from '@/design-system';
 import {useT} from './i18n';
 import dynamic from 'next/dynamic';
 import {Loading} from './panel-loading';
@@ -53,10 +53,10 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
     <Textarea ref={textArea} className="text-input" aria-label={t("Text")} rows={2} maxLength={textLimits.content} value={spec.content} spellCheck={false}
       style={family?{fontFamily:`'${family}'`,fontWeight:spec.font.weight,fontStyle:spec.font.italic?'italic':'normal'}:undefined}
       onChange={e=>onChange({content:e.target.value},'content')}/>
-    <label>{t("Text style")}<Select value={spec.satin?'satin':'outlines'} onChange={e=>onChange({satin:e.target.value==='satin'?{...satinLetteringDefaults}:undefined,border:undefined})}><option value="outlines">{t("Fill / outline")}</option><option value="satin">{t("Satin lettering")}</option></Select></label>
+    <div className="text-style"><span className="field-heading">{t("Text style")}<Hint text={t("hint.textStyle")}/></span><SegmentedControl role="radiogroup" aria-label={t("Text style")}>{([['outlines','Fill / outline'],['satin','Satin lettering']] as const).map(([id,label])=><Button variant="ghost" size="sm" key={id} role="radio" aria-checked={(spec.satin?'satin':'outlines')===id} onClick={()=>{if((spec.satin?'satin':'outlines')!==id)onChange({satin:id==='satin'?{...satinLetteringDefaults}:undefined,border:undefined});}}>{t(label)}</Button>)}</SegmentedControl></div>
     {spec.satin?<>
       <label>{t("Satin font")}<Select value={spec.satin.font} onChange={e=>onChange({satin:{...spec.satin!,font:e.target.value as SatinFontId}})}>{Object.entries(satinFonts).map(([id,font])=><option key={id} value={id}>{font.name}</option>)}</Select></label>
-      <label>{t("Column width")} · %<Input type="number" min={columnLimits[0]} max={columnLimits[1]} step="1" value={spec.satin.columnWidth} onChange={e=>{const n=number(e.target.value,columnLimits);if(n!==null)onChange({satin:{...spec.satin!,columnWidth:n}},'columnWidth');}}/><span className="field-value">{formatNumber(columnWidth(spec))} mm</span></label>
+      <label><span className="field-heading">{t("Column width")} · %<span className="field-value inherited">{formatNumber(Math.round(columnWidth(spec)*10)/10)} mm</span></span><Input type="number" min={columnLimits[0]} max={columnLimits[1]} step="1" value={spec.satin.columnWidth} onChange={e=>{const n=number(e.target.value,columnLimits);if(n!==null)onChange({satin:{...spec.satin!,columnWidth:n}},'columnWidth');}}/></label>
       <p className="text-hint">{t("For 4–10 mm text. Columns are limited to 1–10 mm.")}</p>
     </>:<FontPicker size={spec.size} value={spec.font} onChange={font=>onChange({font})}/> }
     {!spec.satin&&spec.font.source==='catalog'&&weights&&(weights.weights.length>1||weights.italic)&&<div className="style-row">
@@ -71,6 +71,12 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
       <SegmentedControl className="segmented" role="group" aria-label={t("Alignment")}>{aligns.map(a=><Button variant="ghost" key={a.id} type="button" aria-label={a.label} title={a.label} aria-pressed={spec.align===a.id} onClick={()=>onChange({align:a.id})}><Icon size={16} path={a.icon}/></Button>)}</SegmentedControl>
       {multiline&&<label className="inline-number">{t("Lines")}<Input type="number" aria-label={t("Line spacing")} min={textLimits.lineHeight[0]} max={textLimits.lineHeight[1]} step=".1" value={spec.lineHeight} onChange={e=>{const n=number(e.target.value,textLimits.lineHeight);if(n!==null)onChange({lineHeight:n},'lineHeight');}}/></label>}
     </div>
+    {missing.length>0&&<p className="text-warning" role="status">{t("Not in this font:")} {missing.slice(0,12).join(' ')}</p>}
+    {fill&&!spec.satin&&min!==undefined&&min>spec.size&&<p className="text-warning" role="status">
+      {Number.isFinite(min)?t('{font} {weight} has thin strokes at {size} mm. It sews cleanly from {min} mm.',{font:spec.font.family,weight:weightLabel(spec.font.weight),size:formatNumber(spec.size),min:formatNumber(min)}):t('{font} {weight} has thin strokes at every letter height.',{font:spec.font.family,weight:weightLabel(spec.font.weight)})}{' '}
+      {cleanHeavier?<Button variant="link" onClick={()=>onChange({font:{...spec.font,weight:bestWeight}})}>{t('Use {weightName}',{weightName:weightLabel(bestWeight)})}</Button>:Number.isFinite(min)&&<Button variant="link" onClick={()=>onChange({size:min})}>{t('Make it {min} mm',{min:formatNumber(min)})}</Button>}
+    </p>}
+    {fill&&!spec.satin&&min===undefined&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
     <Button variant="link" type="button" className="text-button convert-text" onClick={onConvert}>{t("Convert to shapes")}</Button>
     </Section>
     <Section id="text-shape" title={t("Text shape")} forceOpen={spec.layout==='path'} summaryExtra={shapes.find(s=>s.id===spec.layout)?.label}>
@@ -101,11 +107,5 @@ export default function TextPanel({spec,fill,loading,missing,textArea,guides,gui
         {spec.border.kind==='satin'&&<label>{t("Width · mm")}<Input type="number" min={textLimits.borderWidth[0]} max={textLimits.borderWidth[1]} step=".1" value={spec.border.width} onChange={e=>{const n=number(e.target.value,textLimits.borderWidth);if(n!==null)onChange({border:{...spec.border!,width:n}},'borderWidth');}}/></label>}
       </div>}
     </div></Section>}
-    {missing.length>0&&<p className="text-warning" role="status">{t("Not in this font:")} {missing.slice(0,12).join(' ')}</p>}
-    {fill&&!spec.satin&&min!==undefined&&min>spec.size&&<p className="text-warning" role="status">
-      {Number.isFinite(min)?t('{font} {weight} has thin strokes at {size} mm. It sews cleanly from {min} mm.',{font:spec.font.family,weight:weightLabel(spec.font.weight),size:formatNumber(spec.size),min:formatNumber(min)}):t('{font} {weight} has thin strokes at every letter height.',{font:spec.font.family,weight:weightLabel(spec.font.weight)})}{' '}
-      {cleanHeavier?<Button variant="link" onClick={()=>onChange({font:{...spec.font,weight:bestWeight}})}>{t('Use {weightName}',{weightName:weightLabel(bestWeight)})}</Button>:Number.isFinite(min)&&<Button variant="link" onClick={()=>onChange({size:min})}>{t('Make it {min} mm',{min:formatNumber(min)})}</Button>}
-    </p>}
-    {fill&&!spec.satin&&min===undefined&&spec.size<5&&<p className="text-warning">{t("Fill letters under 5 mm lose detail. Use 6 mm or more, or a bean stitch outline.")}</p>}
   </section>;
 }

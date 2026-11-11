@@ -32,9 +32,10 @@ export default function StitchSelector({value, groups, onChange}: {value:Kind;gr
   const shown=currentOnly?[{label:t("Current"),kinds:[value]},...groups]:groups;
   function place(){
     const rect=button.current!.getBoundingClientRect(),width=Math.min(310,window.innerWidth-24);
-    const below=window.innerHeight-rect.bottom-12,above=rect.top-12;
-    const height=Math.min(430,Math.max(below,above));
-    setPosition({left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12)),top:below>=Math.min(430,above)?rect.bottom+5:Math.max(12,rect.top-height-5),width,maxHeight:height});
+    // Open downwards like a normal dropdown; only flip up when there is truly no room below.
+    const below=window.innerHeight-rect.bottom-12,above=rect.top-12,down=below>=240||below>=above;
+    const height=Math.min(430,down?below:above);
+    setPosition({left:Math.max(12,Math.min(rect.left,window.innerWidth-width-12)),top:down?rect.bottom+5:Math.max(12,rect.top-height-5),width,maxHeight:height});
   }
   function close(){menu.current?.hidePopover();button.current?.focus();}
   function select(kind:Kind){close();onChange(kind);}
@@ -51,6 +52,11 @@ export default function StitchSelector({value, groups, onChange}: {value:Kind;gr
       ordered.find(option=>option.dataset.name?.toLocaleLowerCase(lang).startsWith(e.key.toLocaleLowerCase(lang)))?.focus();
     }
   }
+  // Few choices (a closed shape: fill or cross): show them all as cards, no menu to open.
+  if(shown.reduce((n,g)=>n+g.kinds.length,0)<=3)return <div className="stitch-selector">
+    <span id={`${id}-label`} className="stitch-label field-heading">{t("Stitch style")}<Hint text={t("hint.stitchType")}/></span>
+    <div className="stitch-choices" role="radiogroup" aria-labelledby={`${id}-label`}>{shown.flatMap(g=>g.kinds).map(kind=><Button variant="item" key={kind} type="button" role="radio" aria-checked={kind===value} onClick={()=>{if(kind!==value)onChange(kind);}}><StitchIcon kind={kind}/><span><strong>{t(kindNames[kind])}</strong><small>{t(kindHints[kind])}</small></span></Button>)}</div>
+  </div>;
   return <div className="stitch-selector">
     <span id={`${id}-label`} className="stitch-label field-heading">{t("Stitch style")}<Hint text={t("hint.stitchType")}/></span>
     <Button variant="secondary" ref={button} type="button" className="stitch-selector-button" aria-label={t("Stitch style: {v0}",{v0:t(kindNames[value])})} aria-haspopup="menu" aria-expanded={open} aria-controls={id} popoverTarget={id} onClick={place} onKeyDown={e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();place();menu.current?.showPopover();}}}><StitchIcon kind={value}/><span>{t(kindNames[value])}</span><span className="stitch-chevron" aria-hidden="true">⌄</span></Button>

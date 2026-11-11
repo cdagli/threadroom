@@ -33,7 +33,6 @@ try{
     {kind:'trace',pixels,art:image,colours:2,ignoreBackground:false,lang:'tr'},
     {kind:'downsample',pixels},
     {kind:'click',pixels,image,point:[25,25],tolerance:12},
-    {kind:'pixel',pixels,columns:8,rows:8,colours:2,brother:true},
     {kind:'density',commands,radius:1.5},
     {kind:'svg',sources,filename:'art.svg',project:{...demo(),objects:[]},lang:'tr'},
   ]){assert.deepEqual(normalise(await run(job)),normalise(await runEditorJob(job)),job.kind);console.log(`${job.kind}: production worker matches pure function`);}
