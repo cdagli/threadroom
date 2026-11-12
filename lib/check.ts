@@ -120,7 +120,7 @@ const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Ra
 }
 
 // How far stitches reach past the drawn line: half the column for satin styles, the satin text border.
-function reach(o: StitchObject, p: Project) {
+export function stitchReach(o: StitchObject, p: Project) {
   if (o.rails) return resolve(o, p.fabric, p.locks).pullCompensation/2;
   if (isWideKind(o.kind)) return (o.satinWidth+resolve(o, p.fabric, p.locks).pullCompensation)/2;
   return o.text?.border?.kind === 'satin' && isFillKind(o.kind) ? o.text.border.width/2 : 0;
@@ -145,7 +145,7 @@ export function checkProject(p: Project): Warning[] {
   for (const o of p.objects) {
     if(o.layoutOnly)continue;
     if (!o.rings.length) continue;
-    const b = box(o.rails ? blockOutline(o.rails) : o.rings.flat()), g = box([[b[0], b[1]], [b[2], b[3]]], reach(o, p));
+    const b = box(o.rails ? blockOutline(o.rails) : o.rings.flat()), g = box([[b[0], b[1]], [b[2], b[3]]], stitchReach(o, p));
     const margin = Math.min(g[0], g[1], hoop.width-g[2], hoop.height-g[3]);
     if (margin < -.001) add('outside-hoop', o, g, 'fail', {by: round(-margin)});
     else if (margin < limits.edge) add('near-edge', o, g, 'check', {margin: round(margin), limit: limits.edge});
@@ -269,7 +269,7 @@ export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix 
       return o.curve?.closed || o.rails ? null : {label: t("Use bean stitch"), title: t("A triple running stitch: strong and thin"), apply: q => replace(q, kindFix(o, 'bean'))};
     case 'text-small': {
       // Scaling moves the editable text settings with the outline (transformText), so it stays text.
-      const hoop = hoops[p.hoop], [x0, y0, x1, y1] = box(o.rings.flat()), k = w.values.limit/o.text!.size, cx = (x0+x1)/2, cy = (y0+y1)/2, grow = reach(o, p);
+      const hoop = hoops[p.hoop], [x0, y0, x1, y1] = box(o.rings.flat()), k = w.values.limit/o.text!.size, cx = (x0+x1)/2, cy = (y0+y1)/2, grow = stitchReach(o, p);
       if (cx-(cx-x0)*k-grow >= 0 && cy-(cy-y0)*k-grow >= 0 && cx+(x1-cx)*k+grow <= hoop.width && cy+(y1-cy)*k+grow <= hoop.height)
         return {label: t("Make {v0} mm tall",{v0:w.values.limit}), title: t("Enlarge the text around its centre"), apply: q => replace(q, moveGeometry(o, ([x, y]) => [cx+(x-cx)*k, cy+(y-cy)*k]))};
       return isFillKind(o.kind) || isWideKind(o.kind) ? {label: t("Use bean outline"), title: t("Outline the letters with a triple running stitch"), apply: q => replace(q, kindFix(o, 'bean'))} : null;
@@ -294,7 +294,7 @@ export function fixFor(w: Warning, p: Project, t:Translator=createT('en')): Fix 
       const blocks = colourBlocks(p), k = blocks.findIndex(b => p.objects[b.objects[0]].id === o.id), block = blocks[k];
       const m = k > 0 ? blocks.slice(0, k-1).map(b => b.color).lastIndexOf(block.color) : -1;
       if (m < 0) return null;
-      const area = (i: number) => {const x = p.objects[i]; return box(x.rings.flat(), reach(x, p)+.5);};
+      const area = (i: number) => {const x = p.objects[i]; return box(x.rings.flat(), stitchReach(x, p)+.5);};
       const moved = new Set(block.objects), earlier = new Set(blocks[m].objects);
       const between = blocks.slice(m+1, k).flatMap(b => b.objects).filter(i => !moved.has(i) && !earlier.has(i));
       const clear = (group: number[]) => group.every(i => between.every(j => !overlaps(area(i), area(j))));

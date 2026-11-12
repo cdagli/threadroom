@@ -1,4 +1,4 @@
-import type {ComponentPropsWithRef} from 'react';
+import type {ComponentPropsWithRef,ReactNode} from 'react';
 
 export type ButtonProps=ComponentPropsWithRef<'button'>&{
   variant?:'primary'|'secondary'|'ghost'|'soft'|'danger'|'link'|'item'|'swatch';
@@ -24,6 +24,13 @@ export function ToolButton({className='',...props}:ButtonProps){
 // A content-rich choice with a leading preview and a label.
 export function SelectionRow({className='',...props}:Omit<ButtonProps,'variant'>){
   return <Button {...props} variant="item" className={`ds-selection-row ${className}`}/>;
+}
+
+export function SelectionCard({label,detail,preview,layout='row',className='',...props}:Omit<ButtonProps,'variant'|'children'>&{label:string;detail?:string;preview:ReactNode;layout?:'row'|'tile'}){
+  return <Button {...props} variant="item" className={`ds-selection-card ds-selection-card--${layout} ${className}`}>
+    <span className="ds-selection-card-preview" aria-hidden="true">{preview}</span>
+    <span className="ds-selection-card-copy"><span>{label}</span>{detail&&<small>{detail}</small>}</span>
+  </Button>;
 }
 
 // `compact` is for dense, long menus such as the canvas context menu.

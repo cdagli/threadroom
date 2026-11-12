@@ -30,7 +30,7 @@ import type {ShapeKind} from '@/lib/shapes';
 // Agent-facing text (results, errors) is always English; the user's toast follows the UI language.
 // The studio rebuilds this object on every render, so after flushSync(...) the ref holds closures over the
 // newest state. Tools act through the same functions as the editor UI: one undo step per change.
-export type AgentPanel='layers'|'artwork'|'setup'|'info';
+export type AgentPanel='layers'|'library'|'artwork'|'setup'|'info';
 export type AgentApi={
   t:Translator;
   project:()=>Project;
@@ -419,7 +419,7 @@ const tools:Tool[]=[
       try{await act(api,a=>a.stitchRegion(p,!!outline,tolerance));}finally{flushSync(()=>now(api).chooseTool('select'));}
       const r=outcome(api,before);if(!r.added)throw new Error('No region was added. Try another point or a higher tolerance.');notify(api,outline?'outlined a colour region':'filled a colour region');return r;
     }},
-  {name:'set_view',inputSchema:obj({tool:{type:'string',description:'editor tool id (see get_editor_state.tools)'},fit:{type:'boolean'},zoom:{type:'number',description:'zoom factor relative to now, e.g. 2 or 0.5'},grid:{type:'boolean'},rulers:{type:'boolean'},showJumps:{type:'boolean'},density:{type:'boolean',description:'stitch density heat map'},realistic:{type:'boolean',description:'thread view instead of lines'},showImages:{type:'boolean'},panel:{type:'string',enum:['layers','artwork','setup','info']},simulate:{type:'boolean',description:'play the sewing simulation'}}),
+  {name:'set_view',inputSchema:obj({tool:{type:'string',description:'editor tool id (see get_editor_state.tools)'},fit:{type:'boolean'},zoom:{type:'number',description:'zoom factor relative to now, e.g. 2 or 0.5'},grid:{type:'boolean'},rulers:{type:'boolean'},showJumps:{type:'boolean'},density:{type:'boolean',description:'stitch density heat map'},realistic:{type:'boolean',description:'thread view instead of lines'},showImages:{type:'boolean'},panel:{type:'string',enum:['layers','library','artwork','setup','info']},simulate:{type:'boolean',description:'play the sewing simulation'}}),
     description:'Changes what the user sees, to help explain the design: tool, zoom/fit, grid, rulers, jumps, density heat map, realistic thread view, reference images, side panel, and the sewing simulation. Does not change the design.',
     run:async(api,a)=>{
       if(a.tool){if(!now(api).tools.includes(a.tool))throw new Error(`Unknown tool. Use one of ${now(api).tools.join(', ')}.`);await act(api,x=>x.chooseTool(a.tool));}

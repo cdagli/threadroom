@@ -70,15 +70,17 @@ import {changedObjectIds, projectCommands, commandPaths, designBounds, objectGeo
 import {brushDefaults,brushIds,brushObject,brushSize,brushStroke,brushes,type BrushId} from '@/lib/brushes';
 import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
-type PanelTab = 'layers' | 'setup' | 'info';
+import {insertLibraryAsset,libraryDragType,type LibraryAsset} from '@/lib/library';
+import {libraryAssets} from '@/lib/library-assets';
+const LibraryPanel=dynamic(()=>import('./library-panel'),{loading:Loading});
+
+type PanelTab = 'layers' | 'library' | 'setup' | 'info';
 type Tool = 'select' | 'pan' | 'measure' | 'open' | 'closed' | 'brush' | 'points' | 'text' | 'shape' | 'holes' | 'knife' | 'stitch';
 // Open and closed draw curves whose points are corners (left click) or smooth (right/double-click).
 const pathTool=(t:Tool)=>t==='open'||t==='closed'||t==='holes';
 // Cut holes and the knife are reached from the Shape tools section, click to stitch from image
 // settings; all three also have shortcuts, not dock buttons.
-const drawTool=(t:Tool)=>['open','closed','points'].includes(t);
-const dockTool=(t:Tool)=>t!=='holes'&&t!=='knife'&&t!=='stitch';
-const shapeKinds=Object.keys(shapeNames) as ShapeKind[];
+const dockTool=(t:Tool)=>t!=='holes'&&t!=='knife'&&t!=='stitch'&&t!=='shape';
 function download(blob: Blob, name: string) {
   const url=URL.createObjectURL(blob), link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -123,8 +125,6 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const [saveState,setSaveState]=useState<'saved'|'saving'|'unsaved'|'error'|'too-large'>('saved');
   const [conflict,setConflict]=useState<{name:string;updatedAt:string;dismissed?:boolean}|null>(null),[historyOpen,setHistoryOpen]=useState(false),[creating,setCreating]=useState<'open'|'busy'|null>(null);
   const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>(initialProject.objects.length||initialProject.images?.length?'select':'closed');
-  const [lastDraw,setLastDraw]=useState<Tool>('closed');
-  useEffect(()=>{if(drawTool(tool))setLastDraw(tool);},[tool]);
   const selected=selection.at(-1)??null,anchor=useRef<string|null>(null);
   function setSelected(id:string|null){setSelection(id?[id]:[]);anchor.current=id;}
   function selectObject(id:string,keys:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean}){
@@ -162,7 +162,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const [measure,setMeasure]=useState<{a:Point;b:Point}|null>(null),measuring=useRef(false);
   // The latest thread colour the user picked; new objects are drawn with it.
   const [drawColour,setDrawColour]=useState<{color:string;thread?:Thread}|null>(null);
-  const [shapeKind,setShapeKind]=useState<ShapeKind>('circle'),[shapeDraft,setShapeDraft]=useState<{start:Point;end:Point;square:boolean}|null>(null);
+  const [shapeKind]=useState<ShapeKind>('circle');
+  const [shapeDraft,setShapeDraft]=useState<{start:Point;end:Point;square:boolean}|null>(null);
   const shapePress=useRef<{client:Point;moved:boolean}|null>(null);
   // Point capture retargets double-clicks to the canvas, so remember which anchor was pressed.
   const pressedAnchor=useRef<number|null>(null);
@@ -606,6 +607,18 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     if(!next){setError(t('Cannot paste: keep the objects inside the hoop and the project within 80 objects.'));return;}
     if(!duplicate)pasteCount.current++;commit(next.project);setSelection(next.ids);anchor.current=next.ids[0]??null;setTool('select');setEditPoints(false);
     for(const o of next.project.objects)if(next.ids.includes(o.id)&&o.text)loadTextFonts(o.id,o.text);
+  }
+  function addLibraryAsset(asset:LibraryAsset,at:Point=[hoop.width/2,hoop.height/2]){
+    if(hasDraft||shapeDraft||drawing||busy)return;
+    endDrag();
+    const source=asset.categoryId==='basic-shapes'?{...asset,design:{...asset.design,objects:asset.design.objects.map(o=>({...o,name:asset.name[lang]}))}}:asset;
+    const next=insertLibraryAsset(current.current,source,at,()=>crypto.randomUUID());
+    if(!next){setError(t('This library item could not be added. Check the design limits (80 objects).'));return;}
+    cancelDrawing();cancelColourPick();setImageSel(null);setAngleMode(false);setGuide(null);setMeasure(null);
+    commit(next.project,t('Added {name}',{name:asset.name[lang]}));setSelection(next.ids);anchor.current=next.ids[0]??null;setTool('select');setEditPoints(false);
+    for(const o of next.project.objects)if(next.ids.includes(o.id)&&o.text)loadTextFonts(o.id,o.text);
+    if(narrowScreen())setPanelOpen(false);
+    requestAnimationFrame(()=>svg.current?.focus({preventScroll:true}));
   }
   function nudge(key:string,shift:boolean,repeat:boolean){
     const amount=shift?1:.1,now=performance.now(),id=selection.join('|'),merge=nudgeBurst.current.step(id,now,repeat);
@@ -1103,7 +1116,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
 <div className="ends-row"><span className="field-heading"><span><i className="end-dot entry"/>{t("Entry ·")} <i className="end-dot exit"/>{t("exit")}</span><Hint text={t("hint.entryExit")}/></span>{item.entry||item.exit?<Button variant="link" type="button" className="field-value reset" title={t("Return to automatic entry and exit")} onClick={()=>updateObject({entry:undefined,exit:undefined})}>{t("Reset")}</Button>:<span className="field-value inherited">{t("Auto")}</span>}</div></SubSection>:null;
   const setLocks=(patch:Partial<Locks>,merge?:string)=>commit({...project,locks:{...project.locks,...patch}},'',merge&&`setup:${merge}`);
   const inRange=(v:string,[a,b]:readonly [number,number])=>v!==''&&Number(v)>=a&&Number(v)<=b;
-  const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:t("Layers")},{id:'setup',icon:'settings',label:t("Setup")},{id:'info',icon:'info',label:t("Info")}];
+  const tabs:{id:PanelTab;icon:string;label:string}[]=[{id:'layers',icon:'layers',label:t("Layers")},{id:'library',icon:'library',label:t('Library')},{id:'setup',icon:'settings',label:t("Setup")},{id:'info',icon:'info',label:t("Info")}];
   const eyedropper=<IconButton variant="ghost" type="button" className="image-eyedropper" aria-label={t("Pick thread colour from reference image")} title={art?t("Pick original reference image colour"):t("Import reference artwork to pick a colour")} aria-pressed={!!colourPick} disabled={!art} onClick={toggleColourPick}><Icon name="eyedropper" size={17}/></IconButton>;
   // WebMCP: rebuilt every render so agent tools always call the newest closures (see app/agent-tools.tsx).
   agentApi.current={
@@ -1126,7 +1139,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const saveLabel=saveState==='saved'?t('Saved'):saveState==='saving'?t('Saving…'):saveState==='error'?t('Could not save. Retrying…'):saveState==='too-large'?t('This project is too large to save. Remove or shrink reference images.'):t('Unsaved');
   // Keep the canvas mounted for measurement, but hide placeholder content until restoration
   // and the layout-phase viewport fit have completed. Inert also blocks keyboard focus.
-  return <>{!ready&&<StudioLoading/>}<main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} data-loading={!ready||undefined} inert={!ready} aria-hidden={!ready||undefined} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
+  return <>{!ready&&<StudioLoading/>}<main className={`studio ${panelOpen?'panel-open':'panel-closed'}`} data-loading={!ready||undefined} inert={!ready} aria-hidden={!ready||undefined} onDragOver={e=>{e.preventDefault();if(e.dataTransfer.types.includes(libraryDragType))e.dataTransfer.dropEffect='none';}} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void importFile(f);}}>
     <Input ref={file} type="file" tabIndex={-1} className="visually-hidden" aria-label={t("Import artwork or project")} accept=".png,.jpg,.jpeg,.webp,.svg,.pes,.pec,.json" onChange={e=>{const f=e.target.files?.[0];if(f)void importFile(f);e.target.value='';}}/>
     <MenuPopover id="project-menu" className="project-popover" aria-label={t("Project")}>
       <MenuGroup label={t('Project')}>
@@ -1153,7 +1166,10 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     <section ref={stage} className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
         {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages}/>}
-        <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);if(tool==='stitch')hoverStitch(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
+        <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")}
+          onDragOver={e=>{if(!e.dataTransfer.types.includes(libraryDragType))return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect=hasDraft||shapeDraft||drawing||busy?'none':'copy';}}
+          onDrop={e=>{if(!e.dataTransfer.types.includes(libraryDragType))return;e.preventDefault();e.stopPropagation();const asset=libraryAssets.find(a=>a.id===e.dataTransfer.getData(libraryDragType));if(asset)addLibraryAsset(asset,clientToWorld(viewport.current,[e.clientX,e.clientY],e.currentTarget.getBoundingClientRect(),hoop));}}
+          onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);if(tool==='stitch')hoverStitch(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(editing&&(item?.curve||item?.rails)&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
             const id=pressedObject.current;if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
@@ -1310,18 +1326,11 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
           {(pathTool(tool)||tool==='points')&&<div className="draw-actions"><Button variant="secondary" title={t("Remove last point (Backspace)")} disabled={!canUndoDraft} onClick={popDraft}>{t("Undo point")}</Button><Button variant="secondary" title={t("Cancel (Esc)")} onClick={()=>{cancelDrawing();setTool('select');}}>{t("Cancel")}</Button><Button variant="primary" disabled={!canFinish} onClick={()=>finish()}>{closedDraft?t("Close shape"):t("Done")}</Button></div>}
         </Toolbar>}
         <Toolbar className="dock" role="toolbar" aria-label={t("Editor tools")}>
-          {tools.filter(x=>dockTool(x.id)&&(!drawTool(x.id)||x.id==='open')).map(toolInfo=>{
-            if(toolInfo.id==='open'){
-              const last=tools.find(x=>x.id===lastDraw)!;
-              return <ToolGroupButton key="draw" id="draw-tools" label={t('Draw')} groupLabel={t('Drawing tools')} title={`${last.label} (${last.key}) — ${last.hint}`} icon={last.icon} active={drawTool(tool)&&!panMode} selected={lastDraw} divider
-                options={tools.filter(x=>drawTool(x.id)).map(x=>({id:x.id,icon:x.icon,label:x.label,shortcut:x.key,title:`${x.label} (${x.key}) — ${x.hint}`}))} onActivate={()=>chooseTool(lastDraw)} onSelect={chooseTool}/>;
-            }
+          {tools.filter(x=>dockTool(x.id)).map(toolInfo=>{
             const active=toolInfo.id==='pan'?(tool==='pan'||panMode):tool===toolInfo.id&&!panMode;
             if(toolInfo.id==='brush')return <ToolGroupButton key="brush" id="brush-tools" label={t('Brush')} groupLabel={t('Brushes')} title={`${t(brushes[brushId].name)} (${toolInfo.key}) — ${toolInfo.hint}`} icon={brushes[brushId].icon} active={active} selected={brushId}
               options={brushIds.map(k=>({id:k,icon:brushes[k].icon,label:t(brushes[k].name),title:t(brushes[k].hint)}))} onActivate={()=>chooseTool('brush')} onSelect={k=>{chooseTool('brush');setBrushId(k);}}/>;
-            if(toolInfo.id==='shape')return <ToolGroupButton key="shape" id="shape-tools" label={t('Shapes')} groupLabel={t('Shapes')} title={`${t('Shapes: {v0}',{v0:t(shapeNames[shapeKind])})} (${toolInfo.key}) — ${toolInfo.hint}`} icon={shapeKind} active={active} selected={shapeKind}
-              options={shapeKinds.map(k=>({id:k,icon:k,label:t(shapeNames[k])}))} onActivate={()=>chooseTool('shape')} onSelect={k=>{chooseTool('shape');setShapeKind(k);setShapeDraft(null);shapePress.current=null;}}/>;
-            return <span key={toolInfo.id} className="tool-slot">{toolInfo.id==='text'&&<ToolbarDivider/>}<ToolButton variant="ghost" className={active?'tool active':'tool'} title={`${toolInfo.label} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key}) — ${toolInfo.hint}`} aria-label={toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.icon}/><span>{toolInfo.label}</span></ToolButton></span>;
+            return <span key={toolInfo.id} className="tool-slot">{(toolInfo.id==='open'||toolInfo.id==='text')&&<ToolbarDivider/>}<ToolButton variant="ghost" className={active?'tool active':'tool'} title={`${toolInfo.label} (${toolInfo.alt?`${toolInfo.key} / ${toolInfo.alt}`:toolInfo.key}) — ${toolInfo.hint}`} aria-label={toolInfo.label} aria-pressed={active} onClick={()=>chooseTool(toolInfo.id)}><Icon name={toolInfo.icon}/><span>{toolInfo.label}</span></ToolButton></span>;
           })}
           <ToolbarDivider/><ToolButton variant="ghost" className="tool" aria-label={t("Add artwork")} title={t("Import file")} disabled={hasDraft||busy} onClick={()=>file.current?.click()}><Icon name="image"/><span>{t("Add artwork")}</span></ToolButton>
         </Toolbar>
@@ -1347,6 +1356,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         </section>}
 
       </>}
+      {panelTab==='library'&&<LibraryPanel disabled={hasDraft||!!shapeDraft||drawing||busy} onInsert={addLibraryAsset}/>}
       {panelTab==='setup'&&<SetupPanel project={project} disabled={hasDraft} view={viewSettings} onView={patch=>setViewSettings(v=>({...v,...patch}))} onProject={commit} onHoop={changeHoop} onLocks={setLocks} onTrim={value=>commit({...project,trimJump:value},'','setup:trimJump')} onShortcuts={()=>setShortcutHelp(true)}/>}
       {panelTab==='info'&&<section className="panel-section design-summary">
         <div className="summary-grid"><div><span>{t("Hoop")}</span><strong>{displayLength(hoop.width)} × {displayLength(hoop.height)}</strong></div><div><span>{t("Design size")}</span><strong>{displayLength(compiled?.stats.width||size.width)} × {displayLength(compiled?.stats.height||size.height)}</strong></div><div><span>{t("Stitches")}</span><strong>{compiled?formatNumber(compiled.stats.stitches):'—'}</strong></div><div><span>{t("Thread changes")}</span><strong>{compiled?formatNumber(compiled.stats.colorChanges):'—'}</strong></div></div>

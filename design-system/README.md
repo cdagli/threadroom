@@ -25,6 +25,7 @@ import {Button, Icon, IconButton, Input, Toolbar} from '@/design-system';
 | `Button` | Ordinary actions; defaults to `secondary`, `md`, and `type="button"` |
 | `IconButton` | Square button; requires `aria-label`; defaults to `ghost` |
 | `ToolButton` | Vertical icon and label in the editor dock; `ghost`, 44px |
+| `SelectionCard` | Catalog/category choice with a preview, label and optional detail; `layout="tile"` for artwork cards; supports native drag events |
 | `SelectionRow` | Content-rich selection with a leading preview and label; use ARIA selection state |
 | `MenuItem` | Full-width, left-aligned menu action; accepts native menu roles. `compact` gives 24px rows for long menus such as the canvas context menu |
 | `Input`, `Textarea` | Native fields, including checkbox, range, colour, and file inputs |
