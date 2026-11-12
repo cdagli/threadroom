@@ -1,5 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import path from 'node:path';
 import ts from 'typescript';
 // Transpiles lib/*.ts on the fly; sibling imports resolve through this loader.
 const cache=new Map(),nodeRequire=createRequire(import.meta.url);
@@ -8,7 +9,9 @@ export function load(name){
   const source=readFileSync(new URL(`../lib/${name}.ts`,import.meta.url),'utf8').replaceAll('import.meta.url',JSON.stringify(new URL(`../lib/${name}.ts`,import.meta.url).href));
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
   const module={exports:{}};cache.set(name,module.exports);
-  const require=id=>id.endsWith('.json')?JSON.parse(readFileSync(new URL(`../lib/${id}`,import.meta.url),'utf8')):id.startsWith('./')?load(id.slice(2)):nodeRequire(id);
+  // Relative imports resolve from the importing module's folder (lib/ or a subfolder such as lib/library-samples/motifs).
+  const local=id=>path.posix.normalize(path.posix.join(path.posix.dirname(name),id));
+  const require=id=>id.endsWith('.json')?JSON.parse(readFileSync(new URL(`../lib/${local(id)}`,import.meta.url),'utf8')):id.startsWith('./')||id.startsWith('../')?load(local(id)):nodeRequire(id);
   new Function('module','exports','require',code)(module,module.exports,require);
   cache.set(name,module.exports);return module.exports;
 }

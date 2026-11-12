@@ -7,6 +7,7 @@ import leafSprig from './library-samples/leaf-sprig.json';
 import tulip from './library-samples/tulip.json';
 import daisy from './library-samples/daisy.json';
 import heart from './library-samples/heart.json';
+import {generatedMotifs} from './library-samples/motifs/index';
 
 // Hand-digitised with the editor tools, with separate editable parts and Brother threads.
 // Keep the source snapshots independent of inserted copies. See docs/library.md for additions.
@@ -29,7 +30,7 @@ const basicShapes:LibraryAsset[]=(Object.keys(shapeNames) as ShapeKind[]).map(ki
 });
 
 // JSON widens stitch kind strings. Validate that boundary instead of asserting the imported type.
-export const libraryAssets:readonly LibraryAsset[]=[...basicShapes,...samples].map(asset=>{
+export const libraryAssets:readonly LibraryAsset[]=[...basicShapes,...samples,...generatedMotifs].map(asset=>{
   if(!validLibraryAsset(asset))throw new Error(`Invalid library asset: ${asset.id}`);
   return asset;
 });

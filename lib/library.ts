@@ -26,6 +26,7 @@ export type LibraryAsset={
 };
 export type LibraryFilter={categoryId?:LibraryCategoryId;query?:string};
 export const libraryDragType='application/x-threadroom-library-asset';
+const fitMargin=.05;
 const searchable=(text:string)=>text.toLocaleLowerCase('tr').normalize('NFD').replace(/\p{M}/gu,'').replaceAll('ı','i');
 export function filterLibraryAssets(assets:readonly LibraryAsset[],{categoryId,query=''}:LibraryFilter):LibraryAsset[]{
   const words=searchable(query).trim().split(/\s+/).filter(Boolean);
@@ -52,7 +53,9 @@ export function insertLibraryAsset(project:Project,asset:LibraryAsset,at:Point,i
   if(!hoop||(!box.width&&!box.height))return null;
   // Satin columns and borders sew beyond their stored centre lines. Reserve their full reach
   // before fitting so a valid source cannot become an outside-hoop design on insertion.
-  const padding=Math.max(0,...clip.objects.map(o=>stitchReach(o,project)));
+  // A small extra margin absorbs float rounding and curve resampling after scaling, which could
+  // otherwise leave a point a hair outside the hoop when a motif fits it exactly.
+  const padding=Math.max(0,...clip.objects.map(o=>stitchReach(o,project)))+fitMargin;
   const availableWidth=hoop.width-2*padding,availableHeight=hoop.height-2*padding;
   if(availableWidth<=0||availableHeight<=0)return null;
   const scale=Math.min(1,availableWidth/Math.max(box.width,1e-6),availableHeight/Math.max(box.height,1e-6));

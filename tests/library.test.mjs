@@ -17,6 +17,7 @@ test('The catalog has stable translated categories and valid, uniquely identifie
   assert.equal(new Set(libraryCategories.map(c=>c.id)).size,8);
   for(const c of libraryCategories){assert.ok(en[c.name]);assert.ok(tr[c.name]);}
   assert.ok(libraryAssets.length>=4);
+  for(const c of libraryCategories)assert.ok(libraryAssets.some(a=>a.categoryId===c.id),`${c.id} has motifs`);
   assert.equal(new Set(libraryAssets.map(a=>a.id)).size,libraryAssets.length);
   for(const a of libraryAssets){
     assert.ok(validLibraryAsset(a),a.id);
@@ -87,7 +88,7 @@ test('Drops clamp to hoop edges and oversize motifs fit proportionally; straight
   const p=blankProject('Small hoop','60x40'),source=asset({design:{objects:[rectangle('Large',100,100,120,60)]}});
   for(const at of [[0,0],[60,40],[-100,1000],[30,20]]){
     const next=insertLibraryAsset(p,source,at,ids());assert.ok(next);
-    const b=selectionBounds(next.project,next.ids);assert.equal(b.width,60);assert.equal(b.height,30);
+    const b=selectionBounds(next.project,next.ids);assert.ok(Math.abs(b.width-59.9)<1e-9);assert.ok(Math.abs(b.height-29.95)<1e-9);
     assert.ok(b.x>=0&&b.y>=0&&b.x+b.width<=60&&b.y+b.height<=40);
   }
   const line=asset({design:{objects:[object('Line',[[[10,10],[30,10]]],'running')]}});
