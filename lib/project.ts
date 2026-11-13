@@ -31,6 +31,7 @@ export type StitchObject = {
   tolerance?: number; // explicit run tolerance; unset keeps legacy sampling
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
+  padding?: 1|2; // satin fill: padding layers sewn under the cover (raised satin); unset is flat
   entry?: Point; exit?: Point; // on the outline (open paths: an end); unset is automatic
   tieIn?: Lock; tieOff?: Lock; lockSize?: number; // unset follows the project's locks
   curve?: {points: Point[]; closed: boolean; corners?: boolean[]; spline?: 'levien'};
@@ -279,6 +280,7 @@ export function validProject(value: unknown): value is Project {
     if(o.length<.5||o.length>3||o.angle< -180||o.angle>180||o.satinWidth<satinLimits.width[0]||o.satinWidth>satinLimits.width[1])return false;
     if(o.splitLength!==undefined&&(typeof o.splitLength!=='number'||!(o.splitLength>=satinLimits.split[0]&&o.splitLength<=satinLimits.split[1])))return false;
     if(o.shortStitches!==undefined&&typeof o.shortStitches!=='boolean')return false;
+    if(o.padding!==undefined&&(o.padding!==1&&o.padding!==2||o.kind!=='fill'||o.fillPattern!=='sweepSatin'))return false;
     if(o.fillLength!==undefined&&!inRange(o.fillLength,1,6))return false;
     if(o.handStitch!==undefined&&(!Number.isInteger(o.handStitch)||!inRange(o.handStitch,0,5)))return false;
     if(o.gradient!==undefined){const g=o.gradient;if(!g||typeof g!=='object'||!inRange(g.endSpacing,.3,4)||(g.mode==='ramp'? !inRange(g.start,0,1)||!inRange(g.end,0,1):g.mode==='plateau'?!inRange(g.center,0,1)||!inRange(g.width,0,1):true))return false;}

@@ -1244,6 +1244,42 @@ class NonRowFillTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 compile_project(project(fillPattern="sweepSatin",**{key:value}))
 
+    def test_satin_fill_does_not_travel_over_its_own_cover(self):
+        from embroidery.engines import route_satin
+        # Trousers: a waist that splits into two legs. Each piece ends beside the next one,
+        # wherever sewing starts; the run to a leg's far end is sewn before its cover.
+        trousers = [[38.4,33],[51.4,33],[59.25,47.25],[53.4,50],[45.5,36.6],[36.9,49.75],[31.1,46]]
+        o = project(rings=[trousers],fillPattern="sweepSatin",angle=27,spacing=.32,underlay="center",pullCompensation=.3)["objects"][0]
+        for at in (None,[56,48],[34,48],[45,33]):
+            covers = [path for run in route_satin(o,at,None,None) for path,limit in run if limit > 3]
+            self.assertEqual(len(covers),3)
+            for cover,following in zip(covers,covers[1:]):
+                self.assertLess(min(math.dist(cover[-1],q) for q in following),3,at)
+
+    def test_raised_satin_sews_padding_under_an_unchanged_cover(self):
+        from embroidery.engines import route_satin, PAD_INSET
+        column = [[30,30],[60,30],[60,36],[30,36]]
+        settings = dict(rings=[column],fillPattern="sweepSatin",angle=90,spacing=.32,underlay="center",pullCompensation=.3)
+        flat = route_satin(project(**settings)["objects"][0],None,None,None)
+        cover = lambda runs:[path for run in runs for path,limit in run if limit > 3]
+        lengths = []
+        for layers in (1,2):
+            runs = route_satin(project(padding=layers,**settings)["objects"][0],None,None,None)
+            self.assertEqual(len(runs),1,"padding and cover sew without a trim")
+            self.assertIn(cover(runs)[0],(cover(flat)[0],cover(flat)[0][::-1]))
+            pad = runs[0][0][0]
+            lengths.append(sum(math.dist(a,b) for a,b in zip(pad,pad[1:])))
+            # Padding stays inside the cover; its last layer runs along the column, across the bites.
+            self.assertTrue(all(30+PAD_INSET-.01 <= x <= 60-PAD_INSET+.01 and 30+PAD_INSET-.01 <= y <= 36-PAD_INSET+.01 for x,y in pad))
+            last = [(a,b) for a,b in zip(pad,pad[1:]) if math.dist(a,b) > 1][-20:]
+            self.assertTrue(all(abs(b[0]-a[0]) > 5*abs(b[1]-a[1]) for a,b in last))
+        self.assertGreater(lengths[1],lengths[0]*1.4)
+        self.assertGreater(lengths[0],150)
+        self.assertNotIn("dense",[w["code"] for w in compile_project(project(padding=2,**settings))["warnings"]])
+        for bad in (dict(padding=3,**settings),dict(padding=True,**settings),dict(padding=1,rings=[column])):
+            with self.assertRaises(ValueError):
+                compile_project(project(**bad))
+
     # A "Z" of 1.5 mm strokes: horizontal bars joined by a diagonal at about 30 degrees.
     Z = [[20,20],[40,20],[40,21.5],[23.4,31.5],[40,31.5],[40,33],[20,33],[20,31.5],[36.6,21.5],[20,21.5]]
 

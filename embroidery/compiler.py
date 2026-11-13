@@ -216,6 +216,8 @@ def validate(project):
             number(obj.get("splitLength"), 3, 12, "Split length")
             if not isinstance(obj.get("shortStitches"), bool):
                 raise ValueError("Short stitches must be on or off.")
+        if "padding" in obj and (not sweep or obj["padding"] not in (0, 1, 2) or isinstance(obj["padding"], bool)):
+            raise ValueError("Choose up to two padding layers on a satin fill.")
         if obj.get("underlay") not in UNDERLAYS.get("satin" if sweep else "fill" if obj["kind"] in FILL_KINDS else obj["kind"], ("none",)):
             raise ValueError("Choose an underlay suited to this stitch style.")
         for key in ("entry", "exit", "center"):

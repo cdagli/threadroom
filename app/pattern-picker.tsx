@@ -6,7 +6,7 @@ import {fillPatterns,patternPreview,type FillPattern,type PatternParams} from '@
 import type {StitchObject} from '@/lib/project';
 // The everyday fills shown first; the decorative ones wait behind "All patterns".
 const basics=new Set(['even','tatami','sweepSatin','columns','waves','zigzag','circular','streamlines','crossStitchFill']);
-const engineReset={spacing:undefined,underlay:undefined,splitLength:undefined,shortStitches:undefined};
+const engineReset={spacing:undefined,underlay:undefined,splitLength:undefined,shortStitches:undefined,padding:undefined};
 export default memo(function PatternPicker({value,params,onChange}:{value?:FillPattern;params?:PatternParams;onChange:(patch:Partial<StitchObject>)=>void}) {
   const {t}=useT(),selected=fillPatterns.find(p=>p.id===(value??'even')),[all,setAll]=useState(false);
   const shown=all?fillPatterns:fillPatterns.filter(p=>basics.has(p.id)||p.id===(value??'even'));

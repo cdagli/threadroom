@@ -76,6 +76,10 @@ export function FillSettings({item,resolved,onChange,source,hoop,angles,baseSpac
         <PatternPicker value={item.fillPattern} params={item.patternParams} onChange={changePattern}/>
         {cross&&<CrossSettings item={item} onChange={onChange}/>}
         {!satin&&<HandStitch item={item} onChange={onChange}/>}
+        {satin&&!item.text&&<div className="density-choice">
+          <span className="field-heading">{t("Raised")}<Hint text={t("hint.padding")}/></span>
+          <SegmentedControl role="radiogroup" aria-label={t("Raised")}>{([[undefined,'Flat'],[1,'1 layer'],[2,'2 layers']] as const).map(([value,label])=><Button variant="ghost" size="sm" key={label} role="radio" aria-checked={item.padding===value} onClick={()=>onChange({padding:value})}>{t(label)}</Button>)}</SegmentedControl>
+        </div>}
       </div>
     </Section>
     <Section id="fill-direction" title={t("Direction")} summaryExtra={guideCount?t('Angle guides · {v0}',{v0:guideCount}):circular?undefined:`${formatNumber(item.angle)}°`}>

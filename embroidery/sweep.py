@@ -17,7 +17,7 @@ along-row coordinate psi blends each guide's tangent coordinate the same way.
 """
 import math
 from . import compiler as C
-from .engines import clean, clear, route_pieces
+from .engines import clean, clear, padded, route_pieces
 
 TRIGGER = .5
 
@@ -483,7 +483,7 @@ def route_satin(obj, guides, at, entry, target):
         cover = clean(C.split_bites(cover, obj.get("splitLength", 7)))
         if len(cover) > 1:
             pieces.append(passes+[(cover, C.SATIN_MAX-.15)])
-    return route_pieces(obj, pieces, at, entry, target)
+    return padded(obj, pieces, at, entry, target)
 
 
 def guide_field(guides):

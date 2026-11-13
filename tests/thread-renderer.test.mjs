@@ -23,6 +23,29 @@ test('GPU dye uses linear light, caches geometry and invalidates on palette chan
   assert.equal(a.data[8],b.data[8],'material seed does not depend on the palette');
 });
 
+test('Loft: thread sewn across underneath lifts a stitch; threads beside it in its own column or fill do not',()=>{
+  const zigzag=(x0,x1,y0,y1,pitch)=>{const points=[];for(let y=y0,i=0;y<=y1+1e-9;y+=pitch,i++)points.push([i%2?x1:x0,y]);return points;};
+  // Lofts of the stitches at least 2 mm long (the short links between rows cross a row end).
+  const lofts=(g,from=0,to=Infinity)=>Array.from({length:g.data.length/9},(_,i)=>i).slice(from,to).filter(i=>Math.hypot(g.data[i*9+2]-g.data[i*9],g.data[i*9+3]-g.data[i*9+1])>=2).map(i=>g.data[i*9+7]);
+  // A 5 mm satin column on bare fabric, then the same over padding rows running along it.
+  const satin=zigzag(0,5,0,6,.2),flat=threadInstances(chain(satin),['#000000']);
+  assert.ok(lofts(flat).every(v=>v===0),'bare satin is flat');
+  const rows=[];for(let x=.6,i=0;x<=4.4;x+=.45,i++)rows.push(...(i%2?[[x,6],[x,3],[x,0]]:[[x,0],[x,3],[x,6]]));
+  const padded=threadInstances([...chain(rows),{...stitch(0,0,0,0),type:'jump'},...chain(satin)],['#000000']),padding=rows.length-1;
+  const cover=lofts(padded,padding).slice(2,-2);
+  assert.ok(lofts(padded,0,padding).every(v=>v<.05),'the padding itself lies on the fabric');
+  assert.ok(Math.min(...cover)>.2&&Math.max(...cover)<.6,`padded satin is raised (${Math.min(...cover)} to ${Math.max(...cover)})`);
+  assert.ok(Math.max(...cover)-Math.min(...cover)<.08,'evenly: no thread-to-thread stripes');
+  // A second padding layer underneath, across the first, raises the cover further.
+  const lower=[];for(let y=1.2,i=0;y<=4.8;y+=.45,i++)lower.push(...(i%2?[[3.8,y],[1.2,y]]:[[1.2,y],[3.8,y]]));
+  const double=threadInstances([...chain(lower),...chain(rows),{...stitch(0,0,0,0),type:'jump'},...chain(satin)],['#000000']);
+  const mean=values=>values.reduce((a,b)=>a+b,0)/values.length;
+  assert.ok(mean(lofts(double,lower.length-1+padding+1))>mean(cover)+.05,'two layers lift more than one');
+  // Fill rows 0.2 mm apart lie side by side: none of them is under the next.
+  const fill=[];for(let y=0,i=0;y<=4;y+=.2,i++)fill.push(...(i%2?[[9,y],[6,y],[3,y],[0,y]]:[[0,y],[3,y],[6,y],[9,y]]));
+  assert.ok(lofts(threadInstances(chain(fill),['#000000'])).every(v=>v<.05),'a fill keeps one even tone');
+});
+
 const chain=(points,extra={})=>points.slice(1).map((p,i)=>({...stitch(points[i][0],points[i][1],p[0],p[1]),...extra}));
 const ends=(g,i)=>[...g.data.slice(i*9,i*9+4)];
 

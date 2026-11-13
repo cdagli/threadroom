@@ -23,6 +23,13 @@ const threadWidth=.25,flattenedThreadWidth=threadWidth*1.2;
 const shadowReach=.10,shadowStrength=.26;
 // Length of one full turn of the two plies (mm): embroidery thread has about 1.2 turns per mm.
 const plyTwist=.8;
+// Loft: thread already sewn underneath (padding, underlay, a fill below) lifts a stitch off
+// the fabric. A grid keeps, per cell, the thread on top there: its height in layers, its
+// direction and the height it lies on. A stitch lies on the threads it crosses; a thread
+// running its own way is the one beside it in the same row or column, not under it, so
+// there it takes that thread's own base. Loft is the mean height under the stitch: what
+// underlay alone leaves (loftFloor) is not shown, loftLayers of padding give 63% of full loft.
+const loftCell=.25,loftFloor=.12,loftLayers=1;
 type Geometry={data:Float32Array;prefix:Uint32Array;bounds:[number,number,number,number]};
 const geometries=new WeakMap<Command[],{palette:string;geometry:Geometry}>();
 const linear=(v:number)=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4;
@@ -53,6 +60,24 @@ export function threadInstances(commands:Command[],colours:string[]):Geometry{
   const sewn=(k:Command|undefined):k is Command=>!!k&&k.type==='stitch'&&!k.tie&&[k.fromX,k.fromY,k.x,k.y].every(Number.isFinite);
   const joined=(a:Command,b:Command)=>a.block===b.block&&Math.abs(a.x-b.fromX)<.011&&Math.abs(a.y-b.fromY)<.011;
   let n=0,x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;const locked=new Set<string>();
+  let gx0=Infinity,gy0=Infinity,gx1=-Infinity,gy1=-Infinity;
+  for(const k of commands)if(k.type==='stitch'&&[k.fromX,k.fromY,k.x,k.y].every(Number.isFinite)){gx0=Math.min(gx0,k.fromX,k.x);gy0=Math.min(gy0,k.fromY,k.y);gx1=Math.max(gx1,k.fromX,k.x);gy1=Math.max(gy1,k.fromY,k.y);}
+  // Very large designs use a coarser grid instead of more memory.
+  const cell=Math.max(loftCell,Math.sqrt(Math.max(0,(gx1-gx0+2)*(gy1-gy0+2))/2e6)),columns=Math.max(2,Math.ceil((gx1-gx0+2)/cell)+1),grid=new Float32Array(gx1>=gx0?4*columns*(Math.ceil((gy1-gy0+2)/cell)+1):0);
+  // Visits the stitch every half cell. Reading returns the mean height under it; writing
+  // makes it the top thread of its cells, at the given height and base.
+  const lay=(ax:number,ay:number,bx:number,by:number,height:number,base:number)=>{
+    const dx=bx-ax,dy=by-ay,length=Math.hypot(dx,dy),steps=Math.max(1,Math.ceil(length/cell*2)),c2=(dx*dx-dy*dy)/(length*length),s2=2*dx*dy/(length*length);
+    let sum=0;
+    for(let s=0;s<steps;s++){
+      const t=(s+.5)/steps,at=4*(Math.floor((ay+dy*t-gy0+1)/cell)*columns+Math.floor((ax+dx*t-gx0+1)/cell));
+      if(height){grid[at]=height;grid[at+1]=base;grid[at+2]=c2;grid[at+3]=s2;continue;}
+      // sin² of the angle between the two threads: 0 parallel, 1 square.
+      const crossing=Math.min(1,Math.max(0,((1-grid[at+2]*c2-grid[at+3]*s2)/2-.04)/.3));
+      sum+=grid[at+1]+(grid[at]-grid[at+1])*crossing;
+    }
+    return sum/steps;
+  };
   for(let i=0;i<commands.length;i++){
     const k=commands[i];prefix[i+1]=n;
     if(k.type!=='stitch'||![k.fromX,k.fromY,k.x,k.y].every(Number.isFinite)||!dye[k.block]||Math.hypot(k.x-k.fromX,k.y-k.fromY)<.001)continue;
@@ -64,7 +89,9 @@ export function threadInstances(commands:Command[],colours:string[]):Geometry{
     const [bx,by]=sewn(after)&&joined(k,after)?relaxedEnd(k.x,k.y,k.fromX,k.fromY,after.x,after.y,true,r):[k.x,k.y];
     // Stable variation in material only: needle positions and stitch count are untouched.
     const seed=((Math.imul(i+1,1597334677)>>>0)%65536)/65536;
-    data.set([ax,ay,bx,by,...dye[k.block],1,seed],n*stride);
+    data.set([ax,ay,bx,by,...dye[k.block],0,seed],n*stride);
+    const under=lay(ax,ay,bx,by,0,0);lay(ax,ay,bx,by,under+1,under);
+    data[n*stride+7]=1-Math.exp(-Math.max(0,under-loftFloor)/loftLayers);
     x0=Math.min(x0,ax,bx);y0=Math.min(y0,ay,by);x1=Math.max(x1,ax,bx);y1=Math.max(y1,ay,by);
     prefix[i+1]=++n;
   }
@@ -87,13 +114,14 @@ flat out vec3 dye;
 flat out float lengthMm;
 flat out float radius;
 flat out float seed;
+flat out float loft;
 const vec2 corners[6]=vec2[6](vec2(0,-1),vec2(1,-1),vec2(0,1),vec2(0,1),vec2(1,-1),vec2(1,1));
 void main(){
   vec2 delta=endpoints.zw-endpoints.xy;
   lengthMm=length(delta);tangent=delta/lengthMm;dye=colour;seed=material.y;
-  radius=width*.5*material.x;
+  radius=width*.5;loft=material.x;
   // Room for the rounded end, the contact shadow and the antialiasing fringe.
-  float pad=radius+${shadowReach.toFixed(3)}+1.5/transform.x;
+  float pad=radius+${shadowReach.toFixed(3)}*(1.+2.*loft)+1.5/transform.x;
   vec2 corner=corners[gl_VertexID];
   local=vec2(mix(-pad,lengthMm+pad,corner.x),corner.y*pad);
   vec2 world=endpoints.xy+tangent*local.x+vec2(-tangent.y,tangent.x)*local.y;
@@ -116,6 +144,7 @@ flat in vec3 dye;
 flat in float lengthMm;
 flat in float radius;
 flat in float seed;
+flat in float loft;
 out vec4 outColour;
 const float PI=3.14159265359;
 const float TWIST=${plyTwist.toFixed(3)};
@@ -137,7 +166,8 @@ void main(){
   float aa=max(fwidth(local.y),1e-4);
   float endDistance=min(local.x,lengthMm-local.x);
   // The thread climbs out of the fabric over about one thread width.
-  float climb=min(lengthMm*.5,radius*1.7);
+  // Over padding it climbs higher, so it takes longer to reach the top.
+  float climb=min(lengthMm*.5,radius*(1.7+3.*loft));
   float rise=smoothstep(-radius*.5,climb,endDistance);
   // Plies resolve once the strand is a few pixels wide, filaments later still.
   float plies=smoothstep(1.5,4.5,radius/aa),filaments=smoothstep(3.,9.,radius/aa);
@@ -149,7 +179,11 @@ void main(){
   // Contact shadow: the strand darkens whatever lies beside and beneath it.
   vec2 across=vec2(-tangent.y,tangent.x);
   float gap=max(strand(local,radius,radius*.55),0.);
-  float shadow=${shadowStrength.toFixed(3)}*exp(-gap*gap/(${(shadowReach*.42).toFixed(4)}*${(shadowReach*.42).toFixed(4)}+aa*aa));
+  // A raised strand throws it further, past its ends only: the threads beside it in the
+  // column are as high as it is.
+  float far=loft*smoothstep(0.,radius,max(max(-local.x,local.x-lengthMm),0.));
+  float reach=${(shadowReach*.42).toFixed(4)}*(1.+2.*far);
+  float shadow=${shadowStrength.toFixed(3)}*(1.+.5*far)*exp(-gap*gap/(reach*reach+aa*aa));
   if(coverage+shadow<.002)discard;
   float v=clamp(local.y/r,-.98,.98),round_=sqrt(1.-v*v),theta=asin(v);
   // Position across the ply that is on top here: 0 at its crest, +-.5 in the grooves.
@@ -162,7 +196,10 @@ void main(){
   // A long float (satin) sags a little between its holes and catches the light across the
   // column; the short stitches of a fill lie flat, so a fill keeps one even tone.
   float bow=clamp((local.x-lengthMm*.5)/max(lengthMm*.5,1e-3),-1.,1.),sag=.26*smoothstep(1.5,5.,lengthMm);
-  float along=sign(local.x-lengthMm*.5)*(1.-rise)*.32+bow*sag-slope*depth*2./TWIST;
+  // Thread sewn over padding arches over it: nearly level on top and steep down to each
+  // hole, so a raised column has a lit and a shaded flank. Short stitches cannot arch.
+  float arch=1.5*loft*smoothstep(.8,2.5,lengthMm)*bow*abs(bow);
+  float along=sign(local.x-lengthMm*.5)*(1.-rise)*.32+bow*sag+arch-slope*depth*2./TWIST;
   float aside=v*.30-slope*depth/(PI*r*max(round_,.35));
   vec3 normal=normalize(vec3(tangent*along+across*aside,round_+.12));
   // Filaments run nearly along the thread, each catching the light a little differently.
@@ -182,7 +219,7 @@ void main(){
   // Grooves between the plies sit in shade.
   float groove=mix(1.,smoothstep(-.15,.8,height),plies*.34);
   // Roundness is shaded evenly towards both edges.
-  vec3 body=dye*(.36+.74*diffuse)*(.70+.30*round_)*(1.+.22*fibre)*groove*mix(.9,1.,rise);
+  vec3 body=dye*(.36+.74*diffuse)*(.70+.30*round_)*(1.+.22*fibre)*groove*mix(.9-.15*loft,1.,rise);
   body+=mix(dye,vec3(1),.55)*max(spec,0.)*rise*groove;
   body*=.985+.03*seed;
   vec3 rgb=srgb(clamp(body,0.,1.));

@@ -29,6 +29,16 @@ buffer. Each instance is a strand between two needle points:
   fibre direction, so columns sewn at different angles differ in brightness.
 - **Contact shadow.** Each strand darkens what lies beside and beneath it, which
   separates rows and lifts satin off the fill and the fabric.
+- **Loft.** Thread already sewn underneath lifts a stitch: padding under raised satin
+  (the satin fill's Raised setting), or a fill under a satin border. A grid over the
+  design keeps the thread on top of each 0.25 mm cell: its height in layers, its
+  direction and the height it lies on. A stitch rests on the threads it crosses; a
+  thread running the same way is its neighbour in the same row or column, and there
+  the stitch takes that neighbour's base. Its loft is the mean height under it. A
+  lifted stitch arches: nearly level on top and steep down to each hole, so a raised
+  column has a lit and a shaded flank, darker ends and a longer shadow past its edge.
+  The little that an underlay alone leaves is not shown, and short stitches cannot
+  arch, so fills keep one even tone.
 
 All of this is fixed in millimetres. Detail too small for the current zoom fades into
 the smooth strand without changing the average colour.
@@ -55,8 +65,9 @@ The visible canvas exposes `data-renderer`, `data-render-ms` and `data-frame-ms`
 ## Limits
 
 This is a calibrated picture of the stitches as written, not a sew-out simulation: it
-does not model pull, push, fabric distortion, thread tension or the height of stacked
-layers. Correct digitising, density and underlay remain essential.
+does not model pull, push, fabric distortion or thread tension, and loft is an estimate
+from the stitches underneath, not a measured height. Correct digitising, density and
+underlay remain essential.
 
 ## Tests
 

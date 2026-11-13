@@ -125,9 +125,9 @@ export function setSewOrder(p:Project,ids:readonly string[]):{project:Project}|{
 }
 
 // Settings an agent may patch; null resets a setting to its inherited (fabric/Setup) default.
-const editableKeys=['name','color','kind','length','angle','satinWidth','fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked'] as const;
+const editableKeys=['name','color','kind','length','angle','satinWidth','fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','padding','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked'] as const;
 export type ObjectPatch=Partial<Record<typeof editableKeys[number],unknown>>&{threadCode?:string;matchThread?:boolean};
-const resettable=new Set<string>(['fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked']);
+const resettable=new Set<string>(['fillLength','handStitch','gradient','fillUnderlays','fillPattern','patternParams','crossStyle','crossSize','threadCount','coverage','dense','flipped','center','tolerance','spacing','underlay','pullCompensation','splitLength','shortStitches','padding','entry','exit','tieIn','tieOff','lockSize','ropeWidth','eFlipped','rowShortening','densityTrigger','hidden','locked']);
 
 // Mirrors the settings panel: kind changes go through changeStitchKind, fills need a closed shape,
 // a new colour drops its thread reference, and null/undefined removes the key (inherit).

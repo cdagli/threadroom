@@ -1,4 +1,5 @@
 """Non-row fills. Legacy row and cross planners are deliberately untouched."""
+import itertools
 import math
 from . import compiler as C
 
@@ -66,24 +67,31 @@ def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reo
     out, cur = [], entry or at
     pending = list(pieces)
     last = min(pending,key=lambda ps:min(math.dist(p,target) for p in (ps[-1][0][0],ps[-1][0][-1]))) if target and pending and not ordered else None
+    plan = satin_order(pending,cur,last) if obj.get('fillPattern') == 'sweepSatin' and travel is None and not ordered and len(pending)>1 else None
     while pending:
         candidates = [i for i,p in enumerate(pending) if p is not last or len(pending)==1] or [0]
         index = candidates[0] if ordered or cur is None else min(candidates,key=lambda i:min(math.dist(cur,p) for p in (pending[i][0][0][0],pending[i][0][0][-1])))
+        finish = None
+        if plan:
+            index, finish = plan.pop(0)
+            index = next(i for i,p in enumerate(pending) if p is pieces[index])
         passes = pending.pop(index)
         if not pending and target and obj.get('fillPattern') == 'sweepSatin' and math.dist(passes[-1][0][0],target)<math.dist(passes[-1][0][-1],target):
             passes = passes[:-1]+[(passes[-1][0][::-1],passes[-1][1])]
         if reorient or obj.get('fillPattern') in ('sweepSatin','circular') or obj.get('crossStyle')=='half':
-            oriented, prev = [], cur
-            for j,(path,limit) in enumerate(passes):
-                aim = target if not pending and j==len(passes)-1 else None
-                if aim:
-                    if math.dist(path[0],aim)<math.dist(path[-1],aim):
+            def orient(flip=None):
+                oriented, prev = [], cur
+                for j,(path,limit) in enumerate(passes):
+                    aim = target if not pending and j==len(passes)-1 else None
+                    if aim:
+                        if math.dist(path[0],aim)<math.dist(path[-1],aim):
+                            path = path[::-1]
+                    elif flip if j==0 and flip is not None else prev and math.dist(prev,path[-1])<math.dist(prev,path[0]):
                         path = path[::-1]
-                elif prev and math.dist(prev,path[-1])<math.dist(prev,path[0]):
-                    path = path[::-1]
-                oriented.append((path,limit))
-                prev = path[-1]
-            passes = oriented
+                    oriented.append((path,limit))
+                    prev = path[-1]
+                return oriented
+            passes = min(orient(False),orient(True),key=lambda oriented:math.dist(oriented[-1][0][-1],finish)) if finish else orient()
         if obj.get('fillPattern') == 'crossStitchFill' or obj.get('crossStyle'):
             path,limit = passes[-1]
             aim = target if not pending else cur
@@ -119,6 +127,31 @@ def route_pieces(obj, pieces, at, entry, target, ordered=False, travel=None, reo
     return out
 
 
+def satin_order(pieces, cur, last):
+    """Sewing order of satin pieces as [(piece index, where its cover should end)]. A run
+    sewn after a cover lies on top of it, while the run to a piece's far end before its
+    cover is hidden by it. So each cover ends where it reaches the next piece (at any
+    point of that piece), and the order keeps those gaps shortest; the piece nearest the
+    exit stays last and ends as the exit asks (None)."""
+    n = len(pieces)
+    ends = [(ps[-1][0][0],ps[-1][0][-1]) for ps in pieces]
+    # A sample of each cover is enough to measure to; an odd stride keeps both of its sides.
+    covers = [ps[-1][0][::max(1,len(ps[-1][0])//24)|1]+[ps[-1][0][-1]] for ps in pieces]
+    reach = lambda q,j:min(math.dist(q,p) for p in covers[j])
+    gap = [[min((reach(e,j),k) for k,e in enumerate(ends[i])) if i!=j else (0,0) for j in range(n)] for i in range(n)]
+    final = next((i for i,ps in enumerate(pieces) if ps is last),None)
+    cost = lambda order:sum(gap[a][b][0] for a,b in zip(order,order[1:]))+(.25*reach(cur,order[0]) if cur else 0)
+    if n <= 7:
+        order = min((o for o in itertools.permutations(range(n)) if final is None or o[-1]==final),key=cost)
+    else:
+        free = [i for i in range(n) if i!=final]
+        order = [min(free,key=lambda i:reach(cur,i)) if cur else free[0]]
+        while len(order) < len(free):
+            order.append(min((i for i in free if i not in order),key=lambda i:gap[order[-1]][i][0]))
+        order += [] if final is None else [final]
+    return [(a,ends[a][gap[a][b][1]]) for a,b in zip(order,order[1:])]+[(order[-1],None)]
+
+
 def split_fill_bites(path, limit, angle):
     """Splits satin fill bites longer than limit, the split penetrations on a shared grid
     along the row direction (pitch three quarters of the limit) shifted per bite by a
@@ -145,6 +178,33 @@ def split_fill_bites(path, limit, angle):
                 result.extend(C.lerp(a, b, f) for f in cuts)
         result.append(b)
     return result
+
+
+# Raised satin: padding layers sewn under the cover, each smaller than the one above so the
+# cover domes. The upper layer runs across the cover's bites, which then bridge it and do
+# not sink between its rows; the lower one (two layers) runs with the bites. Rows PAD_SPACING
+# apart: enough thread to lift the cover while the needle still finds fabric.
+PAD_SPACING, PAD_LENGTH, PAD_INSET = .45, 2.5, .6
+
+
+def padding(obj, at, entry):
+    """Padding runs for a satin fill ([] without padding), sewn before everything else."""
+    count = obj.get('padding',0)
+    if not count:
+        return []
+    layers = [{'angle':90 if i==count-1 else 0,'spacing':PAD_SPACING,'length':PAD_LENGTH,'inset':PAD_INSET*(count-i)} for i in range(count)]
+    base = {k:v for k,v in obj.items() if k not in ('fillPattern','patternParams','padding','angleGuides')}
+    base.update(underlay='none',fillUnderlays=layers,length=PAD_LENGTH,pullCompensation=0)
+    return [[(path,3)] for path in C.route_fill(base,at,entry,None,True)]
+
+
+def padded(obj, pieces, at, entry, target, **options):
+    """route_pieces over the object's padding; the cover carries on from where it ends."""
+    foundation = padding(obj,at,entry)
+    if not foundation:
+        return route_pieces(obj,pieces,at,entry,target,**options)
+    runs = route_pieces(obj,pieces,None,foundation[-1][-1][0][-1],target,**options)
+    return foundation[:-1]+[foundation[-1]+runs[0]]+runs[1:] if runs else foundation
 
 
 def satin_columns(obj):
@@ -193,7 +253,7 @@ def route_satin(obj, at, entry, target):
         if len(cover)>1:
             passes.append((cover,C.SATIN_MAX-.15))
             pieces.append(passes)
-    return route_pieces(obj,pieces,at,entry,target)
+    return padded(obj,pieces,at,entry,target)
 
 
 def clip_lines(lines, rings, rule):
