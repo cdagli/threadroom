@@ -1,7 +1,8 @@
 import {bounds,fabrics,hoops,isFillKind,kindHints,kindNames,lockLimits,lockNames,normalizeGroups,object,resolve,ropeLimits,satinLimits,underlayNames,underlayOptions,validProject,type Kind,type Point,type Project,type StitchObject} from './project';
 import {blockOutline,changeStitchKind,curveRing,draftRails,insertGeometryPoint,isClosedShape,moveGeometry,removeGeometryPoint,routeEnds,setCorner,withEnd,withRails} from './curves';
 import {explain,fixFor,type Warning} from './check';
-import {fillPatterns} from './fill-patterns';
+import {fillPatterns,type PatternParams} from './fill-patterns';
+import {band,shadeLayers,withBand} from './long-short';
 import {brotherThreads,defaultThreadColour,deltaE2000,nearestBrother,rgbToLab,threadReference,type Thread} from './threads';
 import {boxShape,isBoxShape,radialShapes,shapeNames,type ShapeKind} from './shapes';
 import {textLimits} from './text';
@@ -25,7 +26,7 @@ function summarizeObject(o:StitchObject,p:Project,index:number,fonts:CatalogFont
   return {
     id:o.id,index,name:o.name,kind:o.kind,kindName:en(kindNames[o.kind]),color:o.color,
     ...(o.thread&&{thread:`${o.thread.brand} ${o.thread.code} ${o.thread.name}`}),
-    ...(o.group&&{group:o.group}),...(o.locked&&{locked:true}),...(o.hidden&&{hidden:true}),...(o.layoutOnly&&{layoutOnly:true}),
+    ...(o.group&&{group:o.group}),...(o.shade&&{shading:{set:o.shade,band:band(o)}}),...(o.locked&&{locked:true}),...(o.hidden&&{hidden:true}),...(o.layoutOnly&&{layoutOnly:true}),
     closed:isClosedShape(o),bounds:objectBox(o),
     ...(o.text&&{text:{content:o.text.content,size:o.text.size,font:o.text.satin?`satin:${o.text.satin.font}`:o.text.font.family,layout:o.text.layout,...(min!==undefined&&{minSize:Number.isFinite(min)?min:0}),...(o.text.satin&&{columnWidth:o.text.satin.columnWidth})}}),
     settings:{
@@ -94,7 +95,7 @@ export function reference(){
     limits:{satinWidth:satinLimits.width,splitLength:satinLimits.split,ropeWidth:ropeLimits.width,text:textLimits,sewingSpeed:[production.minSpeed,production.maxSpeed]},
     shapes:shapeKinds,menuCommands,
     threads:`${brotherThreads.length} Brother Embroidery threads (retail spool numbers); use find_threads to search by colour or name/code, then apply a result with update_objects settings.threadCode (e.g. "${brotherThreads[0].code}") or use settings.matchThread:true`,
-    workflow:['get_reference (once)','set_status before each multi-step phase: one short sentence in the user UI language','For hand digitising: view_reference (mm grid) → sample_colors → trace_outline (silhouette polygons) → add_path / shape_operation (intersect to clip; union/offset/subtract to cut the base) → shape_operation flatten → find_threads / update_objects settings.threadCode → set_sew_order → list_issues','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','find_threads then update_objects settings.threadCode to choose threads','set_sew_order to reorder listed objects within their existing slots; later layers sew on top, group colours to minimise jumps','capture_preview to look at the result','export_design'],
+    workflow:['get_reference (once)','Needle painting / shaded petals: draw or trace a closed shape, then shade_long_short (colours centre first)','set_status before each multi-step phase: one short sentence in the user UI language','For hand digitising: view_reference (mm grid) → sample_colors → trace_outline (silhouette polygons) → add_path / shape_operation (intersect to clip; union/offset/subtract to cut the base) → shape_operation flatten → find_threads / update_objects settings.threadCode → set_sew_order → list_issues','get_design','list_issues','fix with apply_issue_fix / update_objects / transform_objects','find_threads then update_objects settings.threadCode to choose threads','set_sew_order to reorder listed objects within their existing slots; later layers sew on top, group colours to minimise jumps','capture_preview to look at the result','export_design'],
   };
 }
 
@@ -319,3 +320,54 @@ export function editPoints(o:StitchObject,ops:PointOp[],hoop:{width:number;heigh
   if(outside(extent,hoop))return {error:'That edit would put part of the object outside the hoop. Keep points within 0…width and 0…height mm.'};
   return {object:next};
 }
+
+// Long & short shading (lib/long-short.ts) in one step: colours run from the centre side
+// (or the start side for straight stitches) outwards; edges are the meeting points in %.
+export type ShadingSpec={colors:{threadCode?:string;color?:string}[];edges?:number[];radial?:boolean;center?:Point|null;angle?:number;blend?:number;variation?:number;stitchLength?:number;spacing?:number|null};
+export function shadeObject(p:Project,id:string,spec:ShadingSpec,newId:()=>string):{project:Project;layers:string[]}|{error:string}{
+  const o=p.objects.find(x=>x.id===id);
+  if(!o)return {error:`Unknown object id "${id}".`};
+  if(o.kind!=='fill'||!isClosedShape(o)||o.text)return {error:`"${o.name}" must be a closed fill shape (not text) for long & short shading.`};
+  if(o.locked)return {error:`"${o.name}" is locked. Pass locked:false to unlock it first.`};
+  const n=spec.colors?.length??0;
+  if(n<1||n>6)return {error:'Give 1 to 6 colours, centre side first.'};
+  const edges=spec.edges??Array.from({length:n-1},(_,i)=>Math.round(100*(i+1)/n));
+  const stops=[0,...edges,100];
+  if(edges.length!==n-1||edges.some(e=>!Number.isInteger(e))||stops.some((v,i)=>i&&v-stops[i-1]<4))return {error:`edges needs ${n-1} increasing whole percentages between 0 and 100, at least 4 apart.`};
+  const spec_=(key:keyof PatternParams)=>fillPatterns.find(f=>f.id==='longShort')!.params.find(f=>f.key===key)!;
+  const params:PatternParams={...(o.fillPattern==='longShort'?o.patternParams:{})};
+  if(spec.radial!==undefined)params.radial=spec.radial?1:0;
+  for(const [key,value] of [['blend',spec.blend],['variation',spec.variation]] as const){
+    if(value===undefined)continue;const f=spec_(key);
+    if(typeof value!=='number'||value<f.min||value>f.max||Math.abs((value-f.min)/f.step-Math.round((value-f.min)/f.step))>1e-7)return {error:`${key} must be ${f.min}–${f.max} in steps of ${f.step}.`};
+    params[key]=value;
+  }
+  if(spec.stitchLength!==undefined&&!(spec.stitchLength>=1&&spec.stitchLength<=6))return {error:'stitchLength must be 1–6 mm.'};
+  if(spec.spacing!==undefined&&spec.spacing!==null&&!(spec.spacing>=.2&&spec.spacing<=1))return {error:'spacing must be 0.2–1 mm (distance between thread lines).'};
+  const existing=shadeLayers(p,o),shade=n>1?o.shade??o.id:undefined;
+  let base:StitchObject={...o,fillPattern:'longShort',patternParams:params};
+  delete base.shade;delete base.angleGuides;
+  if(spec.center!==undefined){if(spec.center===null)delete base.center;else base.center=spec.center;}
+  if(spec.angle!==undefined)base.angle=spec.angle;
+  if(spec.stitchLength!==undefined)base.fillLength=spec.stitchLength;
+  if(spec.spacing!==undefined){if(spec.spacing===null)delete base.spacing;else base.spacing=spec.spacing;}
+  if(o.fillPattern!=='longShort')for(const k of ['underlay','pullCompensation','fillUnderlays','gradient','handStitch'] as const)delete base[k];
+  const layers:StitchObject[]=[];
+  for(let i=0;i<n;i++){
+    const own=existing[i],c=spec.colors[i];
+    let layer:StitchObject={...withBand(base,stops[i],stops[i+1]),id:own?.id??(i===0&&!existing.length?o.id:newId()),name:own?.name??(i?`${o.name} ${i+1}`:o.name),color:own?.color??o.color,...(own?.thread?{thread:own.thread}:{})};
+    if(!own?.thread)delete layer.thread;
+    if(shade)layer.shade=shade;
+    if(!c||(!c.threadCode&&!c.color))return {error:`Colour ${i+1} needs threadCode or color.`};
+    if(!c.threadCode&&!/^#[0-9a-f]{6}$/i.test(String(c.color)))return {error:`Colour ${i+1} must be #rrggbb.`};
+    const r=patchObject(layer,c.threadCode?{threadCode:c.threadCode}:{color:c.color,matchThread:true});
+    if('error' in r)return r;
+    layer=r.object;layers.push(layer);
+  }
+  // The outer layer is sewn first and the centre last, on top, where the existing set stood.
+  const remove=new Set([o.id,...existing.map(x=>x.id)]),at=Math.min(...[...remove].map(i=>p.objects.findIndex(x=>x.id===i)).filter(i=>i>=0));
+  const objects=p.objects.filter(x=>!remove.has(x.id));
+  objects.splice(Math.min(at,objects.length),0,...layers.toReversed());
+  return {project:{...p,objects},layers:layers.map(l=>l.id)};
+}
+

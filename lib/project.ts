@@ -27,7 +27,8 @@ export type StitchObject = {
   fillPattern?: FillPattern; patternParams?: PatternParams;
   crossStyle?: 'cross'|'upright'|'double'|'smyrna'|'half';
   crossSize?: number; threadCount?: number; coverage?: number; dense?: boolean; flipped?: boolean;
-  center?: Point; // Circular fill; unset uses the area centroid
+  center?: Point; // Circular and long & short fills; unset uses the area centroid
+  shade?: string; // long & short shading set (lib/long-short.ts): layers share outline and settings
   tolerance?: number; // explicit run tolerance; unset keeps legacy sampling
   spacing?: number; underlay?: Underlay; pullCompensation?: number;
   splitLength?: number; shortStitches?: boolean; // wide kinds; unset follows satinDefaults
@@ -130,10 +131,18 @@ export const fromFabric=(kind:Kind,key:Setting)=>key==='pullCompensation'?usesPu
 export const withFabric=(p:Project,fabric:Fabric):Project=>({...p,fabric});
 // railPaths: the compile payload's sampled block rails, equal length and paired by index.
 export type Resolved = StitchObject & Locks & {spacing: number; underlay: Underlay; pullCompensation: number; splitLength: number; shortStitches: boolean; railPaths?: [Point[], Point[]]; satinColumns?: {railPaths:[Point[],Point[]];character:number}[]; followStroke?: boolean};
+// Row or line spacing limits (mm) for a fill pattern; the compiler checks the same ranges.
+function spacingLimits(o:Pick<StitchObject,'kind'|'fillPattern'>):[number,number]{
+  if(o.kind!=='fill')return [.3,2];
+  return o.fillPattern==='circular'?[.05,50]:o.fillPattern==='sweepSatin'||o.fillPattern==='longShort'?[.2,1]:[.3,2];
+}
+// Long & short lines each carry one thread, so they sit closer than tatami rows; no underlay.
+export const longShortSpacing=.3;
 export function resolve(o:StitchObject, fabric:Fabric, locks:Locks):Resolved {
-  const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin';
+  const sweep=o.kind==='fill'&&o.fillPattern==='sweepSatin',longShort=o.kind==='fill'&&o.fillPattern==='longShort';
   const sweepDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:.32,underlay:'center',pullCompensation:.4,...satinDefaults,splitLength:sweepSatinSplit};
-  const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??(sweep?sweepDefaults[key]??profileDefault(o.kind,fabric,key):profileDefault(o.kind,fabric,key));
+  const longShortDefaults:Partial<Record<Exclude<Setting,keyof Locks>,number|Underlay|boolean>>={spacing:longShortSpacing,underlay:'none',pullCompensation:0};
+  const value=(key:Exclude<Setting,keyof Locks>)=>o[key]??(sweep?sweepDefaults[key]??profileDefault(o.kind,fabric,key):longShort?longShortDefaults[key]??profileDefault(o.kind,fabric,key):profileDefault(o.kind,fabric,key));
   const underlay=(value('underlay')??'none') as Underlay;
   return {...o, spacing: Number(value('spacing')??fabrics[fabric].fill), underlay, pullCompensation: Number(value('pullCompensation')??0), splitLength: Number(value('splitLength')??0), shortStitches: value('shortStitches')===true,
     tieIn: o.tieIn??locks.tieIn, tieOff: o.tieOff??locks.tieOff, lockSize: o.lockSize??locks.lockSize};
@@ -288,7 +297,8 @@ export function validProject(value: unknown): value is Project {
     if(o.fillPattern!==undefined&&!fillPatterns.some(p=>p.id===o.fillPattern))return false;
     if(o.patternParams!==undefined&&!validPatternParams(o.fillPattern,o.patternParams))return false;
     if(o.tolerance!==undefined&&(typeof o.tolerance!=='number'||!(o.tolerance>=.1&&o.tolerance<=1)))return false;
-    if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=(o.kind==='fill'&&o.fillPattern==='circular'?.05:o.kind==='fill'&&o.fillPattern==='sweepSatin'?.2:.3)&&o.spacing<=(o.kind==='fill'&&o.fillPattern==='circular'?50:o.kind==='fill'&&o.fillPattern==='sweepSatin'?1:2))))return false;
+    if(o.spacing!==undefined&&(typeof o.spacing!=='number'||!(o.spacing>=spacingLimits(o)[0]&&o.spacing<=spacingLimits(o)[1])))return false;
+    if(o.shade!==undefined&&(typeof o.shade!=='string'||!o.shade||o.shade.length>64||o.fillPattern!=='longShort'))return false;
     if(o.pullCompensation!==undefined&&(typeof o.pullCompensation!=='number'||!(o.pullCompensation>=0&&o.pullCompensation<=1)))return false;
     if(o.underlay!==undefined&&!(o.kind==='fill'&&o.fillPattern==='sweepSatin'?underlayOptions('satin'):underlayOptions(o.kind)).includes(o.underlay))return false;
     if(o.crossStyle!==undefined&&!['cross','upright','double','smyrna','half'].includes(o.crossStyle))return false;

@@ -13,3 +13,4 @@ export {LoadingState} from './loading-state';
 export {EmptyState} from './empty-state';
 export {StatusBar,type StatusTone} from './status-bar';
 export {HelpText} from './help-text';
+export {BandSlider,type Band} from './band-slider';

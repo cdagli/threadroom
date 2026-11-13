@@ -6,11 +6,12 @@ import {Loading} from './panel-loading';
 import {useStableCallback} from './use-stable-callback';
 const PatternPicker=dynamic(()=>import('./pattern-picker'),{loading:Loading});
 import {type PointerEvent,type ReactNode} from 'react';
-import {fillUnderlayPreset,hasCrossStyle,fillCenter,underlayNames,underlayOptions,type StitchObject,type Resolved,type FillUnderlay,type Setting,type FillGradient} from '@/lib/project';
+import {longShortSpacing,fillUnderlayPreset,hasCrossStyle,fillCenter,underlayNames,underlayOptions,type StitchObject,type Resolved,type FillUnderlay,type Setting,type FillGradient} from '@/lib/project';
 import type {Key} from '@/lib/i18n';
 import {fillPatterns} from '@/lib/fill-patterns';
 import {setGuidedAngle,sweeping} from '@/lib/angle-guides';
 import {GuideControls,DensityControl,lockedAngle,type AngleEditing} from './angle-settings';
+import {LongShortSettings,type Shading} from './long-short-settings';
 export function CrossSettings({item,onChange}:{item:StitchObject;onChange:(patch:Partial<StitchObject>)=>void}) {
   const {t}=useT(),legacy=item.kind==='cross'&&!hasCrossStyle(item);
   return <><label><span className="field-heading">{t("Cross style")}</span><Select value={legacy?'rows':item.crossStyle??'cross'} onChange={e=>onChange(e.target.value==='rows'?{crossStyle:undefined,crossSize:undefined,threadCount:undefined,coverage:undefined,dense:undefined,flipped:undefined}:{crossStyle:e.target.value as StitchObject['crossStyle']})}>{item.kind==='cross'&&<option value="rows">{t("Legacy rows")}</option>}{([['cross','Cross'],['upright','Upright'],['double','Double'],['smyrna','Smyrna'],['half','Half']] as const).map(([v,label])=><option key={v} value={v}>{t(label)}</option>)}</Select></label>{!legacy&&<>{item.kind==='cross'&&<div className="setting-grid">{fillPatterns.find(p=>p.id==='crossStitchFill')!.params.map(f=><label key={f.key}><span className="field-heading">{t(f.label)}</span><Input type="number" min={f.min} max={f.max} step={f.step} value={item[f.key as 'crossSize']??f.default} onChange={e=>{const n=Number(e.target.value);if(e.target.value!==''&&n>=f.min&&n<=f.max&&Math.abs((n-f.min)/f.step-Math.round((n-f.min)/f.step))<1e-7)onChange({[f.key]:n});}}/></label>)}</div>}{(['flipped','dense'] as const).map(key=><label className="check-label" key={key}><Input type="checkbox" checked={item[key]??false} onChange={e=>onChange({[key]:e.target.checked})}/>{t(key==='flipped'?'Flipped':'Dense')}</label>)}</>}</>;
@@ -59,7 +60,7 @@ type NumberField={key:'spacing'|'pullCompensation'|'splitLength';hint:Key;label:
 
 // Fill settings, grouped the way a beginner thinks about a fill:
 // Pattern (what it looks like) → Direction → Density → Advanced (fabric technicalities).
-export function FillSettings({item,resolved,onChange,source,hoop,angles,baseSpacing,finish}:{item:StitchObject;resolved:Resolved;onChange:(patch:Partial<StitchObject>)=>void;source:(key:Setting)=>ReactNode;hoop:{width:number;height:number};angles?:AngleEditing;baseSpacing:number;finish:ReactNode}) {
+export function FillSettings({item,resolved,onChange,source,hoop,angles,baseSpacing,finish,shading}:{item:StitchObject;resolved:Resolved;onChange:(patch:Partial<StitchObject>)=>void;source:(key:Setting)=>ReactNode;hoop:{width:number;height:number};angles?:AngleEditing;baseSpacing:number;finish:ReactNode;shading?:Shading}) {
   const changePattern=useStableCallback(onChange);
   const {t,formatNumber}=useT(),sweep=sweeping(item);
   const stream=item.fillPattern==='streamlines',cross=item.fillPattern==='crossStitchFill',circular=item.fillPattern==='circular',satin=item.fillPattern==='sweepSatin';
@@ -70,6 +71,13 @@ export function FillSettings({item,resolved,onChange,source,hoop,angles,baseSpac
   const locked=lockedAngle(item,t),guideCount=item.angleGuides?.length??0;
   const rowRange:[number,number]=satin?[.2,1]:[.3,2],rows=!cross&&!stream&&!circular;
   const pattern=fillPatterns.find(p=>p.id===(item.fillPattern??'even'));
+  if(item.fillPattern==='longShort'&&shading)return <>
+    <Section id="fill-pattern" title={t("Pattern")} summaryExtra={pattern&&t(pattern.name)} defaultOpen>
+      <div className="settings-core"><PatternPicker value={item.fillPattern} params={item.patternParams} onChange={changePattern}/></div>
+    </Section>
+    <LongShortSettings item={item} onChange={onChange} shading={shading} density={<DensityChoice spacing={resolved.spacing} base={longShortSpacing} min={.2} max={1} onChange={spacing=>onChange({spacing})}/>} angle={<StitchAngle value={item.angle} onChange={angle=>onChange({angle})}/>}/>
+    <Section id="advanced" title={t("Advanced")}>{finish}</Section>
+  </>;
   return <>
     <Section id="fill-pattern" title={<>{t("Pattern")}{item.text?.autoStitch&&<Hint text={t("Chosen automatically for this letter size")}/>}</>} summaryExtra={pattern&&t(pattern.name)} defaultOpen>
       <div className="settings-core">

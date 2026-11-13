@@ -321,3 +321,7 @@ button.order{border:0;background:transparent;padding:2px 0;border-radius:3px;tex
 .login-card label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:12px}
 .login-card .login-error{color:var(--danger)}
 .new-project-field{border:0;margin:0 0 4px;padding:0;min-width:0}.new-project-field legend{font-size:12px;padding:0;margin-bottom:8px}.new-project-hoops{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.hoop-preview{display:block;width:64px;height:48px;overflow:visible}.io-dialog .optional{color:var(--text-muted)}
+@layer app {
+.center-handle{cursor:move}.design-canvas .center-handle:focus{outline:none}.center-handle:focus-visible circle:last-of-type{stroke-width:2.5px;vector-effect:non-scaling-stroke}
+.long-short-bands{margin-bottom:12px}.long-short-actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}.long-short-slider{display:block;margin-bottom:14px}.long-short-slider input{width:100%}
+}

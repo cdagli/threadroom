@@ -112,7 +112,8 @@ def validate(project):
                 number(point[1], 0, height, "Y position")
         sweep = obj["kind"] == "fill" and obj.get("fillPattern") == "sweepSatin"
         circular = obj["kind"] == "fill" and obj.get("fillPattern") == "circular"
-        number(obj.get("spacing"), .05 if circular else .2 if sweep else .3, 50 if circular else 1 if sweep else 2, "Stitch spacing")
+        long_short = obj["kind"] == "fill" and obj.get("fillPattern") == "longShort"
+        number(obj.get("spacing"), .05 if circular else .2 if sweep or long_short else .3, 50 if circular else 1 if sweep or long_short else 2, "Stitch spacing")
         number(obj.get("length", 2.5), 0.5, 3, "Stitch length")
         for key, lo, hi in (("fillLength", 1, 6), ("handStitch", 0, 5)):
             if key in obj:
@@ -1751,7 +1752,7 @@ def covered_by(line, blocks):
 # Fill engines whose spacing is not a pitch between forward rows: satin fill halves its own
 # same-rail pitch, the others space crosses or streamlines directly. A circular fill's two
 # interleaved spirals are its outward and return rows.
-ROW_PITCH_OWN = ("sweepSatin", "crossStitchFill", "streamlines")
+ROW_PITCH_OWN = ("sweepSatin", "crossStitchFill", "streamlines", "longShort")
 
 
 def plan_object(obj, at, target):
@@ -1767,7 +1768,7 @@ def plan_object(obj, at, target):
             # spacing is between holes on one rail: 0.4 mm lays a thread every 0.2 mm.
             gradient = obj.get("gradient")
             obj = {**obj, "spacing": obj["spacing"]/2, **({"gradient": {**gradient, "endSpacing": gradient["endSpacing"]/2}} if gradient else {})}
-        if kind == "fill" and obj.get("angleGuides") and obj.get("fillPattern") not in ("streamlines", "circular", "crossStitchFill"):
+        if kind == "fill" and obj.get("angleGuides") and obj.get("fillPattern") not in ("streamlines", "circular", "crossStitchFill", "longShort"):
             # One guide sets the angle; two or more bend the rows (embroidery/sweep.py).
             from . import sweep
             guides = sweep.usable(obj)
@@ -1783,6 +1784,9 @@ def plan_object(obj, at, target):
         if (kind == "fill" and obj.get("fillPattern") == "crossStitchFill") or (kind == "cross" and any(k in obj for k in ('crossStyle','crossSize','threadCount','coverage','dense','flipped'))):
             from .cross import route_cross_styles
             return route_cross_styles(obj, at, entry, exit or target)
+        if kind == "fill" and obj.get("fillPattern") == "longShort":
+            from .longshort import route_long_short
+            return route_long_short(obj, at, entry, exit or target)
         if kind == "fill" and obj.get("fillPattern") == "streamlines":
             from .streamlines import route_streamlines
             return route_streamlines(obj, at, entry, exit or target)
@@ -2112,7 +2116,9 @@ def compile_project(project, *, cache=None):
         if valid_thread(reference, thread.hex_color()):
             entry["thread"] = reference
         threads.append(entry)
-    block, cut = 0, False
+    # PEC jumps reach 204.7 mm; the writer splits a longer trimmed jump (300 × 200 hoop)
+    # and flags every piece as a trim, so trims with no stitch between them are one cut.
+    block, cut, trimmed = 0, False, False
     last = [width/2, height/2]
     sewn = []
     max_length = 0
@@ -2132,8 +2138,8 @@ def compile_project(project, *, cache=None):
             counts["colorChanges"] += 1
             continue
         if flag == TRIM:
-            counts["trims"] += 1
-            cut = True
+            counts["trims"] += not trimmed
+            cut = trimmed = True
             continue
         if flag not in (STITCH, JUMP):
             continue
@@ -2143,6 +2149,7 @@ def compile_project(project, *, cache=None):
         commands.append({"objectIndex": owner, "objectId": str(objects[owner].get("id", owner)), "fromObjectId": str(objects[last_owner].get("id", last_owner)), "x": p[0], "y": p[1], "fromX": last[0], "fromY": last[1], "type": kind, "block": block, "trim": cut and flag == JUMP,
                          "travel": flag == STITCH and (round(last[0], 1), round(last[1], 1), round(p[0], 1), round(p[1], 1)) in connectors})
         if flag == STITCH:
+            trimmed = False
             if t[3] == "lock":
                 commands[-1]["tie"] = t[4]
             if abs(p[0]-t[0]) < .001 and abs(p[1]-t[1]) < .001:

@@ -3,7 +3,7 @@ import {memo,type RefObject} from 'react';
 import {flushSync} from 'react-dom';
 import {useWebMCP} from '@/lib/use-webmcp';
 import {around,centre,selectionBounds,translate,type Align,type Matrix} from '@/lib/editing';
-import {designSummary,editablePoints,editPoints,en,englishMessage,findThreads,issueCounts,issueReport,makePath,makeShape,menuCommands,objectDetail,objectLimit,patchObject,reference,setSewOrder,shapeKinds,stitchKinds,checked,validateArgs,type MenuCommand,type ObjectPatch,type PathMode,type PointOp,type Schema} from '@/lib/agent-tools';
+import {designSummary,editablePoints,editPoints,en,englishMessage,findThreads,issueCounts,issueReport,makePath,makeShape,menuCommands,objectDetail,objectLimit,patchObject,reference,shadeObject,type ShadingSpec,setSewOrder,shapeKinds,stitchKinds,checked,validateArgs,type MenuCommand,type ObjectPatch,type PathMode,type PointOp,type Schema} from '@/lib/agent-tools';
 import {defaultLocks,defaultTrimJump,demo,fabrics,hoops,lockLimits,normalizeGroups,validProject,withFabric,type Compiled,type Fabric,type Kind,type StitchObject,type Point,type Project,type RefImage} from '@/lib/project';
 import {defaultPathSettings,mapToPath,unlinkPath,updatePathSettings} from '@/lib/map-to-path';
 import type {PathSettings} from '@/lib/path-binding';
@@ -259,6 +259,21 @@ const tools:Tool[]=[
       const r=checked({...before,objects});if('error' in r)throw new Error(r.error);
       await act(api,a=>a.commit(r.project));
       notify(api,'agentUpdated.other',{count:list.length});return outcome(api,before);
+    }},
+  {name:'shade_long_short',inputSchema:obj({id:{type:'string',description:'A closed fill shape, or any layer of an existing shading set'},
+      colors:{type:'array',minItems:1,maxItems:6,items:obj({threadCode:{type:'string',description:'Brother thread code (preferred)'},color:{type:'string',description:'#rrggbb, snapped to the nearest Brother thread'}}),description:'Centre side first (start side for straight stitches), outer edge last'},
+      edges:{type:'array',items:{type:'integer'},description:'Where neighbouring colours meet, % from the centre side, increasing, ≥4 apart; default even bands'},
+      radial:{type:'boolean',description:'true (default): stitches aim at center, for flowers/round shapes; false: straight at angle, for leaves/stripes'},
+      center:{...pt,type:['array','null'],description:'[x, y] mm the radial stitches aim at; null = shape centroid'},angle:{type:'number',description:'straight stitch angle °'},
+      blend:{type:'number',description:'mm the colours split into each other (0.5–8, step 0.5; default 3)'},variation:{type:'number',description:'0–100 % stagger, step 5 (default 60; 0 = regular long/short)'},
+      stitchLength:{type:'number',description:'mm, 1–6 (default 4)'},spacing:{type:['number','null'],description:'mm between thread lines, 0.2–1 (default 0.3)'}},['id','colors']),
+    description:'Long & short stitch (needle painting): fills a closed shape with long staggered stitches and shades it in 1–6 colours whose stitches split into each other, like hand embroidery (e.g. a flower: pale centre, red middle, tan petals). Replaces the shape, or an existing shading set, with one layer per colour sharing the outline; the outer layer is sewn first. Run it again on any layer to change colours, edges or settings; update_objects on one layer recolours it. One undo step.',
+    run:async(api,{id,...spec})=>{
+      needDraftFree(api);const before=now(api).project();
+      const r=shadeObject(before,String(id),spec as ShadingSpec,()=>crypto.randomUUID());if('error' in r)throw new Error(r.error);
+      const c=checked(r.project);if('error' in c)throw new Error(c.error);
+      await act(api,a=>a.commit(c.project));
+      notify(api,'agentUpdated.other',{count:r.layers.length});return outcome(api,before,{layers:r.layers});
     }},
   {name:'add_shape',inputSchema:obj({shape:{type:'string',enum:shapeKinds},center:pt,width:{type:'number',description:'mm'},height:{type:'number',description:'mm, rect/oval/rounded only (default = width)'},kind:{type:'string',enum:stitchKinds,description:'stitch kind (default tatami fill)'},color:{type:'string'},name:{type:'string'}},['shape','center','width']),
     description:'Adds a basic shape (circle, rect, star, triangle, diamond, hexagon, heart) centred at center with the given size, filled with tatami unless kind says otherwise. The shape must fit inside the hoop.',

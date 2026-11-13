@@ -1,7 +1,7 @@
 import {type Key} from './i18n';
 import table from '../embroidery/fill-patterns.json';
 export type FillPattern=(typeof table)[number]['id'];
-export type PatternParams={steps?:number;amplitude?:number;intensity?:number;tightness?:number;rotations?:number;stepHeight?:number;stepsPerFlight?:number;chaos?:number;density?:number;separation?:number;crossSize?:number;threadCount?:number;coverage?:number;cellSize?:number};
+export type PatternParams={steps?:number;amplitude?:number;intensity?:number;tightness?:number;rotations?:number;stepHeight?:number;stepsPerFlight?:number;chaos?:number;density?:number;separation?:number;radial?:number;variation?:number;blend?:number;bandStart?:number;bandEnd?:number;crossSize?:number;threadCount?:number;coverage?:number;cellSize?:number};
 export type PatternParam={key:keyof PatternParams;label:Key;default:number;min:number;max:number;step:number};
 export const fillPatterns=table.map(p=>({...p,name:p.name as Key,params:('params' in p?p.params:[]) as PatternParam[]}));
 export function validPatternParams(id:FillPattern|undefined,params:unknown):params is PatternParams {
@@ -69,6 +69,8 @@ export function patternPreview(id:FillPattern,params?:PatternParams):[number,num
   if(id==='streamlines')return Array.from({length:12},(_,i)=>Array.from({length:15},(_,j)=>[2+j*38/14,Math.max(2,Math.min(26,3+i*1.85+1.5*Math.sin(j/3+i/4)))]));
   if(id==='crossStitchFill')return Array.from({length:12},(_,i)=>{const x=3+i%4*9,y=3+Math.floor(i/4)*8;return [[x,y],[x+7,y+6],[x+3.5,y+3],[x+7,y],[x,y+6]];});
   if(id==='circular')return Array.from({length:12},(_,i)=>Array.from({length:9},(_,j)=>{const a=(i+j/8)*Math.PI/3,r=1+2*(i+j/8);return [21+Math.cos(a)*r*.75,14+Math.sin(a)*r*.48];}));
+  // Rays toward the centre with staggered needle points: long & short's brushed look.
+  if(id==='longShort')return Array.from({length:16},(_,i)=>{const a=i/16*2*Math.PI,ends=i%2?[3,7.5,12.5]:[3,5.5,10,12.5];return ends.map(r=>[21+Math.cos(a)*r*1.5,14+Math.sin(a)*r*.95] as [number,number]);});
   if(id==='sweepSatin')return Array.from({length:12},(_,i)=>[[3+i*3,i%2?25:3],[3+(i+1)*3,i%2?3:25]]);
   const {rows,shear}=patternCycle(id,4,.2,params),count=Math.max(12,rows.length),height=(count-1)*.2,width=Math.max(...rows.map(([,ls])=>ls.reduce((a,b)=>a+b,0)*1.5),height*38/24),scale=38/width;
   return Array.from({length:count},(_,row)=>{const [offset,lengths]=rows[row%rows.length],period=lengths.reduce((a,b)=>a+Math.max(.01,b),0),points:[number,number][]=[];let prefix=0;

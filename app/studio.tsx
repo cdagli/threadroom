@@ -13,6 +13,8 @@ import {StitchOverlays,OverlayControls} from './stitch-overlays';
 import {measurePoint} from '@/lib/measure';
 import {MapToPath} from './map-to-path-control';
 import {syncPathBindings} from '@/lib/map-to-path';
+import {addShade,isLongShort,isRadial,removeShade,setShadeEdge,shadeLayers,syncShades} from '@/lib/long-short';
+import type {Shading} from './long-short-settings';
 import {useT} from './i18n';
 import {TransformBox,SelectionTools,CanvasRulers,ShortcutHelp} from './editing-controls';
 import {around,centre,translate,handlePoint,scaleGesture,rotationGesture,selectionBounds,transformSelection,alignSelection,marqueeIds,pickObject,snapBounds,copySelection,readClipboard,pasteSelection,type ScaleHandle,type SnapGuide,type Matrix,type Align} from '@/lib/editing';
@@ -23,7 +25,7 @@ import {Fragment, Profiler, useEffect, useLayoutEffect, useRef, useState, useMem
 
 import {dragHistory, frameQueue, keyBurst} from '@/lib/drag';
 import {NewProjectDialog} from './new-project-dialog';
-import {migrateProject, blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
+import {fillCenter, migrateProject, blankProject, bounds, normalizeGroups, groupObjects, ungroupObjects, moveObjects, moveGroup, defaultLocks, defaultTrimJump, demo, fromFabric, hoops, hasCrossStyle, isLockSetting, isRopeKind, ropeDefaults, ropeLimits, usesSplit, lockLimits, lockNames, isFillKind, isWideKind, kindNames, object, pathData, resolve, satinLimits, underlayNames, underlayOptions, usesPull, usesShortStitches, usesSpacing, validProject, type Compiled, type Fabric, type Kind, type Lock, type Locks, type Point, type Project, type RefImage, type Setting, type StitchObject, type Underlay} from '@/lib/project';
 import {layoutObject as layoutTextObject, curvePoints, curveRing, setCorner, isCorner, blockOutline, reclose, isClosedShape, stitchGroups, changeStitchKind, moveGeometry, geometryPayload, closestInsertion, insertionHandles, insertGeometryPoint, removeGeometryPoint, routeEnds, withEnd} from '@/lib/curves';
 import {draftClick,completeDraft,movedForDrawing,snapAngle,lockAxis,type DraftState} from '@/lib/drawing';
 import {clientToWorld, fitViewport, keepViewportOnResize, panViewport, viewportScale, worldToClient, zoomViewport, type Viewport} from '@/lib/viewport';
@@ -57,7 +59,7 @@ import {brandLabel,defaultThread,defaultThreadColour,ensureThreads,loadThreads,n
 import {threadLabel} from './thread-label';
 import {readThreadBrand} from './use-thread-brand';
 import LayersPanel from './layers-panel';
-import {IssueMarker, EndHandles, DraftOverlay, ShapeOverlay, MeasureOverlay, NeedleMarker} from './canvas-overlays';
+import {IssueMarker, EndHandles, CenterHandle, DraftOverlay, ShapeOverlay, MeasureOverlay, NeedleMarker} from './canvas-overlays';
 import {CanvasObject} from './canvas-object';
 import {PointHandles} from './point-handles';
 import {useStableCallback} from './use-stable-callback';
@@ -216,7 +218,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const agentApi=useRef<AgentApi>(null!);
   const revision=useRef(0), playback=useRef(0),playRequest=useRef(0);
   const compiling=useRef<{version:number;controller:AbortController;promise:Promise<Compiled|null>}|null>(null);
-  const drag=useRef<{id:string;start:Point;source:StitchObject;before:Project;ids?:string[];point?:[number,number];end?:'entry'|'exit';moved?:boolean}|null>(null);
+  const drag=useRef<{id:string;start:Point;source:StitchObject;before:Project;ids?:string[];point?:[number,number];end?:'entry'|'exit'|'center';moved?:boolean}|null>(null);
   const panDrag=useRef<{start:Point;source:Point;button?:number;target?:string|null;press?:{start:Point;detail:number;target:Element};moved?:boolean}|null>(null);
   const [menu,setMenu]=useState<{x:number;y:number;entries:MenuEntry[]}|null>(null);
   const moveQueue=useRef<ReturnType<typeof frameQueue>|null>(null);
@@ -248,6 +250,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const addPreview=editing&&pointMode==='add'&&item&&hover?closestInsertion(item,hover):null;
   const canUndoDraft=hasDraft&&draft.length>(continuation?.base||0);
   const selectedIndex=project.objects.indexOf(item!),previousObject=project.objects[selectedIndex-1],nextObject=project.objects[selectedIndex+1];
+  const centerPoint=item&&item.kind==='fill'&&(item.fillPattern==='circular'||isLongShort(item)&&isRadial(item))?item.center??fillCenter(item):null;
   const ends=useMemo(()=>tool==='select'&&item&&!item.hidden&&!item.locked&&!multi&&!editing&&!hasDraft&&!continuation?routeEnds(project,item.id):null,[tool,item,multi,editing,hasDraft,continuation,previousObject,nextObject,project.fabric,project.locks]);
 
   useEffect(()=>{setActivePoint(null);setPointMode('move');},[selected,editPoints]);
@@ -432,7 +435,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
 
   function commit(next:Project, label='', merge?:string) {
     // No custom colours: anything arriving without a thread (imports, agent edits) snaps to Brother.
-    try{next=ensureThreads(syncPathBindings(migrateImages(normalizeGroups(next)),current.current));}catch(e){setError(errorText(e,t,'Map to path exceeds the hoop or design limits.'));return;}
+    try{next=ensureThreads(syncShades(syncPathBindings(migrateImages(normalizeGroups(next)),current.current),current.current));}catch(e){setError(errorText(e,t,'Map to path exceeds the hoop or design limits.'));return;}
     // Typing and slider drags coalesce into one undo step per field.
     const now=performance.now(),same=!!merge&&lastMerge.current?.key===merge&&now-lastMerge.current.time<1500;
     lastMerge.current=merge?{key:merge,time:now}:null;
@@ -732,7 +735,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   function startDrag(d:Omit<NonNullable<typeof drag.current>,'before'>,e:ReactPointerEvent<SVGSVGElement>){endDrag();setSelectionDragging(true);drag.current={...d,before:current.current};dragUndo.current.begin(current.current);capture(e);}
   function endDrag(){moveQueue.current?.flush();setSelectionDragging(false);drag.current=null;transformDrag.current=null;setSnapGuides(g=>g.length?[]:g);lastMerge.current=null;const before=dragUndo.current.end();if(before){setHistory(h=>[...h.slice(-29),before]);setFuture([]);}}
   endDragRef.current=endDrag;
-  function dragTo(next:Project){try{next=syncPathBindings(normalizeGroups(next),drag.current?.before??transformDrag.current?.before??current.current);}catch{return;}dragUndo.current.update(next);current.current=next;setProject(next);invalidate();}
+  function dragTo(next:Project){try{const before=drag.current?.before??transformDrag.current?.before??current.current;next=syncShades(syncPathBindings(normalizeGroups(next),before),before);}catch{return;}dragUndo.current.update(next);current.current=next;setProject(next);invalidate();}
   function pointerDown(e:ReactPointerEvent<SVGSVGElement>){
     closePanel('draw-tools');closePanel('shape-tools');
     e.currentTarget.focus({preventScroll:true});
@@ -794,7 +797,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
         setSelection(ids=>selectCanvasIds(current.current,ids,source.id,true,enteredGroup.current));anchor.current=source.id;setEditPoints(false);return;
       }
       const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]'),end=target.closest('[data-end]')?.getAttribute('data-end');
-      if(ends&&item&&(end==='entry'||end==='exit')){startDrag({id:item.id,start:p,source:current.current.objects.find(o=>o.id===item.id)??item,end},e);return;}
+      if(ends&&item&&(end==='entry'||end==='exit'||end==='center'&&centerPoint)){startDrag({id:item.id,start:p,source:current.current.objects.find(o=>o.id===item.id)??item,end},e);return;}
       if(editing&&item){
         if(insertion){const handle=handles.find(h=>h.ring===Number(insertion.getAttribute('data-ring'))&&h.index===Number(insertion.getAttribute('data-insert')));if(handle)addPoint(handle.ring,handle.index,handle.point,e.button===0);return;}
         // A point within reach wins over whatever shape is under the cursor.
@@ -890,7 +893,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       const q=d.point&&(e.ctrlKey||e.metaKey)?lockAxis(d.start,p):p;let dx=q[0]-d.start[0],dy=q[1]-d.start[1];
       if(!d.moved&&Math.hypot(dx,dy)*canvasScale<(d.point?3:.5))return;
       d.moved=true;
-      if(d.end){const next=withEnd(d.source,d.end,p);dragTo({...d.before,objects:d.before.objects.map(o=>o.id===d.id?next:o)});return;}
+      if(d.end){const next=d.end==='center'?{...d.source,center:[Math.max(0,Math.min(hoop.width,p[0])),Math.max(0,Math.min(hoop.height,p[1]))] as Point}:withEnd(d.source,d.end,p);dragTo({...d.before,objects:d.before.objects.map(o=>o.id===d.id?next:o)});return;}
       const ids=d.point?[d.id]:d.ids??[d.id];
       if(!d.point){const b=selectionBounds(d.before,ids),snap=snapBox({...b,x:b.x+dx,y:b.y+dy},d.before,ids,false,e.ctrlKey||e.metaKey);dx+=snap.delta[0];dy+=snap.delta[1];setSnapGuides(snap.guides);}
       const objects=d.before.objects.map(o=>ids.includes(o.id)?moveGeometry(o,([x,y],ri,i)=>d.point&&(d.point[0]!==ri||d.point[1]!==i)?[x,y]:[x+dx,y+dy]):o);
@@ -1067,6 +1070,12 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     if(textFocus.current&&textArea.current){textArea.current.focus();textArea.current.select();textFocus.current=false;}
   });
   const resetEnd=useStableCallback((key:'entry'|'exit')=>updateObject({[key]:undefined}));
+  const resetCenter=useStableCallback(()=>updateObject({center:undefined}));
+  // Long & short shading: colour layers that share one outline (lib/long-short.ts).
+  const shading:Shading|undefined=item&&isLongShort(item)?{layers:shadeLayers(project,item),onSelect:setSelected,
+    onAdd:()=>{const added=addShade(project,item.id,crypto.randomUUID());if(added){commit(added.project,t('Shade colour added. Choose its thread above.'));setSelected(added.id);}},
+    onRemove:()=>{const layers=shadeLayers(project,item),i=layers.indexOf(item),neighbour=layers[i+1]??layers[i-1];commit(removeShade(project,item.id));if(neighbour)setSelected(neighbour.id);},
+    onEdge:(index,value)=>{if(item.shade)commit(setShadeEdge(project,item.shade,index,value),'',`shade-edge-${item.shade}-${index}`);}}:undefined;
   const stableAddPoint=useStableCallback(addPoint),stableSavePoint=useStableCallback(savePointChange),stableRemovePoint=useStableCallback(removePoint);
   const sewn=compiled?Math.floor(compiled.commands.length*progress):0;
   const staleKey=JSON.stringify([...staleIds].sort());
@@ -1205,7 +1214,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
               {tool==='select'&&!editing&&!angles&&!hasDraft&&items.some(o=>!o.hidden&&!o.locked)&&<TransformBox box={selectionBox} canvasScale={canvasScale}/>}
               {tool==='select'&&!angles&&!hasDraft&&!selection.length&&imageBox&&<TransformBox box={imageBox} canvasScale={canvasScale}/>}
               {snapGuides.length>0&&<g className="snap-guides" pointerEvents="none" strokeWidth={1/canvasScale}>{snapGuides.map(g=>{const m=3/canvasScale,end=(v:number)=>g.axis==='x'?`M${g.value-m} ${v-m}l${2*m} ${2*m}m0 ${-2*m}l${-2*m} ${2*m}`:`M${v-m} ${g.value-m}l${2*m} ${2*m}m0 ${-2*m}l${-2*m} ${2*m}`;return <path key={g.axis} d={(g.axis==='x'?`M${g.value} ${g.from}V${g.to}`:`M${g.from} ${g.value}H${g.to}`)+end(g.from)+end(g.to)}/>;})}</g>}
-              {ends&&!angles&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}
+              {ends&&!angles&&<EndHandles ends={ends} canvasScale={canvasScale} onReset={resetEnd}/>}{ends&&!angles&&centerPoint&&<CenterHandle point={centerPoint} canvasScale={canvasScale} onReset={resetCenter}/>}
               {addPreview&&addPreview.distance*canvasScale<16&&<circle cx={addPreview.point[0]} cy={addPreview.point[1]} r={5/canvasScale} fill="var(--selected)" stroke="var(--accent)" strokeWidth={1.5/canvasScale} pointerEvents="none"/>}
               {draft.length>0&&<DraftOverlay draft={draft} displayDraft={displayDraft} closeable={tool==='open'||tool==='closed'||tool==='holes'} closeHover={closeHover} color={drawColour?.color??(item?.thread?item.color:defaultThreadColour)} hover={bandHover} drawing={drawing} freehand={tool==='brush'} brushWidth={tool==='brush'&&brushId!=='running'&&brushId!=='bean'?brushSizes[brushId]*(brushId==='rope'?2:1):undefined} curved={pathTool(tool)} corners={corners} canvasScale={canvasScale}/>}
               {tool==='knife'&&shapeDraft&&<KnifeOverlay a={shapeDraft.start} b={shapeDraft.square?snapAngle(shapeDraft.start,shapeDraft.end):shapeDraft.end} canvasScale={canvasScale}/>}
@@ -1280,7 +1289,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
           <Section id="thread" title={<>{t("Thread colour")}<Hint text={t('hint.thread')}/></>} summaryExtra={<span className="thread-summary"><i style={{background:item.color}}/>{item.thread?`${item.thread.code}${item.thread.brand===defaultThread.brand?'':` · ${brandLabel(item.thread.brand)}`}`:item.color.toUpperCase()}</span>}>
           <ThreadPicker heading={false} project={project} selection={selection} onChange={commit} onPick={pickDrawColour} eyedropper={eyedropper}/>
           </Section>
-          {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop} angles={{active:angles,onToggle:toggleAngles}} baseSpacing={baseSpacing} finish={startFinish}/>}
+          {item.kind==='fill'&&<FillSettings item={item} resolved={resolved!} onChange={updateObject} source={source} hoop={hoop} angles={{active:angles,onToggle:toggleAngles}} baseSpacing={baseSpacing} finish={startFinish} shading={shading}/>}
           {item.kind!=='fill'&&<>
           <Section id="stitch-settings" title={t("Stitch settings")} defaultOpen>
           {!(item.kind==='cross'&&hasCrossStyle(item))&&<div className="setting-grid"><label><span className="field-heading">{t("Length · mm")}<Hint text={t("hint.stitchLength")}/></span><Input type="number" min=".5" max="3" step=".1" value={item.length} onChange={e=>{const n=Number(e.target.value);if(n>=.5&&n<=3)updateObject({length:n});}}/></label>{item.kind==='cross'&&<label htmlFor="spacing-input"><span className="field-heading">{item.kind==='cross'?t("Cross size"):t("Spacing")} · mm<Hint text={t("hint.spacing")}/>{source('spacing')}</span><Input id="spacing-input" type="number" min=".3" max="2" step=".05" value={resolved!.spacing} onChange={e=>{const n=Number(e.target.value);if(n>=.3&&n<=2)updateObject({spacing:n});}}/></label>}</div>}

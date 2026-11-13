@@ -5,7 +5,7 @@ import type {AngleGuide, Point, StitchObject} from './project';
 export const guideLimits={count:8,minLength:.5,trigger:[.1,1] as const,defaultTrigger:.5};
 export type GuideMode='angles'|'flow';
 export function guideMode(o:StitchObject):GuideMode|null {
-  if(o.kind!=='fill'||o.fillPattern==='circular'||o.fillPattern==='crossStitchFill')return null;
+  if(o.kind!=='fill'||o.fillPattern==='circular'||o.fillPattern==='crossStitchFill'||o.fillPattern==='longShort')return null;
   return o.fillPattern==='streamlines'?'flow':'angles';
 }
 /** @test */ export const guideAngle=(g:AngleGuide)=>Math.atan2(g.b[1]-g.a[1],g.b[0]-g.a[0])*180/Math.PI;

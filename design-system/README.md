@@ -43,6 +43,7 @@ import {Button, Icon, IconButton, Input, Toolbar} from '@/design-system';
 | `StatusBar` | Plain-text polite live status with a label and working/done/error tones; the caller owns expiry |
 | `LoadingState` | Accessible loading indicator with an optional title; respects reduced motion |
 | `EmptyState` | Introductory surface with an icon, title, description, actions and optional hint |
+| `BandSlider` | Coloured bands on one track with draggable meeting points (sliders: arrows ±1, Shift ±10); each band is a button that selects it |
 
 Button variants are `primary`, `secondary`, `ghost`, `soft`, `danger`, and `link`. Use `item` for content-rich choice rows and `swatch` for document dye colours. Sizes are `sm` (28px), `md` (32px), `lg` (40px), and `xl` (44px). Text can wrap when space is limited. Keep all actions in a toolbar at the same size.
 

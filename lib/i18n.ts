@@ -1448,6 +1448,30 @@ export const en={
   "Loading threads…": "Loading threads…",
   "{count} colours": "{count} colours",
   "Match whole design to {brand}": "Match whole design to {brand}",
+  "Long & short": "Long & short",
+  "Toward the centre": "Toward the centre",
+  "Natural variation · %": "Natural variation · %",
+  "Blend width · mm": "Blend width · mm",
+  "Band start · %": "Band start · %",
+  "Band end · %": "Band end · %",
+  "Shading": "Shading",
+  "hint.longShort": "Add colours to shade the shape. Where two colours meet, their stitches split into each other, as in hand embroidery.",
+  "Centre": "Centre",
+  "Outer edge": "Outer edge",
+  "Start side": "Start side",
+  "End side": "End side",
+  "Colour {v0} of {v1}": "Colour {v0} of {v1}",
+  "Where colours {v0} and {v1} meet": "Where colours {v0} and {v1} meet",
+  "Add a shade colour": "Add a shade colour",
+  "Remove this colour": "Remove this colour",
+  "hint.blendWidth": "How far the stitches of two neighbouring colours reach into each other. Wider gives a softer, more painterly blend.",
+  "Drag the centre marker on the canvas to aim the stitches.": "Drag the centre marker on the canvas to aim the stitches.",
+  "Stitch centre": "Stitch centre",
+  "Stitch centre · drag to aim the stitches": "Stitch centre · drag to aim the stitches",
+  "hint.longShortLength": "Longer stitches look silkier; shorter ones suit small shapes and stretchy fabric.",
+  "hint.variation": "Staggers where stitches start and end so no rows show. At 0 the stitches keep a regular long–short rhythm.",
+  "Shade colour added. Choose its thread above.": "Shade colour added. Choose its thread above.",
+  "hint.longShortDirection": "Toward the centre suits flowers and round shapes; straight suits leaves and stripes.",
 } as const;
 export type Key=keyof typeof en;
 export const tr={
@@ -2898,6 +2922,30 @@ export const tr={
   "Loading threads…": "İplikler yükleniyor…",
   "{count} colours": "{count} renk",
   "Match whole design to {brand}": "Tüm tasarımı {brand} ile eşleştir",
+  "Long & short": "Uzun-kısa iğne",
+  "Toward the centre": "Merkeze doğru",
+  "Natural variation · %": "Doğal düzensizlik · %",
+  "Blend width · mm": "Geçiş genişliği · mm",
+  "Band start · %": "Bant başlangıcı · %",
+  "Band end · %": "Bant bitişi · %",
+  "Shading": "Gölgelendirme",
+  "hint.longShort": "Şekle gölge vermek için renk ekleyin. İki rengin buluştuğu yerde dikişler, el nakışındaki gibi birbirinin arasına girer.",
+  "Centre": "Merkez",
+  "Outer edge": "Dış kenar",
+  "Start side": "Başlangıç tarafı",
+  "End side": "Bitiş tarafı",
+  "Colour {v0} of {v1}": "Renk {v0}/{v1}",
+  "Where colours {v0} and {v1} meet": "{v0}. ve {v1}. rengin buluştuğu yer",
+  "Add a shade colour": "Gölge rengi ekle",
+  "Remove this colour": "Bu rengi kaldır",
+  "hint.blendWidth": "Komşu iki rengin dikişlerinin birbirine ne kadar girdiği. Daha geniş değer daha yumuşak, resimsi bir geçiş verir.",
+  "Drag the centre marker on the canvas to aim the stitches.": "Dikişlerin yönünü ayarlamak için tuvaldeki merkez işaretini sürükleyin.",
+  "Stitch centre": "Dikiş merkezi",
+  "Stitch centre · drag to aim the stitches": "Dikiş merkezi · dikişleri yönlendirmek için sürükleyin",
+  "hint.longShortLength": "Uzun dikişler daha ipeksi görünür; kısa dikişler küçük şekillere ve esnek kumaşlara daha uygundur.",
+  "hint.variation": "Dikişlerin başlangıç ve bitiş noktalarını kaydırır, böylece sıra izi görünmez. 0'da dikişler düzenli bir uzun-kısa ritmi izler.",
+  "Shade colour added. Choose its thread above.": "Gölge rengi eklendi. İpliğini yukarıdan seçin.",
+  "hint.longShortDirection": "Merkeze doğru seçeneği çiçekler ve yuvarlak şekiller için, düz seçeneği yapraklar ve şeritler için uygundur.",
 } satisfies Record<Key,string>;
 const dictionaries={en,tr};
 export type Values=Record<string,string|number>;
@@ -2922,7 +2970,8 @@ const fillValidationLabels:Record<string,Key>={
   'Underlay angle':'Underlay angle','Underlay spacing':'Underlay spacing','Underlay length':'Underlay length','Underlay inset':'Underlay inset',
   'Wave steps':'Wave steps','Wave amplitude':'Wave amplitude','Stitch tolerance':'Stitch tolerance','Rope width':'Rope width','Density trigger':'Density trigger','Angle guide position':'Angle guide position',
   "Separation · mm":"Separation · mm", "Cross size · mm":"Cross size · mm","Threads":"Threads","Coverage · %":"Coverage · %",
-  "Amplitude \u00b7 mm":"Amplitude \u00b7 mm","Intensity":"Intensity","Tightness":"Tightness","Rotations":"Rotations","Step height \u00b7 mm":"Step height \u00b7 mm","Steps per flight":"Steps per flight","Chaos":"Chaos","Pattern rows":"Pattern rows","Cell size \u00b7 mm":"Cell size \u00b7 mm"
+  "Amplitude \u00b7 mm":"Amplitude \u00b7 mm","Intensity":"Intensity","Tightness":"Tightness","Rotations":"Rotations","Step height \u00b7 mm":"Step height \u00b7 mm","Steps per flight":"Steps per flight","Chaos":"Chaos","Pattern rows":"Pattern rows","Cell size \u00b7 mm":"Cell size \u00b7 mm",
+  "Toward the centre":"Toward the centre","Natural variation · %":"Natural variation · %","Blend width · mm":"Blend width · mm","Band start · %":"Band start · %","Band end · %":"Band end · %"
 };
 export function errorText(error:unknown,t:Translator,fallback:Key):string {
   if(error instanceof TranslationError)return t(error.key,error.values);

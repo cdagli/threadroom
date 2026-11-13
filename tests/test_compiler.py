@@ -49,6 +49,14 @@ class CompilerTests(unittest.TestCase):
         self.assertLess(result["stats"]["trims"], 5)
         self.assertTrue(all(c["x"]>=29.9 and c["y"]>=29.9 for c in result["commands"] if c["type"]=="stitch"))
 
+    def test_trimmed_jump_longer_than_pec_range_counts_as_one_trim(self):
+        # PEC jumps reach 204.7 mm, so the writer splits this 260 mm jump into two trimmed pieces.
+        p = {**objects_project({"id": "a", "kind": "running", "color": "#111f77", "rings": [[[20,20],[28,20]]]},
+                               {"id": "b", "kind": "running", "color": "#111f77", "rings": [[[280,20],[288,20]]]}), "hoop": "300x200"}
+        result = compile_project(p)
+        self.assertEqual(result["stats"]["trims"], 1)
+        self.assertEqual(result["stats"]["colorChanges"], 0)
+
     def test_preview_owners_follow_objects_even_with_same_colour_and_repeated_holes(self):
         p = objects_project({"id": "a", "kind": "bean", "rings": [[[20,20],[25,20],[20,20]]]},
                             {"id": "b", "kind": "bean", "rings": [[[60,60],[65,60],[60,60]]]},

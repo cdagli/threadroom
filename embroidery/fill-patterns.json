@@ -31,5 +31,6 @@
   {"id":"partitionStars","name":"Stars","mode":"stars","usesStitchSpacing":true,"params":[]} ,
   {"id":"circular","name":"Circular fill","mode":"engine","usesStitchSpacing":true},
   {"id":"crossStitchFill","name":"Cross stitch fill","mode":"engine","usesStitchSpacing":false,"params":[{"key":"crossSize","label":"Cross size · mm","default":3,"min":1,"max":20,"step":0.5},{"key":"threadCount","label":"Threads","default":2,"min":1,"max":8,"step":1},{"key":"coverage","label":"Coverage · %","default":50,"min":1,"max":100,"step":1}]},
-  {"id":"streamlines","name":"Streamlines","mode":"engine","usesStitchSpacing":true,"params":[{"key":"separation","label":"Separation · mm","default":1.5,"min":0.5,"max":20,"step":0.5}]}
+  {"id":"streamlines","name":"Streamlines","mode":"engine","usesStitchSpacing":true,"params":[{"key":"separation","label":"Separation · mm","default":1.5,"min":0.5,"max":20,"step":0.5}]},
+  {"id":"longShort","name":"Long & short","mode":"engine","usesStitchSpacing":true,"params":[{"key":"radial","label":"Toward the centre","default":1,"min":0,"max":1,"step":1},{"key":"variation","label":"Natural variation · %","default":60,"min":0,"max":100,"step":5},{"key":"blend","label":"Blend width · mm","default":3,"min":0.5,"max":8,"step":0.5},{"key":"bandStart","label":"Band start · %","default":0,"min":0,"max":100,"step":1},{"key":"bandEnd","label":"Band end · %","default":100,"min":0,"max":100,"step":1}]}
 ]

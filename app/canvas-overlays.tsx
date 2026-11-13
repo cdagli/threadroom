@@ -35,6 +35,17 @@ export const EndHandles=memo(function EndHandles({ends,canvasScale,onReset}:{end
   return <>{(['entry','exit'] as const).map(k=>{const [x,y]=ends[k],c=k==='entry'?'var(--success)':'var(--danger)',same=Math.hypot(ends.entry[0]-ends.exit[0],ends.entry[1]-ends.exit[1])*canvasScale<10,label=t(k==='entry'?'entryPoint':'exitPoint')+(ends.auto[k]?t('automatic'):'');
                 return <g key={k} className="end-handle" data-end={k} role="button" tabIndex={0} aria-label={label} onKeyDown={e=>{if((e.key==='Delete'||e.key==='Backspace')&&!ends.auto[k]){e.preventDefault();e.stopPropagation();onReset(k);}}}><circle cx={x} cy={y} r={(k==='exit'&&same?6:12)/canvasScale} fill="transparent"/><circle cx={x} cy={y} r={(k==='entry'&&same?6.5:4.5)/canvasScale} fill={ends.auto[k]?'var(--surface-raised)':c} stroke={c} strokeWidth={1.6/canvasScale} pointerEvents="none"/><title>{t("{v0} · drag along the outline{v1}",{v0:label,v1:ends.auto[k]?'':t(' · Delete to reset')})}</title></g>;})}</>;
 });
+// Circular and long & short fills: the point the stitches aim at; drag to move, Delete to reset.
+export const CenterHandle=memo(function CenterHandle({point:[x,y],canvasScale,onReset}:{point:Point;canvasScale:number;onReset:()=>void}){
+  const {t}=useT(),r=6/canvasScale,arm=11/canvasScale;
+  return <g className="center-handle" data-end="center" role="button" tabIndex={0} aria-label={t("Stitch centre")} onKeyDown={e=>{if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();e.stopPropagation();onReset();}}}>
+    <circle cx={x} cy={y} r={14/canvasScale} fill="transparent"/>
+    <path d={`M${x-arm} ${y}H${x+arm}M${x} ${y-arm}V${y+arm}`} stroke="var(--surface-raised)" strokeWidth={3.2/canvasScale} pointerEvents="none"/>
+    <path d={`M${x-arm} ${y}H${x+arm}M${x} ${y-arm}V${y+arm}`} stroke="var(--accent-strong)" strokeWidth={1.4/canvasScale} pointerEvents="none"/>
+    <circle cx={x} cy={y} r={r} fill="var(--surface-raised)" fillOpacity={.85} stroke="var(--accent-strong)" strokeWidth={1.6/canvasScale} pointerEvents="none"/>
+    <title>{t("Stitch centre · drag to aim the stitches")}</title>
+  </g>;
+});
 export const DraftOverlay=memo(function DraftOverlay({draft,displayDraft,closeable,closeHover,color,hover,drawing,freehand,brushWidth,curved,corners,canvasScale}:{draft:Point[];displayDraft:Point[];closeable:boolean;closeHover:boolean;color:string;hover:Point|null;drawing:boolean;freehand:boolean;brushWidth?:number;curved:boolean;corners:boolean[];canvasScale:number}){
   const {t}=useT();
   const paths=useMemo(()=>[displayDraft],[displayDraft]);

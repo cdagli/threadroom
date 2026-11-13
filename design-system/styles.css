@@ -234,3 +234,19 @@
   .ds-status-bar[data-tone=error] {color:var(--danger);background:var(--danger-soft);border-color:var(--danger)}
   @media(max-width:480px) {.ds-status-bar {flex-wrap:wrap}.ds-status-bar>span:last-child {flex:1 1 100%}}
 }
+@layer components {
+  .ds-band-slider {display:flex;flex-direction:column;gap:4px}
+  .ds-band-track {position:relative;height:28px;border-radius:7px;background:var(--surface-sunken);box-shadow:inset 0 0 0 1px var(--border-control)}
+  .ds-band {position:absolute;top:0;bottom:0;margin:0;padding:0;border:0;cursor:pointer;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .12)}
+  .ds-band:first-child {border-radius:7px 0 0 7px}
+  .ds-band:nth-last-child(1 of .ds-band) {border-radius:0 7px 7px 0}
+  .ds-band:only-of-type {border-radius:7px}
+  .ds-band[aria-pressed=true] {outline:2px solid var(--accent-strong);outline-offset:2px;z-index:1}
+  .ds-band:focus-visible {outline:2px solid var(--focus);outline-offset:2px;z-index:1}
+  .ds-band-edge {position:absolute;top:-4px;bottom:-4px;width:14px;margin-left:-7px;z-index:2;cursor:ew-resize;touch-action:none;display:flex;justify-content:center}
+  .ds-band-edge::before {content:'';width:6px;border-radius:3px;background:var(--surface-raised);box-shadow:0 0 0 1px var(--border-strong),0 1px 3px rgb(0 0 0 / .25)}
+  .ds-band-edge:hover::before {box-shadow:0 0 0 1.5px var(--accent),0 1px 3px rgb(0 0 0 / .25)}
+  .ds-band-edge:focus-visible {outline:none}
+  .ds-band-edge:focus-visible::before {box-shadow:0 0 0 2px var(--focus),0 1px 3px rgb(0 0 0 / .25)}
+  .ds-band-ends {display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted)}
+}
