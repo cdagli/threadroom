@@ -1,5 +1,7 @@
 import type {Command, Fabric} from './project';
-// Thread preview: each sewn stitch is a lit cylinder about 0.36 mm wide (40 wt embroidery thread).
+// Canvas fallback for the thread preview (lib/thread-renderer.ts is the GPU renderer): each sewn
+// stitch is a lit stroke 0.36 mm wide, broader than the real thread so that it still reads as a
+// solid surface without per-pixel shading.
 /** @test */ export const threadWidth=.36;
 type RGB=[number,number,number];
 /** @test */ export function rgb(colour:string):RGB{
@@ -74,7 +76,19 @@ function tile(pattern:FabricPattern,yarn:string,size:number){
   const key=`${pattern}${yarn}${size}`;let t=tiles.get(key);if(t)return t;
   t=document.createElement('canvas');t.width=t.height=size;const c=t.getContext('2d')!,s=size,[r,g,b]=rgb(yarn),y=(a:number)=>`rgba(${r},${g},${b},${a})`,light='rgba(255,255,255,.55)';
   c.lineCap='round';
-  if(pattern==='plain'){for(let i=0;i<2;i++)for(let j=0;j<2;j++){const x=i*s/2,yy=j*s/2,h=(i+j)%2===0;c.fillStyle=y(.35);c.fillRect(x+(h?0:s/8),yy+(h?s/8:0),h?s/2:s/4,h?s/4:s/2);c.fillStyle=light;c.fillRect(x+(h?s/16:s/8),yy+(h?s/8:s/16),h?s*.36:s/12,h?s/12:s*.36);}}
+  if(pattern==='plain'){
+    // Plain weave: each yarn passes over one and under the next, so every cell shows a short
+    // rounded float, weft and warp alternating; the float dips out of sight at both ends.
+    const h=s/2,yarn=(x:number,yy:number,across:boolean)=>{
+      const g=across?c.createLinearGradient(0,yy,0,yy+h):c.createLinearGradient(x,0,x+h,0);
+      g.addColorStop(0,y(.5));g.addColorStop(.3,'rgba(255,255,255,.5)');g.addColorStop(.55,'rgba(255,255,255,.15)');g.addColorStop(1,y(.62));
+      c.fillStyle=g;c.fillRect(x,yy,h,h);
+      const e=across?c.createLinearGradient(x,0,x+h,0):c.createLinearGradient(0,yy,0,yy+h);
+      e.addColorStop(0,y(.5));e.addColorStop(.22,y(0));e.addColorStop(.78,y(0));e.addColorStop(1,y(.5));
+      c.fillStyle=e;c.fillRect(x,yy,h,h);
+    };
+    for(let i=0;i<2;i++)for(let j=0;j<2;j++)yarn(i*h,j*h,(i+j)%2===0);
+  }
   else if(pattern==='gauze'){c.fillStyle=y(.45);c.fillRect(0,0,s,s);c.fillStyle='rgba(255,255,255,.75)';c.fillRect(0,s*.08,s,s*.5);c.fillRect(s*.08,0,s*.5,s);}
   else if(pattern==='knit'||pattern==='rib'){
     const cols=pattern==='rib'?2:1,w=s/cols;

@@ -1096,39 +1096,114 @@ def merge_short(path, fixed=(), minimum=MIN_FILL_STITCH):
     return out
 
 
-def satin_path(ring, spacing, width, style="satin", split=0, short=False, flip=False):
-    # Constant-width satin along a user-drawn centre line.
-    points = sample_path(ring, spacing)
-    closed = len(ring) > 2 and math.dist(ring[0], ring[-1]) < 1e-6
-    # Direction from neighbours ~0.8 mm away keeps columns from fanning into
-    # spikes at sharp corners; closed outlines wrap around their seam.
-    k = max(1, round(0.8/spacing))
-    n = len(points)-1 if closed else len(points)
-    frames = []
-    for i, point in enumerate(points):
+# Mitred corners: where a satin line turns by MITRE_TURN or more at a single vertex, each leg
+# keeps its stitches square to the leg and is cut on the corner's bisector (overlapping the
+# other leg by MITRE_OVERLAP) instead of fanning around the vertex, which leaves one loose
+# thread reaching the outer corner. A leg runs past the vertex by at most MITRE_REACH column
+# widths, a full point up to a right angle and a bevelled one beyond, so no stitch reaches more
+# than sqrt(2) half-widths from the line (lib/check.ts stitchReach); bites under MITRE_MIN at
+# the tip are left out.
+# Hairpins sharper than MITRE_MAX keep turning.
+MITRE_TURN, MITRE_MAX, MITRE_REACH, MITRE_OVERLAP, MITRE_MIN = math.radians(40), math.radians(150), .5, .15, .5
+
+
+def satin_legs(ring, width, closed):
+    """A satin centre line split at its sharp corners: [(points, start, end)]. start/end are
+    None or (vertex, bisector normal along the travel, direction of this leg there, reach past
+    the vertex). None when the line has no such corner."""
+    n = len(ring)
+    def unit(a, b):
+        d = math.dist(a, b)
+        return [(b[0]-a[0])/d, (b[1]-a[1])/d] if d > 1e-9 else None
+    corners = {}
+    for i in range(n-1 if closed else n):
         if closed:
-            a, b = points[(i-k) % n], points[(i+k) % n]
+            a, b = ring[i-1] if i else ring[n-2], ring[i+1]
+        elif 0 < i < n-1:
+            a, b = ring[i-1], ring[i+1]
         else:
-            a, b = points[max(0, i-k)], points[min(len(points)-1, i+k)]
-        distance = math.dist(a, b)
-        if distance >= 0.001:
-            frames.append((i, point, [-(b[1]-a[1])/distance, (b[0]-a[0])/distance]))
-    at = lambda f, side, offset=width/2: [f[1][0]+f[2][0]*offset*side, f[1][1]+f[2][1]*offset*side]
-    def compression(j, side):
-        a, b = frames[(j-1) % len(frames) if closed else max(0, j-1)], frames[(j+1) % len(frames) if closed else min(len(frames)-1, j+1)]
-        centre = math.dist(a[1], b[1])
-        return math.dist(at(a, side), at(b, side))/centre if centre > 1e-9 else 1
-    result = []
-    for j, f in enumerate(frames):
-        i = f[0]
-        if style == "e-stitch":
-            # Walk one rail; each bite goes across and back to that rail. Flipped walks the other.
-            s = 1 if flip else -1
-            result.extend([at(f, s), at(f, -s), at(f, s)])
             continue
-        side = 1 if i % 2 else -1
-        ratio = compression(j, side) if short and (i//2) % 2 else 1
-        result.append(at(f, side, width/2-SHORT_INSET*width) if ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else at(f, side))
+        u, v = unit(a, ring[i]), unit(ring[i], b)
+        if not u or not v:
+            continue
+        turn = math.acos(max(-1, min(1, u[0]*v[0]+u[1]*v[1])))
+        if MITRE_TURN <= turn <= MITRE_MAX:
+            m = math.hypot(u[0]+v[0], u[1]+v[1])
+            corners[i] = (ring[i], [(u[0]+v[0])/m, (u[1]+v[1])/m], u, v, min(width/2*math.tan(turn/2), MITRE_REACH*width))
+    if not corners:
+        return None
+    if closed and 0 in corners:
+        corners[n-1] = corners[0]
+    marks = sorted({0, n-1, *corners})
+    legs = []
+    for i, j in zip(marks, marks[1:]):
+        start, end = corners.get(i), corners.get(j)
+        legs.append((ring[i:j+1], start and (start[0], start[1], start[3], start[4]), end and (end[0], end[1], end[2], end[4])))
+    return legs
+
+
+def satin_path(ring, spacing, width, style="satin", split=0, short=False, flip=False):
+    # Satin spacing is the pitch between holes on the SAME rail. Each alternating
+    # penetration advances half that distance; zigzag and E-stitch keep their
+    # explicit step spacing. The sparse foundation uses style="zigzag" too.
+    step = spacing/2 if style == "satin" else spacing
+    closed = len(ring) > 2 and math.dist(ring[0], ring[-1]) < 1e-6
+    legs = satin_legs(ring, width, closed) if style == "satin" else None
+    mitred = bool(legs)
+    # Direction from neighbours ~0.8 mm away keeps columns from fanning into
+    # spikes on tight curves; closed outlines wrap around their seam.
+    k = max(1, round(0.8/step))
+    result = []
+    for line, start, end in legs or [(ring, None, None)]:
+        line = ([[start[0][0]-start[2][0]*start[3], start[0][1]-start[2][1]*start[3]]] if start else [])+list(line)+([[end[0][0]+end[2][0]*end[3], end[0][1]+end[2][1]*end[3]]] if end else [])
+        points = sample_path(line, step)
+        wrap = closed and not mitred
+        n = len(points)-1 if wrap else len(points)
+        frames = []
+        for i, point in enumerate(points):
+            if wrap:
+                a, b = points[(i-k) % n], points[(i+k) % n]
+            else:
+                a, b = points[max(0, i-k)], points[min(len(points)-1, i+k)]
+            distance = math.dist(a, b)
+            if distance >= 0.001:
+                frames.append((i, point, [-(b[1]-a[1])/distance, (b[0]-a[0])/distance]))
+        at = lambda f, side, offset=width/2: [f[1][0]+f[2][0]*offset*side, f[1][1]+f[2][1]*offset*side]
+        def compression(j, side):
+            a, b = frames[(j-1) % len(frames) if wrap else max(0, j-1)], frames[(j+1) % len(frames) if wrap else min(len(frames)-1, j+1)]
+            centre = math.dist(a[1], b[1])
+            return math.dist(at(a, side), at(b, side))/centre if centre > 1e-9 else 1
+        def cut(a, b, corner, sign):
+            # Keep the part of bite a-b on this leg's side of the corner's bisector.
+            ga, gb = (sign*((p[0]-corner[0][0])*corner[1][0]+(p[1]-corner[0][1])*corner[1][1])+MITRE_OVERLAP for p in (a, b))
+            if ga < 0 and gb < 0:
+                return None
+            if ga < 0:
+                a = lerp(a, b, ga/(ga-gb))
+            elif gb < 0:
+                b = lerp(b, a, gb/(gb-ga))
+            return a, b
+        for j, f in enumerate(frames):
+            i = f[0]
+            if style == "e-stitch":
+                # Walk one rail; each bite goes across and back to that rail. Flipped walks the other.
+                s = 1 if flip else -1
+                result.extend([at(f, s), at(f, -s), at(f, s)])
+                continue
+            count = len(result) if mitred else i
+            side = 1 if count % 2 else -1
+            ratio = compression(j, side) if short and (count//2) % 2 else 1
+            inset = width/2-SHORT_INSET*width if ratio < SHORT_RATIO and 2*step*ratio < SHORT_HIT else width/2
+            if not mitred:
+                result.append(at(f, side, inset))
+                continue
+            bite = (at(f, -1, inset if side < 0 else width/2), at(f, 1, inset if side > 0 else width/2))
+            if start and i*step <= 2*start[3]+step:
+                bite = cut(*bite, start, 1)
+            if bite and end and (len(points)-1-i)*step <= 2*end[3]+step:
+                bite = cut(*bite, end, -1)
+            if bite and math.dist(*bite) >= MITRE_MIN:
+                result.append(bite[1] if side > 0 else bite[0])
     return split_bites(result, split)
 
 
@@ -1190,16 +1265,18 @@ def block_rungs(left, right, spacing):
 MIN_BITES, MIN_DOT_SPACING = 4, .18
 
 
-def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True, short_min=0, paired=False):
+def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True, short_min=0, paired=False, *, style="satin"):
     """Satin between paired rails: penetrations alternate left/right on successive rungs, each end
     pushed out by half the pull compensation; short stitches and splitting as in satin_path.
-    paired: the rail points are the rungs already (one bite each)."""
+    spacing is the same-rail pitch, except for sparse zigzag underlay.
+    paired: the rail points are the rungs already (one bite each, at half pitch)."""
+    step = spacing/2 if style == "satin" else spacing
     # A short column (a diacritic dot, a comma) at the normal spacing gets two or three
     # bites, which sew as a chevron. Give it at least MIN_BITES so it reads as a satin dot.
     total = sum(math.dist(a, b) for a, b in zip(left, left[1:]))+sum(math.dist(a, b) for a, b in zip(right, right[1:]))
-    if dots and total/2 < MIN_BITES*spacing:
-        spacing = max(MIN_DOT_SPACING, total/2/MIN_BITES)
-    rungs = list(zip(left, right)) if paired else block_rungs(left, right, spacing)
+    if dots and total/2 < MIN_BITES*step:
+        step = max(MIN_DOT_SPACING, total/2/MIN_BITES)
+    rungs = list(zip(left, right)) if paired else block_rungs(left, right, step)
     def end(j, side, inset=0):
         a, b = rungs[j]
         w, mid = math.dist(a, b), lerp(a, b, .5)
@@ -1214,7 +1291,7 @@ def block_path(left, right, spacing, pull=0, split=0, short=False, dots=True, sh
         side = 1 if j % 2 else -1
         ratio = compression(j, side) if short and (j//2) % 2 else 1
         wide = math.dist(*rungs[j])+pull >= short_min
-        result.append(end(j, side, SHORT_INSET) if wide and ratio < SHORT_RATIO and 2*spacing*ratio < SHORT_HIT else end(j, side))
+        result.append(end(j, side, SHORT_INSET) if wide and ratio < SHORT_RATIO and 2*step*ratio < SHORT_HIT else end(j, side))
     return split_bites(result, split)
 
 
@@ -1251,7 +1328,7 @@ def block_passes(obj, ring):
         for rail in edges:
             passes.append((sample_path(oriented(rail), length), 3))
     if "zigzag" in underlay:
-        passes.append((block_path(*pair(*edges), 2), 3))
+        passes.append((block_path(*pair(*edges), 2, style="zigzag"), 3))
     passes.append((block_path(*pair(left, right), obj["spacing"], obj["pullCompensation"], obj["splitLength"], obj["shortStitches"]), SATIN_MAX))
     return passes
 
@@ -1416,7 +1493,7 @@ def line_passes(obj, ring):
         for rail in rail_paths(ring, inset, length):
             passes.append((rail if len(passes) % 2 == 0 else rail[::-1], 3))
     if "zigzag" in underlay:
-        passes.append((satin_path(oriented(), 2, inset), 3))
+        passes.append((satin_path(oriented(), 2, inset, "zigzag"), 3))
     r = oriented()
     if kind in WIDE_KINDS:
         pull = obj["pullCompensation"]
@@ -1669,6 +1746,12 @@ def covered_by(line, blocks):
     return all(any(min(segment_distance(p, u, v) for u, v in zip(centre, centre[1:])) <= width/2-.05 for _, _, centre, width in blocks if len(centre) > 1) for p in samples)
 
 
+# Fill engines whose spacing is not a pitch between forward rows: satin fill halves its own
+# same-rail pitch, the others space crosses or streamlines directly. A circular fill's two
+# interleaved spirals are its outward and return rows.
+ROW_PITCH_OWN = ("sweepSatin", "crossStitchFill", "streamlines")
+
+
 def plan_object(obj, at, target):
     """Polylines for one object; each is [(points, longest stitch)] and starts after a jump."""
     kind, entry, exit = obj["kind"], obj.get("entry"), obj.get("exit")
@@ -1677,6 +1760,11 @@ def plan_object(obj, at, target):
     if kind in FILL_KINDS:
         snap = lambda p: p and nearest_on(obj["rings"], p, True)[2]
         entry, exit = snap(entry), snap(exit)
+        if kind == "fill" and obj.get("fillPattern") not in ROW_PITCH_OWN:
+            # Fill spacing is measured between forward rows (every second row), as satin
+            # spacing is between holes on one rail: 0.4 mm lays a thread every 0.2 mm.
+            gradient = obj.get("gradient")
+            obj = {**obj, "spacing": obj["spacing"]/2, **({"gradient": {**gradient, "endSpacing": gradient["endSpacing"]/2}} if gradient else {})}
         if kind == "fill" and obj.get("angleGuides") and obj.get("fillPattern") not in ("streamlines", "circular", "crossStitchFill"):
             # One guide sets the angle; two or more bend the rows (embroidery/sweep.py).
             from . import sweep
@@ -1716,13 +1804,16 @@ def plan_object(obj, at, target):
 # SHORT_CLUSTER of them within one SHORT_CELL square (a few at fill row tips are normal), or SHORT_MANY of
 # the object's stitches. Sewn stitches over LONG_STITCH (satin's default split) snag; planned satin
 # bites and planned pattern floats use SATIN_MAX; jumps and landings are excluded. Density is averaged over DENSE_WINDOW mm squares: needle
-# penetrations per mm2 and thread layers (sewn thread per mm2 x the woven fill spacing, so one fill is
-# ~1 layer). Two stacked woven fills stay below the check level, three reach it and four (or three with
-# full underlay) fail; clusters smaller than 4 mm2 at the check level are noise. Same-colour jumps
+# penetrations per mm2 and thread layers (sewn thread per mm2 x LAYER_SPACING, the 0.21 mm between
+# threads of a woven fill or satin, so one covering fill or satin is ~1 layer). A satin border or
+# lettering over a fill with its underlays stays below the check level, three covering layers
+# reach it and four fail; clusters smaller than 4 mm2 at the check level are noise. A covering
+# fill makes about 2 needle holes per mm2, a small-motif fill pattern 6 and a 1 mm satin column 5,
+# so the hole limits leave room for two of those stacked. Same-colour jumps
 # between objects over LONG_JUMP (reordering can shorten them) and more than MANY_TRIMS trims (each
 # slows the machine and leaves a tail that can pull out) are worth checking.
 SHORT_STITCH, SHORT_CELL, SHORT_CLUSTER, SHORT_MANY, LONG_STITCH = .3, 2, 3, .1, 7
-DENSE_HITS, DENSE_LAYERS, LAYER_SPACING, LONG_JUMP, MANY_TRIMS = (7, 10), (3, 5), .42, 30, 25
+DENSE_HITS, DENSE_LAYERS, LAYER_SPACING, LONG_JUMP, MANY_TRIMS = (14, 20), (3, 4.2), .21, 30, 25
 DENSE_WINDOW = 3
 
 

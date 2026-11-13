@@ -33,7 +33,7 @@ class ThreadTests(unittest.TestCase):
 
     def test_unset_metadata_keeps_legacy_pes_bytes(self):
         data = base64.b64decode(compile_project(project())['pes'])
-        self.assertEqual(hashlib.sha256(data).hexdigest(), '919979d842b4a22d2cef4b693536a90482ee02f24873008e956c47547e466c33')
+        self.assertEqual(hashlib.sha256(data).hexdigest(), 'd659637e2336bd05553f7c4ed5f90356ff95ab33d437bddb9b12be51b309087f')
 
     def test_invalid_thread_is_rejected(self):
         name, color = BROTHER['155']

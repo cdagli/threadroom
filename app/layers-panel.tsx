@@ -2,7 +2,7 @@
 import {Button,Icon,IconButton,Input,SegmentedControl} from '@/design-system';
 import {useT} from './i18n';
 import {memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode} from 'react';
-import {colourRuns, stackRows, stackTarget, type ColourRun, type LayerRow} from '@/lib/layers';
+import {colourGroups, stackRows, stackTarget, type ColourRun, type LayerRow} from '@/lib/layers';
 import {threadLabel} from './thread-label';
 import {satinFonts} from '@/lib/satin-lettering';
 import {objectGeometry} from '@/lib/editor-render';
@@ -14,7 +14,7 @@ function Eye({hidden}:{hidden:boolean}){return <Icon size={16} name={hidden?'eye
 function Padlock({locked}:{locked:boolean}){return <Icon size={15} name={locked?'lock':'unlock'}/>;}
 export default function LayersPanel({project,compiled,selection,disabled,imported,onSelect,onSelection,onRename,onHide,onLock,onMove,onPlace,onPosition,children}:Props){
   const {t}=useT();
-  // Objects view: one row per object; Colours view: one row per run of consecutive same-thread objects.
+  // Objects view: one row per object; Colours view: one row per thread across the whole design.
   const [view,setView]=useState<'objects'|'colours'>('objects'),[positioning,setPositioning]=useState<{id:string;value:string}|null>(null),position=useRef(positioning);position.current=positioning;
   useEffect(()=>{try{if(localStorage.getItem('threadroom-layers-view')==='colours')setView('colours');}catch{/* Storage is optional. */}},[]);
   function chooseView(next:'objects'|'colours'){setView(next);try{localStorage.setItem('threadroom-layers-view',next);}catch{/* The view still switches. */}}
@@ -22,7 +22,7 @@ export default function LayersPanel({project,compiled,selection,disabled,importe
   const runs=useMemo(()=>{
     if(view!=='colours')return [];
     const previous=new Map(priorRuns.current.map(r=>[r.key,r]));
-    return priorRuns.current=colourRuns(project,compiled).map(r=>{
+    return priorRuns.current=colourGroups(project,compiled).map(r=>{
       const old=previous.get(r.key);
       return old&&old.color===r.color&&old.thread===r.thread&&old.index===r.index&&old.end===r.end&&old.stitches===r.stitches&&old.ids.length===r.ids.length&&old.ids.every((id,i)=>id===r.ids[i])?old:r;
     });

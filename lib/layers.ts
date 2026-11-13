@@ -55,6 +55,19 @@ export function stackTarget(row:LayerRow,below:boolean,wholeGroup=false){
 // Locks: locked objects stay selectable from Layers but are skipped by canvas hits, Select all and edits.
 export const unlockedIds=(p:Project,ids:readonly string[])=>ids.filter(id=>p.objects.some(o=>o.id===id&&!o.locked));
 export const selectableIds=(p:Project)=>p.objects.filter(o=>!o.locked&&!o.hidden&&!o.layoutOnly).map(o=>o.id);
+// Outside an entered group, canvas selection treats its visible, unlocked members as one unit.
+// Keep the hit object last so it remains the primary object for the inspector and drag origin.
+export function canvasTargetIds(p:Project,id:string,enteredGroup:string|null=null):string[]{
+  const hit=p.objects.find(o=>o.id===id&&!o.locked&&!o.hidden&&!o.layoutOnly);
+  if(!hit)return [];
+  if(hit.group===undefined||hit.group===enteredGroup||!p.groups?.some(g=>g.id===hit.group))return [id];
+  return [...p.objects.filter(o=>o.group===hit.group&&o.id!==id&&!o.locked&&!o.hidden&&!o.layoutOnly).map(o=>o.id),id];
+}
+export function selectCanvasIds(p:Project,ids:string[],id:string,toggle=false,enteredGroup:string|null=null):string[]{
+  const target=canvasTargetIds(p,id,enteredGroup);if(!target.length)return ids;
+  if(!toggle)return target;
+  return target.every(id=>ids.includes(id))?ids.filter(id=>!target.includes(id)):[...ids.filter(id=>!target.includes(id)),...target];
+}
 const withLock=(o:StitchObject,locked:boolean):StitchObject=>{if(!!o.locked===locked)return o;const next={...o};delete next.locked;return locked?{...next,locked}:next;};
 export function toggleLock(p:Project,ids:readonly string[]):Project{
   const chosen=p.objects.filter(o=>ids.includes(o.id));if(!chosen.length)return p;
@@ -76,10 +89,21 @@ export function colourRuns(p:Project,compiled:Pick<Compiled,'commands'>|null):Co
   p.objects.forEach((o,index)=>{
     if(o.layoutOnly)return;
     const last=runs.at(-1),stitches=counts?counts.get(o.id)??0:null;
-    if(last&&runKey(p.objects[last.end-1])===runKey(o)){last.ids.push(o.id);last.end++;if(last.stitches!==null)last.stitches+=stitches!;}
+    if(last&&runKey(p.objects[last.index])===runKey(o)){last.ids.push(o.id);last.end=index+1;if(last.stitches!==null)last.stitches+=stitches!;}
     else runs.push({key:`run:${o.id}`,color:o.color,...(o.thread&&{thread:o.thread}),ids:[o.id],index,end:index+1,stitches});
   });
   return runs;
+}
+// The Colours panel groups by thread across the whole design, independently of sew-order runs.
+// index/end span the first and last member; reading this view never reorders the design.
+export function colourGroups(p:Project,compiled:Pick<Compiled,'commands'>|null):ColourRun[]{
+  const groups=new Map<string,ColourRun>();
+  for(const run of colourRuns(p,compiled)){
+    const key=runKey(p.objects[run.index]),existing=groups.get(key);
+    if(existing){existing.ids.push(...run.ids);existing.end=run.end;if(existing.stitches!==null)existing.stitches+=run.stitches!;}
+    else groups.set(key,{...run,key:`colour:${key}`,ids:[...run.ids]});
+  }
+  return [...groups.values()];
 }
 // Move a block to an original-order index, keeping groups intact: a block dropped inside a group joins
 // it; otherwise members keep their group only when it moves whole or stays next to its other members.

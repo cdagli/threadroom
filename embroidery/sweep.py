@@ -445,7 +445,8 @@ def route_satin(obj, guides, at, entry, target):
     """Satin fill along curved level lines: one bite per row, alternating ends (Ember's
     sweep satin), with its underlays, split and short stitches."""
     spacing, pull, underlay = obj["spacing"], obj["pullCompensation"], obj["underlay"]
-    rows = Rows(obj, guides, spacing)
+    step = spacing/2
+    rows = Rows(obj, guides, step)
     pieces = []
     for section in rows.sections():
         rails = []
@@ -474,7 +475,7 @@ def route_satin(obj, guides, at, entry, target):
                 if len(rail) > 1:
                     passes.append((C.tolerant_path(rail, 1.5, .1), 3))
         if "zigzag" in underlay:
-            zig = [inner(p, c, i % 2) for i, (p, c) in enumerate(rails[::max(1, round(1.5/spacing))]) if c[-1] >= 1]
+            zig = [inner(p, c, i % 2) for i, (p, c) in enumerate(rails[::max(1, round(1.5/step))]) if c[-1] >= 1]
             if len(zig) > 1:
                 passes.append((C.line_path(zig, 1.5), 3))
         if passes and math.dist(passes[-1][0][-1], cover[-1]) < math.dist(passes[-1][0][-1], cover[0]):

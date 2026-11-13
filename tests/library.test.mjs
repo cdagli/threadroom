@@ -40,7 +40,9 @@ test('Every sample inserts into each hoop, preserves editable parts, and leaves 
     next.project.objects[0].rings[0][0][0]=0;
   }
   assert.equal(JSON.stringify(libraryAssets),before);
-  assert.equal(filterLibraryAssets(libraryAssets,{query:'cicek',categoryId:'botanical'}).length,2);
+  // Accent-insensitive search: "cicek" finds items tagged "çiçek" (the catalog keeps growing, so no fixed count).
+  const flowers=filterLibraryAssets(libraryAssets,{query:'cicek',categoryId:'botanical'}).map(a=>a.id);
+  assert.ok(['botanical.tulip-01','botanical.daisy-01'].every(id=>flowers.includes(id)),flowers.join());
 });
 
 test('All former shape tools are searchable editable fills in Basic shapes',()=>{

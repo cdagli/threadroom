@@ -264,6 +264,10 @@ export const reclose=(rings:Point[][],closed:boolean)=>rings.map(r=>{const shut=
 /** @test */ export function samplePath(points:Point[], length:number,t:Translator=createT('en')):Point[] {
   if(!Number.isFinite(length)||length<=0)throw new TranslationError(t,'Choose a positive stitch length.');
   if(points.length<2)return points;
+  // Divide the whole path evenly: stepping at the full length leaves a stub at the end,
+  // which a bean stitch then sews three times.
+  let total=0;for(let i=1;i<points.length;i++)total+=Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]);
+  if(total>1e-9)length=total/Math.max(1,Math.ceil(total/length-1e-6));
   const result:Point[]=[[...points[0]]];let remaining=length;
   for(let i=1;i<points.length;i++){
     let a=points[i-1];const b=points[i];let distance=Math.hypot(b[0]-a[0],b[1]-a[1]);
@@ -275,7 +279,8 @@ export const reclose=(rings:Point[][],closed:boolean)=>rings.map(r=>{const shut=
     remaining-=distance;
   }
   const last=points[points.length-1];
-  if(Math.hypot(last[0]-result[result.length-1][0],last[1]-result[result.length-1][1])>1e-6)result.push([...last]);
+  if(result.length>1&&Math.hypot(last[0]-result[result.length-1][0],last[1]-result[result.length-1][1])<length*.01)result.pop();
+  result.push([...last]);
   return result;
 }
 

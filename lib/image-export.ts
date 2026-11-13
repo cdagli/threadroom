@@ -1,4 +1,5 @@
-import {drawFabricTexture,drawThreads,threadShades,threadStyle} from './thread';
+import {drawFabricTexture} from './thread';
+import {drawRealisticThreads} from './thread-renderer';
 import {visibleCommands} from './layers';
 import type {Command,Compiled,Project,RefImage} from './project';
 export function imageSize(compiled:{commands:readonly Command[]},pxPerMm=300/25.4){
@@ -21,7 +22,7 @@ export async function exportImage(compiled:Compiled,project:Project,pxPerMm:numb
     const view:[number,number,number,number]=[b.x,b.y,b.x+b.width,b.y+b.height];
     if(!transparent)drawFabricTexture(c,project.fabric,b.scale,view);
     for(const [i,img] of images){c.save();c.globalAlpha=i.opacity;c.translate(i.x+i.width/2,i.y+i.height/2);if(i.rotation)c.rotate(i.rotation*Math.PI/180);c.drawImage(img,-i.width/2,-i.height/2,i.width,i.height);c.restore();}
-    drawThreads(c,commands,compiled.threads.map(t=>threadShades(t.color)),0,commands.length,threadStyle(b.scale),view);
+    drawRealisticThreads(c,commands,compiled.threads.map(t=>t.color),0,commands.length,b.scale,view);
     return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG')),'image/png'));
   }finally{canvas.width=canvas.height=0;}
 }

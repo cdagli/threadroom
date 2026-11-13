@@ -1,9 +1,10 @@
 # Design library
 
-The editor's **Library** panel browses the built-in catalog in eight categories. Every category has items: the drawing tools' basic shapes, four hand-digitised starter motifs (**Yaprak dalı / Leaf sprig**, **Lale / Tulip**, **Papatya / Daisy**, **Kalp / Heart**) and 19 generated motifs made to compose with text and other shapes:
+The editor's **Library** panel browses the built-in catalog in eight categories. Every category has items: the drawing tools' basic shapes, four hand-digitised starter motifs (**Yaprak dalı / Leaf sprig**, **Lale / Tulip**, **Papatya / Daisy**, **Kalp / Heart**) and 34 generated motifs made to compose with text and other shapes:
 
 | Category | Motifs |
 | --- | --- |
+| Flowers & plants | Buttercup ornament, Wild rose, Shooting star, May apple flower, Gentian, Pink lily, Red pompon flower, Solomon's seal, Flowering dogwood, Two auriculas, Grape hyacinth, Dandelion, Field poppy, Wild columbine, Cherry blossom branch |
 | Borders & frames | Laurel wreath, Ribbon banner, Scalloped frame, Round badge, Shield badge, Speech bubble |
 | Geometric patterns | Honeycomb, Chevron band, Kilim diamond |
 | Ornaments | Flourish divider, Rosette |
@@ -18,6 +19,8 @@ Basic shapes reuse the former Shapes tool’s editable curve anchors and insert 
 The starter motifs were hand-digitised through the editor's WebMCP tools and exported into `lib/library-samples/*.json`. Each has its own group, stable source IDs, named editable parts, Brother thread references and an intentional sew order. Stems, leaves, petals, centres and highlights remain separate objects. Source geometry is stored at its original size in millimetres. The library checks each imported JSON snapshot before exposing it in the catalog.
 
 Generated motifs are code: one file per motif in `scripts/library/motifs/<category>/<slug>.mjs`, drawn with `scripts/library/kit.mjs`. `node scripts/library/build.mjs` writes `lib/library-samples/motifs/<id>.json` and the generated `index.ts` that the catalog imports; never edit those by hand. Layered regions (bee stripes, bird breast and wing, pumpkin lobes, badge rings) are cut with the polygon tools so fills interlock by 0.4 mm instead of stacking. Every motif inserts with no design or stitch warnings in the 100 × 100 hoop and no failures in the 60 × 40 hoop.
+
+The Flowers & plants motifs are digitized from public-domain botanical plates on the [Biodiversity Heritage Library](https://www.biodiversitylibrary.org/): watercolour albums from Oak Spring Garden Foundation and Dumbarton Oaks (1580–1856, CC0 / public domain) and E. E. Clark's *A handbook of plant-form for students of design* (1905). Each motif file names its plate and BHL page. Their outlines were traced from the plates and then digitized by layer with `drawLayers` (see the kit reference): stems as tapered satin, leaves split at the midrib, flower masses cut into petals.
 
 To add motifs, follow the `generate-library-pattern` skill (`.agents/skills/generate-library-pattern`). It searches the catalog for duplicates first (`node scripts/library/search.mjs find <words…>` and silhouette similarity), then builds and reviews each motif with `node scripts/library/review.mjs <words…>`, which runs the design checks and the real compiler and renders stitch and thumbnail sheets to `agent-out/library-review/`.
 

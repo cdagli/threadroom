@@ -85,6 +85,53 @@ test('Colour runs merge consecutive same-thread objects and sum compiled stitche
   assert.deepEqual(counted.map(r=>r.stitches),[0,3,0,1]);
   assert.deepEqual(colourRuns({...p,objects:[]},null),[]);
 });
+
+test('Colours view consolidates separated thread runs without changing sew order or group membership',()=>{
+  const {colourGroups}=load('layers'),p=project();
+  p.objects[0].color='#AABBCC';p.objects[2].color='#aabbcc';p.objects[4].color='#aabbcc';
+  p.objects[4].thread={brand:'brother',code:'209',name:'Pink'};
+  const before=structuredClone(p),stitch=objectId=>({type:'stitch',objectId});
+  const groups=colourGroups(p,{commands:[stitch('a'),stitch('c'),stitch('c'),stitch('e')]});
+  assert.deepEqual(groups.map(g=>g.ids),[['a','c'],['b','d'],['e']]);
+  assert.deepEqual(groups.map(g=>g.stitches),[3,0,1]);
+  assert.deepEqual(groups.map(g=>[g.index,g.end]),[[0,3],[1,4],[4,5]]);
+  assert.deepEqual(p,before);
+  assert.deepEqual(colourGroups(p,null).map(g=>g.stitches),[null,null,null]);
+  const key=groups[0].key;
+  assert.equal(colourGroups({...p,objects:p.objects.slice(1)},null).find(g=>g.ids.includes('c')).key,key);
+  assert.deepEqual(colourGroups({...p,objects:[]},null),[]);
+});
+
+test('Colour runs and groups skip layout helpers while preserving actual insertion boundaries',()=>{
+  const {colourRuns,colourGroups}=load('layers');
+  const p={...project(),objects:[item('a'),{...item('path'),layoutOnly:true,color:'#ffffff'},item('b'),{...item('path-2'),layoutOnly:true},item('c')]};
+  for(const rows of [colourRuns(p,null),colourGroups(p,null)]){
+    assert.deepEqual(rows.map(r=>r.ids),[['a','b','c']]);
+    assert.deepEqual(rows.map(r=>[r.index,r.end]),[[0,5]]);
+  }
+});
+
+test('Canvas clicks select a group as a unit until entered, keeping the clicked member primary',()=>{
+  const {canvasTargetIds,selectCanvasIds}=load('layers'),p=project();
+  assert.deepEqual(canvasTargetIds(p,'b'),['c','b']);
+  assert.deepEqual(canvasTargetIds(p,'c'),['b','c']);
+  assert.deepEqual(selectCanvasIds(p,['a'],'b'),['c','b']);
+  assert.deepEqual(canvasTargetIds(p,'b','g'),['b']);
+  assert.deepEqual(canvasTargetIds(p,'b','h'),['c','b']);
+  assert.deepEqual(canvasTargetIds(p,'a'),['a']);
+  assert.deepEqual(selectCanvasIds(p,['a'],'b',true),['a','c','b']);
+  assert.deepEqual(selectCanvasIds(p,['a','b','c'],'b',true),['a']);
+  assert.deepEqual(selectCanvasIds(p,['b'],'c',true),['b','c']);
+  assert.deepEqual(selectCanvasIds(p,['b','c'],'b',true,'g'),['c']);
+  p.objects[2].locked=true;
+  assert.deepEqual(canvasTargetIds(p,'b'),['b']);assert.deepEqual(canvasTargetIds(p,'c'),[]);
+  p.objects[2].locked=false;p.objects[2].hidden=true;
+  assert.deepEqual(canvasTargetIds(p,'b'),['b']);assert.deepEqual(canvasTargetIds(p,'c'),[]);
+  p.objects[2].hidden=false;p.objects[2].layoutOnly=true;
+  assert.deepEqual(canvasTargetIds(p,'b'),['b']);
+  const selected=['a'];assert.equal(selectCanvasIds(p,selected,'missing'),selected);
+  assert.deepEqual(canvasTargetIds({...p,groups:[]},'b'),['b']);
+});
 test('Placing a block keeps groups whole, joins a group it lands inside and leaves a group it moves away from',()=>{
   const {placeObjects,positionIndex}=load('layers'),p=project(),order=q=>q.objects.map(o=>o.id+(o.group?`:${o.group}`:''));
   assert.deepEqual(order(placeObjects(p,['b','c'],5)),['a','d:h','e','b:g','c:g']);

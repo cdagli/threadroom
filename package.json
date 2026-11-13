@@ -8,6 +8,7 @@
     "build": "next build --webpack",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
+    "test:thread-renderer": "node scripts/audit-thread-renderer.mjs",
     "knip": "knip",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/db-migrate.mjs"
   },

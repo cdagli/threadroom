@@ -68,7 +68,7 @@ import {AngleGuideEditor} from './angle-guides';
 import {guideMode,seedGuide,withGuides} from '@/lib/angle-guides';
 import {changedObjectIds, projectCommands, commandPaths, designBounds, objectGeometry, sewnStitches} from '@/lib/editor-render';
 import {brushDefaults,brushIds,brushObject,brushSize,brushStroke,brushes,type BrushId} from '@/lib/brushes';
-import {selectIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
+import {selectIds, canvasTargetIds, selectCanvasIds, visibleCommands, toggleLock, unlockAll, unlockedIds, selectableIds, placeObjects, positionIndex} from '@/lib/layers';
 
 import {insertLibraryAsset,libraryDragType,type LibraryAsset} from '@/lib/library';
 import {libraryAssets} from '@/lib/library-assets';
@@ -103,7 +103,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const brushSamples=useRef<{points:Point[];pressures:number[]}>({points:[],pressures:[]});
   const pathHint=t("Left click: corner · Right/double-click: smooth · Ctrl / ⌘: 15° snap · Enter: finish");
   const tools: {id:Tool;icon:string;label:string;key:string;alt?:string;title:string;hint:string}[]=[
-    {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click to edit points · Drag the green/red dots to set start and end.")},
+    {id:'select',icon:'select',label:t("Select"),key:'S',alt:'V',title:t("Select objects"),hint:t("Drag to move · Double-click a group to select its objects · Double-click an object to edit points · Esc: leave group.")},
     {id:'pan',icon:'hand',label:t("Pan"),key:'H',title:t("Panning"),hint:t("Drag to move the canvas. Hold Space to pan with any tool.")},
     {id:'measure',icon:'ruler',label:t("Measure"),key:'M',title:t("Measuring"),hint:t('Drag to measure length and angle. Shift: snap to 15°.')},
     {id:'open',icon:'open',label:t("Open"),key:'1',title:t("Drawing Open Shape"),hint:t("{v0}. Or click the first point.",{v0:pathHint})},
@@ -125,8 +125,8 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   const [saveState,setSaveState]=useState<'saved'|'saving'|'unsaved'|'error'|'too-large'>('saved');
   const [conflict,setConflict]=useState<{name:string;updatedAt:string;dismissed?:boolean}|null>(null),[historyOpen,setHistoryOpen]=useState(false),[creating,setCreating]=useState<'open'|'busy'|null>(null);
   const [selection,setSelection]=useState<string[]>([]), [tool,setTool]=useState<Tool>(initialProject.objects.length||initialProject.images?.length?'select':'closed');
-  const selected=selection.at(-1)??null,anchor=useRef<string|null>(null);
-  function setSelected(id:string|null){setSelection(id?[id]:[]);anchor.current=id;}
+  const selected=selection.at(-1)??null,anchor=useRef<string|null>(null),enteredGroup=useRef<string|null>(null);
+  function setSelected(id:string|null){setSelection(id?[id]:[]);anchor.current=id;if(id===null)enteredGroup.current=null;}
   function selectObject(id:string,keys:{ctrlKey:boolean;metaKey:boolean;shiftKey:boolean}){
     setSelection(ids=>selectIds(project.objects.map(o=>o.id),ids,id,keys.shiftKey?'range':keys.ctrlKey||keys.metaKey?'toggle':'replace',anchor.current));
     if(!keys.shiftKey)anchor.current=id;setEditPoints(false);
@@ -788,7 +788,10 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       const target=e.target as SVGElement;
       const id=pressedObject.current;
       const source=current.current.objects.find(o=>o.id===id&&!o.hidden&&!o.locked);
-      if(source&&!editing&&(e.ctrlKey||e.metaKey)){selectObject(source.id,e);return;}
+      if(source&&!editing&&(e.ctrlKey||e.metaKey)){
+        if(source.group!==enteredGroup.current)enteredGroup.current=null;
+        setSelection(ids=>selectCanvasIds(current.current,ids,source.id,true,enteredGroup.current));anchor.current=source.id;setEditPoints(false);return;
+      }
       const node=target.closest('[data-point]'),insertion=target.closest('[data-insert]'),end=target.closest('[data-end]')?.getAttribute('data-end');
       if(ends&&item&&(end==='entry'||end==='exit')){startDrag({id:item.id,start:p,source:current.current.objects.find(o=>o.id===item.id)??item,end},e);return;}
       if(editing&&item){
@@ -805,8 +808,12 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
       if(imageHit){selectImage(imageHit.id);setSelectionDragging(true);transformDrag.current={before:current.current,ids:[],box:imageBounds(imageHit),start:p,angle:imageHit.rotation??0,handle:'move',image:imageHit.id};dragUndo.current.begin(current.current);capture(e);return;}
       // While editing points a click on another shape only switches to it, so a near miss never drags it.
       if(source&&editing){setSelected(source.id);setActivePoint(null);}
-      else if(source){const ids=selection.includes(source.id)?unlockedIds(current.current,selection):[source.id];if(!selection.includes(source.id))setSelected(source.id);setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);}
-      else if(!editing&&tool==='select'){marqueeDrag.current={start:p,client:[e.clientX,e.clientY],base:e.ctrlKey||e.metaKey?selection:[],additive:e.ctrlKey||e.metaKey,moved:false};capture(e);}
+      else if(source){
+        if(source.group!==enteredGroup.current)enteredGroup.current=null;
+        const target=canvasTargetIds(current.current,source.id,enteredGroup.current),ids=target.every(id=>selection.includes(id))?unlockedIds(current.current,selection):target;
+        setSelection(ids);anchor.current=source.id;setActivePoint(null);startDrag({id:source.id,ids,start:p,source},e);
+      }
+      else if(!editing&&tool==='select'){enteredGroup.current=null;marqueeDrag.current={start:p,client:[e.clientX,e.clientY],base:e.ctrlKey||e.metaKey?selection:[],additive:e.ctrlKey||e.metaKey,moved:false};capture(e);}
       else if(!editing){setSelected(null);setImageSel(null);}
     }
   }
@@ -851,7 +858,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     if(band){
       if(!band.moved&&Math.hypot(e.clientX-band.client[0],e.clientY-band.client[1])<4)return;
       band.moved=true;setMarquee({start:band.start,end:p});
-      const hit=marqueeIds(current.current,{x:band.start[0],y:band.start[1],width:p[0]-band.start[0],height:p[1]-band.start[1]});
+      const hit=[...new Set(marqueeIds(current.current,{x:band.start[0],y:band.start[1],width:p[0]-band.start[0],height:p[1]-band.start[1]}).flatMap(id=>canvasTargetIds(current.current,id,enteredGroup.current)))];
       const next=[...band.base,...hit.filter(id=>!band.base.includes(id))];setSelection(ids=>ids.length===next.length&&ids.every((id,i)=>id===next[i])?ids:next);anchor.current=next[0]??null;return;
     }
     const transform=transformDrag.current;
@@ -919,7 +926,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
   function pointerCancel(e:ReactPointerEvent<SVGSVGElement>){moveQueue.current?.cancel();if(marqueeDrag.current){const band=marqueeDrag.current;marqueeDrag.current=null;setMarquee(null);if(band.moved)setSelection(band.base);}setSelectionDragging(false);draftPress.current=null;touches.current.delete(e.pointerId);pinch.current=null;measuring.current=false;shapePress.current=null;touchNavigation.current=touches.current.size>0;setNavigating(false);panDrag.current=null;if(transformDrag.current){cancelTransform();}if(drag.current){const before=dragUndo.current.cancel()??drag.current.before;drag.current=null;current.current=before;setProject(before);}if(draftDrag.current){setDraft(draftDrag.current.before);draftDrag.current=null;}if(drawing)cancelDrawing();}
   function openMenu(x:number,y:number,target:string|null,keyboard=false){
     const p=current.current,o=target?p.objects.find(o=>o.id===target&&!o.hidden&&!o.locked):undefined,canPaste=!!clipboard.current?.objects.length;
-    let ids=selection;if(o&&!selection.includes(o.id)){ids=[o.id];setSelected(o.id);setEditPoints(false);}
+    let ids=selection;if(o){if(o.group!==enteredGroup.current)enteredGroup.current=null;const target=canvasTargetIds(p,o.id,enteredGroup.current);if(!target.every(id=>selection.includes(id))){ids=target;setSelection(ids);anchor.current=o.id;setEditPoints(false);}}
     setMenu({x,y,entries:o||keyboard?objectMenu(p,ids,canPaste):canvasMenu(p,canPaste)});
   }
   const closeMenu=useStableCallback(()=>{if(document.activeElement?.closest('.context-menu'))svg.current?.focus({preventScroll:true});setMenu(null);});
@@ -1165,23 +1172,25 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     </MenuPopover>
     <section ref={stage} className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
-        {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages}/>}
+        {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages} grid={viewSettings.showGrid?{size:viewSettings.gridSize,subdivisions:viewSettings.subdivisions}:null}/>}
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")}
           onDragOver={e=>{if(!e.dataTransfer.types.includes(libraryDragType))return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect=hasDraft||shapeDraft||drawing||busy?'none':'copy';}}
           onDrop={e=>{if(!e.dataTransfer.types.includes(libraryDragType))return;e.preventDefault();e.stopPropagation();const asset=libraryAssets.find(a=>a.id===e.dataTransfer.getData(libraryDragType));if(asset)addLibraryAsset(asset,clientToWorld(viewport.current,[e.clientX,e.clientY],e.currentTarget.getBoundingClientRect(),hoop));}}
           onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerCancel} onLostPointerCapture={()=>{if(drag.current||transformDrag.current)endDrag();}} onPointerLeave={()=>{setHover(null);setCursor(null);if(tool==='stitch')hoverStitch(null);}} onContextMenu={e=>e.preventDefault()} onDoubleClick={e=>{
             if(colourPickRef.current)return;
             if(editing&&(item?.curve||item?.rails)&&pressedAnchor.current!==null){toggleCorner(pressedAnchor.current);return;}
-            const id=pressedObject.current;if(tool!=='select'||!id)return;if(project.objects.find(o=>o.id===id)?.text)focusText();else editObject();}}>
+            const id=pressedObject.current;if(tool!=='select'||!id)return;
+            const hit=project.objects.find(o=>o.id===id);if(hit?.group!==undefined&&enteredGroup.current!==hit.group){enteredGroup.current=hit.group;setSelected(id);setEditPoints(false);setActivePoint(null);return;}
+            if(hit?.text)focusText();else editObject();}}>
               <defs><pattern id="fine-grid" width={viewSettings.gridSize/viewSettings.subdivisions} height={viewSettings.gridSize/viewSettings.subdivisions} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize/viewSettings.subdivisions} 0 L 0 0 0 ${viewSettings.gridSize/viewSettings.subdivisions}`} fill="none" stroke="var(--grid)" strokeWidth={.5/canvasScale}/></pattern><pattern id="grid" width={viewSettings.gridSize} height={viewSettings.gridSize} patternUnits="userSpaceOnUse"><path d={`M ${viewSettings.gridSize} 0 L 0 0 0 ${viewSettings.gridSize}`} fill="none" stroke="var(--grid)" strokeWidth="0.1"/></pattern><pattern id="cloth" width="0.55" height="0.55" patternUnits="userSpaceOnUse"><path d="M0 0H.55M0 0V.55" stroke="var(--fabric-weave)" opacity=".15" strokeWidth=".06"/></pattern><filter id="hoop-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="var(--hoop-shadow)" floodOpacity="1"/></filter></defs>
               {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="var(--bg-workspace)"/>
               <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="var(--hoop-rim)" filter="url(#hoop-shadow)"/>
               <rect x="0" y="0" width={hoop.width} height={hoop.height} rx="3" fill="var(--fabric)" stroke="var(--hoop-border)" strokeWidth=".35"/>
               <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#cloth)" pointerEvents="none"/>
               <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="var(--centre-cross)" strokeWidth={1.1/canvasScale} pointerEvents="none"/></>}
-              {viewSettings.showGrid&&viewSettings.subdivisions>1&&viewSettings.gridSize/viewSettings.subdivisions*canvasScale>=6&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#fine-grid)" opacity=".5" pointerEvents="none"/>}
-              {viewSettings.showGrid&&<path d={`M0 ${hoop.height/2}H${hoop.width}M${hoop.width/2} 0V${hoop.height}`} stroke="var(--centre-cross)" strokeWidth={.65/canvasScale} opacity=".55" pointerEvents="none"/>}
-              {viewSettings.showGrid&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>}
+              {!thread&&viewSettings.showGrid&&viewSettings.subdivisions>1&&viewSettings.gridSize/viewSettings.subdivisions*canvasScale>=6&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#fine-grid)" opacity=".5" pointerEvents="none"/>}
+              {!thread&&viewSettings.showGrid&&<path d={`M0 ${hoop.height/2}H${hoop.width}M${hoop.width/2} 0V${hoop.height}`} stroke="var(--centre-cross)" strokeWidth={.65/canvasScale} opacity=".55" pointerEvents="none"/>}
+              {!thread&&viewSettings.showGrid&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#grid)" opacity=".65" pointerEvents="none"/>}
               {shownImages.map(i=><g key={i.id} data-image={i.id} transform={i.rotation?`rotate(${i.rotation} ${i.x+i.width/2} ${i.y+i.height/2})`:undefined} pointerEvents={tool==='select'&&!editing&&!i.locked&&!colourPick?'all':'none'}>{thread?<rect x={i.x} y={i.y} width={i.width} height={i.height} fill="transparent"/>:<image href={i.src} x={i.x} y={i.y} width={i.width} height={i.height} preserveAspectRatio="none" opacity={i.opacity}/>}</g>)}
               <>{!thread&&stitchPaths.blocks.map((p,i)=><path key={i} d={p.stitch} fill="none" stroke={compiled!.threads[i].color} strokeWidth=".22" strokeLinecap="round" pointerEvents="none" opacity={showTravel?.35:1}/>)}
                 {densityField&&<DensityHeat field={densityField}/>}

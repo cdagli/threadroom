@@ -85,7 +85,10 @@ Turkish instructions, hints and messages use the formal register ("sürükleyin"
   the hoop actually fitted to your machine. Profiles are limits, not a machine
   connection.
 - Fabric profiles (Setup) set fill and satin spacing, default underlay and pull
-  compensation, and recommend a stabilizer and topping:
+  compensation, and recommend a stabilizer and topping. Spacing is measured
+  between forward fill rows and between satin holes on one rail, as in
+  professional software, so 0.4 mm lays a thread every 0.2 mm
+  (`docs/stitch-density.md`):
 
   | Fabric | Fill | Satin | Fill / satin underlay | Pull | Stabilizer · topping |
   |---|---|---|---|---|---|
@@ -275,10 +278,10 @@ fabric profile until edited, with the existing **Fabric / Reset** markers.
   `center: [x,y]`, defaulting to the shape's area centroid (including holes).
   The panel exposes centre X/Y in hoop millimetres and Reset center; an explicit
   centre follows object movement/resizing. Row Space inherits the fabric profile
-  (woven: 0.42 mm; range 0.05–50), keeping the demo safe. Ember defaults to
-  0.2 mm, which puts over four thread layers in the demo's overlapping cheeks
-  when interpreted as true spacing; that value remains available explicitly.
-  **Row Space is the true distance between arms**: `b = spacing / π`, deliberately
+  (woven: 0.42 mm; range 0.05–50) and, like every fill, is measured between
+  forward rows: the outward and the return spiral interleave, so 0.42 lays a
+  ring every 0.21 mm (Ember's default of 0.2 between neighbouring arms).
+  **The row pitch is the true distance between arms**: `b = pitch / π`, deliberately
   correcting Ember's `b = spacing` quirk, which makes the actual spacing π times
   the entered value. Stitch length defaults to 4 mm (the shared 1–6 mm control).
   Clipped pieces route nearest-first, using interior/boundary travel and trimming
@@ -366,13 +369,13 @@ pill turns red and shows how many issues will likely fail.
 | Same colour sewn twice | editor | any colour sewn, left and resumed | — |
 | Stitches under 0.3 mm | compiler | 3 in one 2 mm square | 10 % of an object, or 12 clustered |
 | Sewn stitches over 7 mm | compiler | any (satin bites excluded) | — |
-| Density (3 × 3 mm windows) | compiler | 7 holes/mm² or 3 thread layers | 10 holes/mm² or 5 layers |
+| Density (3 × 3 mm windows) | compiler | 14 holes/mm² or 3 thread layers | 20 holes/mm² or 4.2 layers |
 | Same-colour jump between objects | compiler | over 30 mm | — |
 | Trims | compiler | more than 25 | — |
 
-A layer is sewn thread per mm² × 0.42 mm, so one woven fill is about one
-layer: two stacked fills pass, three are worth checking, three with full
-underlay or four fail. The compile result has `warnings` (`code`,
+A layer is sewn thread per mm² × 0.21 mm, so one covering fill or satin is
+about one layer: two stacked pass, three are worth checking, four fail
+(see `docs/stitch-density.md`). The compile result has `warnings` (`code`,
 `objectId`, `bounds` [x0, y0, x1, y1] mm, `severity`, `values`); preview
 commands carry `trim` and `travel` flags.
 

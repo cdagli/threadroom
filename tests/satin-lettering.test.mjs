@@ -80,12 +80,17 @@ test('Live export keeps ownership and reading order; conversion gives ordinary g
   assert.deepEqual(geometryPayload(project(lettering(spec('simplex',' ')))).objects,[]);
 });
 
-test('Six millimetre Turkish names have a quiet geometry and actual PES design check, deterministic stitches and ownership',()=>{
+test('Six millimetre Turkish names keep deterministic PES, ownership and honest overlap checks at full satin density',()=>{
   for(const font of Object.keys(satinFonts)){
     const p=project(lettering(spec(font)));assert.deepEqual(checkProject(p),[]);
     const code='import json,sys\nfrom embroidery.compiler import compile_project\np=json.load(sys.stdin)\na=compile_project(p);b=compile_project(p)\nassert a["pes"]==b["pes"]\nprint(json.dumps({"warnings":a["warnings"],"commands":a["commands"],"stats":a["stats"]}))';
     const run=spawnSync(process.env.THREADROOM_PYTHON||'.venv/bin/python',['-c',code],{input:JSON.stringify(geometryPayload(p)),encoding:'utf8'});
-    assert.equal(run.status,0,run.stderr);const out=JSON.parse(run.stdout);assert.deepEqual(out.warnings,[]);
+    assert.equal(run.status,0,run.stderr);const out=JSON.parse(run.stdout);
+    // At true same-rail pitch, overlapping strokes in tiny decorative/script
+    // fonts can warrant a density advisory. Keep reporting those intersections;
+    // no font here may fail or introduce unrelated stitch warnings.
+    assert.ok(out.warnings.every(w=>w.code==='dense'&&w.severity==='check'),`${font}: ${JSON.stringify(out.warnings)}`);
+    if(font==='simplex'||font==='readability')assert.deepEqual(out.warnings,[]);
     assert.ok(out.stats.stitches>100);assert.ok(out.commands.every(c=>c.objectId==='lettering'));
     // Touching strokes connect under their columns (sewn or still to sew), so only separate
     // letters and diacritics trim (a connector over bare fabric would float): "Ayşe İpek"

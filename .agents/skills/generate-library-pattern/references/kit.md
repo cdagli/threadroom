@@ -78,3 +78,29 @@ object loses its editable curve. Prefer curves when there is no hole.
 **Sew order**: one block per thread, blocks in layer order (things on top sewn later). Inside a block, put
 neighbours next to each other and run chains end-to-start; set `entry`/`exit` on fills when a block runs
 left → right then back (see `geometric-patterns/chevron-band-01.mjs`).
+
+
+## Traced motifs (from reference plates)
+
+For motifs copied from a public-domain plate, trace outlines in millimetres and describe the motif as layers;
+`drawLayers(b,layers,{start})` digitizes them in order (see the `botanical/*-01.mjs` files from BHL plates).
+
+| Layer kind | Becomes |
+| --- | --- |
+| `auto` | slim parts (< 5.5 mm) as satin columns via `b.ribbon(outline)`, broad parts as fills along their long axis |
+| `leaf` | leaves ≥ `splitMin` (4.6 mm) split at the midrib into two herringbone halves; slimmer ones as satin |
+| `petals` | one flower mass cut into `count` petals around `centre` (radial stitch direction); `notches` to place cuts; fans (centre on the outline) spread cuts across their angle; `edge:{code}` adds a running rim per petal for pale petals |
+| `fill` | plain fills (`pattern`, `angle`, `round` for tip rounding) |
+| `stem` | open centrelines as tapered satin, `width:[start,end]`; the compiler picks the sewing direction |
+| `spray` | stalks from shared roots as one running path out and back (no trims between stalks) |
+| `dot` | specks merged within `merge` mm into satin dots (anthers, flower eyes) |
+| `outline` | running lines (closed unless `closed:false`) |
+
+Layer options: `covers:[i…]` cuts later layers' shapes out of this one (no stacking); `smooth:true` turns sparse
+hand anchors into Levien curves. Kit helpers behind it: `b.ribbon`, `outlineRails`, `maxWidth`, `axisAngle`,
+`leafHalves`, `petalCuts`, `evenly`, `nearestOrder`.
+
+Lessons: watercolour washes trace well for saturated petals and dark leaves, but white or pale parts are paper
+coloured, so draw those (and most stems) by hand from a mm grid over the plate. Tall motifs shrink to ~60 % in
+the 60 × 40 hoop: satin columns need a widest point ≥ 1.7 mm and fills ≥ ~8 mm² to survive it. Trims add up fast
+with many small parts (leaves, dots); merge pairs (twin bells), sew leaf halves back to back, and drop fragments.

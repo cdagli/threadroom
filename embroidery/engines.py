@@ -151,11 +151,12 @@ def satin_columns(obj):
     angle, rule = obj.get('angle',0), obj.get('fillRule','evenodd')
     rotated = [C.rotate(r,angle) for r in obj['rings']]
     # Each span has exactly two boundary hits; splits/merges start new columns.
-    return C.fill_sections(rotated,obj['spacing'],rule)
+    return C.fill_sections(rotated,obj['spacing']/2,rule)
 
 
 def route_satin(obj, at, entry, target):
     angle, spacing, pull = obj.get('angle',0), obj['spacing'], obj['pullCompensation']
+    step = spacing/2
     pieces = []
     for rows in satin_columns(obj):
         centres = [[(a+b)/2,y] for y,a,b in rows]
@@ -182,7 +183,7 @@ def route_satin(obj, at, entry, target):
                 if len(rail)>1:
                     passes.append((C.tolerant_path(C.rotate(rail,angle,True),1.5,.1),3))
         if 'zigzag' in underlay:
-            zig = [[(a+b)/2+(-1 if i%2==0 else 1)*max(0,(b-a)/2-.5),y] for i,(y,a,b) in enumerate(rows[::max(1,round(1.5/spacing))])]
+            zig = [[(a+b)/2+(-1 if i%2==0 else 1)*max(0,(b-a)/2-.5),y] for i,(y,a,b) in enumerate(rows[::max(1,round(1.5/step))])]
             if len(zig)>1:
                 passes.append((C.line_path(C.rotate(zig,angle,True),1.5),3))
         cover = C.rotate(cover,angle,True)
@@ -463,10 +464,11 @@ def stroke_rails(obj, region, angle, rows):
 
 def route_stroke_satin(obj, at, entry, target):
     spacing, pull, underlay = obj['spacing'], obj['pullCompensation'], obj['underlay']
+    step = spacing/2
     rule, region = obj.get('fillRule', 'evenodd'), C.Region(obj['rings'], obj.get('fillRule', 'evenodd'))
     field = StrokeField(obj['rings'], rule, mean_stroke(obj['rings'], rule))
     pieces = []
-    for angle, rows in stroke_sections(obj['rings'], rule, spacing, obj.get('angle', 0), field):
+    for angle, rows in stroke_sections(obj['rings'], rule, step, obj.get('angle', 0), field):
         left, right, paired = stroke_rails(obj, region, angle, rows)
         # A section cut obliquely starts in a point; its first bites would be shorter than
         # the pull compensation. The neighbouring sections' pull covers that sliver.
@@ -488,7 +490,7 @@ def route_stroke_satin(obj, at, entry, target):
                     passes.append((C.tolerant_path(rail, 1.5, .1), 3))
         if 'zigzag' in underlay:
             edges = C.inset_rails(left, right, .5)
-            zig = [edges[i % 2][j] for i, j in enumerate(range(0, len(left), max(1, round(1.5/spacing)))) if widths[j] >= 1]
+            zig = [edges[i % 2][j] for i, j in enumerate(range(0, len(left), max(1, round(1.5/step)))) if widths[j] >= 1]
             if len(zig) > 1:
                 passes.append((C.line_path(zig, 1.5), 3))
         cover = C.block_path(left, right, spacing, pull, 0, obj.get('shortStitches', True), dots=False, short_min=1.2, paired=paired) if len(left) > 1 else [left[0], right[0]]
@@ -498,7 +500,7 @@ def route_stroke_satin(obj, at, entry, target):
         if len(cover) > 1:
             pieces.append(passes+[(cover, C.SATIN_MAX-.15)])
     pieces = reading_order(obj, pieces, entry or at)
-    return route_pieces(obj, pieces, at, entry, target, ordered=True, travel=unsewn_travel(obj, pieces, spacing), minimum=.5)
+    return route_pieces(obj, pieces, at, entry, target, ordered=True, travel=unsewn_travel(obj, pieces, step), minimum=.5)
 
 
 def unsewn_travel(obj, pieces, spacing):

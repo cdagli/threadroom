@@ -119,10 +119,20 @@ const rasterCache = new WeakMap<Point[][], Partial<Record<'evenodd'|'nonzero',Ra
   return Math.min(1, cells*cell*cell/area);
 }
 
-// How far stitches reach past the drawn line: half the column for satin styles, the satin text border.
+// A satin line is mitred where it turns 40 degrees or more at one point (compiler satin_legs).
+const mitred = (o: StitchObject) => o.kind === 'satin' && o.rings.some(r => {
+  const closed = r.length > 2 && Math.hypot(r[0][0]-r.at(-1)![0], r[0][1]-r.at(-1)![1]) < 1e-6;
+  return r.some((q, i) => {
+    const a = i ? r[i-1] : closed ? r.at(-2)! : null, b = i < r.length-1 ? r[i+1] : null; if (!a || !b) return false;
+    const ux = q[0]-a[0], uy = q[1]-a[1], vx = b[0]-q[0], vy = b[1]-q[1], n = Math.hypot(ux, uy)*Math.hypot(vx, vy);
+    return n > 1e-12 && (ux*vx+uy*vy)/n <= Math.cos(40*Math.PI/180);
+  });
+});
+// How far stitches reach past the drawn line: half the column for satin styles (a mitred
+// corner's point reaches sqrt(2) times that), the satin text border.
 export function stitchReach(o: StitchObject, p: Project) {
   if (o.rails) return resolve(o, p.fabric, p.locks).pullCompensation/2;
-  if (isWideKind(o.kind)) return (o.satinWidth+resolve(o, p.fabric, p.locks).pullCompensation)/2;
+  if (isWideKind(o.kind)) return (o.satinWidth+resolve(o, p.fabric, p.locks).pullCompensation)/2*(mitred(o) ? Math.SQRT2 : 1);
   return o.text?.border?.kind === 'satin' && isFillKind(o.kind) ? o.text.border.width/2 : 0;
 }
 // Colour blocks in sewing order (text borders sew right after their letters).

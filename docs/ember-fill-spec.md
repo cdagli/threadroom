@@ -196,8 +196,9 @@ Paid: 23.
 ### 2.4 Row Space (default 0.2, step 0.1)
 Perpendicular distance between rows: "Spacing between fill rows. Smaller packs tighter". Lanes are
 evenly spaced and phase-anchored on the centroid, except when a gradient is set (2.8).
-**Note:** 0.2 is about half Threadroom's woven 0.42. I could not tell from the client code whether
-this is intentionally that dense (see section 5).
+**Note:** 0.2 is the gap between neighbouring rows. Threadroom's spacing is measured between
+forward rows (every second row), so its woven 0.42 lays rows 0.21 mm apart, the same density
+(`docs/stitch-density.md`).
 
 ### 2.5 Stitch Length (default 4, step 0.1)
 The base length L used by the pattern (`overlay.stitchSpacing`): "How long each stitch is along a
