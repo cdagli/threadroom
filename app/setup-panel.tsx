@@ -1,6 +1,8 @@
 'use client';
 import {Button,HelpText,Input,Section,Select,SubSection} from '@/design-system';
 import {fabrics,hoops,lockLimits,lockNames,withFabric,type Fabric,type Lock,type Locks,type Project} from '@/lib/project';
+import {backgroundLook} from '@/lib/thread';
+import {backgroundPresets,textiles,type CanvasBackground} from '@/lib/canvas-background';
 import type {ViewSettings} from '@/lib/view-settings';
 import {ViewControls} from './editing-controls';
 import {OverlayControls} from './stitch-overlays';
@@ -11,6 +13,9 @@ type Props={project:Project;disabled:boolean;view:ViewSettings;onView:(patch:Par
 
 export default function SetupPanel({project,disabled,view,onView,onProject,onHoop,onLocks,onTrim,onShortcuts}:Props){
   const {t}=useT(),fabric=fabrics[project.fabric];
+  const background=project.background,preset=background?String(backgroundPresets.findIndex(p=>p.background.textile===background.textile&&p.background.color===background.color)):'auto';
+  const effectiveBackground:CanvasBackground=background??{textile:({woven:'cotton',gauze:'gauze',jersey:'jersey',rib:'rib',fleece:'felt',terry:'terry',denim:'denim'} as const)[project.fabric],color:backgroundLook(project.fabric).base};
+  const setBackground=(patch:Partial<CanvasBackground>)=>onProject({...project,background:{...effectiveBackground,...patch}});
   const lockOptions=Object.entries(lockNames).map(([key,label])=><option key={key} value={key}>{t(label)}</option>);
   return <section className="panel-section setup-panel">
     <HelpText>{t('Choose your hoop and fabric. You can leave the other settings as they are to get started.')}</HelpText>
@@ -22,6 +27,18 @@ export default function SetupPanel({project,disabled,view,onView,onProject,onHoo
     </div>
     <HelpText tone="soft"><strong>{t('Suggested fabric support')}</strong><br/>{t('Stabilizer:')} {t(fabric.stabilizer)}<br/>{t('Topping:')} {t(fabric.topping)}</HelpText>
     <HelpText>{t('Machine')}: {t('Brother PR1X')}</HelpText>
+    <Section id="setup-background" title={t('Canvas background')}>
+      <HelpText>{t('Saved with this design. Changes the preview and PNG background, not stitch settings.')}</HelpText>
+      <label>{t('Background preset')}<Select disabled={disabled} value={preset} onChange={e=>{const value=e.target.value;if(value==='auto'){const next={...project};delete next.background;onProject(next);}else if(value!=='-1')onProject({...project,background:{...backgroundPresets[Number(value)].background}});}}>
+        <option value="auto">{t('Follow sewing fabric')}</option>
+        {backgroundPresets.map((p,i)=><option key={p.name} value={i}>{t(p.name)}</option>)}
+        {preset==='-1'&&<option value="-1">{t('Custom background')}</option>}
+      </Select></label>
+      <div className="setting-grid">
+        <label>{t('Textile')}<Select disabled={disabled} value={effectiveBackground.textile} onChange={e=>setBackground({textile:e.target.value as CanvasBackground['textile']})}>{Object.entries(textiles).map(([key,label])=><option key={key} value={key}>{t(label)}</option>)}</Select></label>
+        <label>{t('Fabric colour')}<Input type="color" disabled={disabled} value={effectiveBackground.color} onChange={e=>setBackground({color:e.target.value})}/></label>
+      </div>
+    </Section>
     <Section id="setup-view" title={t('View settings')}>
       <ViewControls value={view} onChange={onView}/>
     </Section>

@@ -38,7 +38,7 @@ export function diffProjects(before:Project,after:Project):Change[]{
   // Layer order and grouping only count on their own; object edits usually explain them.
   const arranged=!same(before.objects.map(o=>o.id),after.objects.map(o=>o.id))||!same(before.groups??[],after.groups??[]);
   if(!objectChanges&&arranged)changes.push({op:'reordered'});
-  const settings=(p:Project)=>[p.hoop,p.fabric,p.locks,p.trimJump,p.sewingSpeed??null,p.machine];
+  const settings=(p:Project)=>[p.hoop,p.fabric,p.locks,p.trimJump,p.sewingSpeed??null,p.machine,p.background??null];
   if(!same(settings(before),settings(after)))changes.push({op:'settings'});
   if(!same(before.images??[],after.images??[]))changes.push({op:'images'});
   return changes.length>maxChanges?[...changes.slice(0,maxChanges-1),{op:'more',count:changes.length-maxChanges+1}]:changes;

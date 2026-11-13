@@ -38,6 +38,7 @@ import {activeImage, imageBounds, imageLimits, insideImage, migrateImages, moveI
 import ImagesPanel from './images-panel';
 import ImageSettings from './image-settings';
 import SetupPanel from './setup-panel';
+import FabricBackground from './fabric-background';
 import {parse} from '@/lib/pes-parser';
 import {SVGImportChoice,ExportImageButton} from './io-controls';
 import {DensityHeat,DensityLegend,StitchDiagnostics,useDensity} from './density-view';
@@ -1172,7 +1173,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
     </MenuPopover>
     <section ref={stage} className="stage" aria-label={t("Embroidery editor")}>
       <div className="canvas-wrap">
-        {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages} grid={viewSettings.showGrid?{size:viewSettings.gridSize,subdivisions:viewSettings.subdivisions}:null}/>}
+        {thread&&<ThreadView canvasSize={canvasSize} compiled={preview!} count={threadSewn} fabric={project.fabric} background={project.background} hoop={hoop} view={threadView} svg={svg} dimmed={showTravel} images={shownImages} grid={viewSettings.showGrid?{size:viewSettings.gridSize,subdivisions:viewSettings.subdivisions}:null}/>}
         <svg ref={svg} className={`design-canvas ${colourPick?'colour-picking ':''}tool-${spacePan||panMode||navigating?'pan':editing?`edit-${pointMode}`:tool}`} tabIndex={0} viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`} role={editing?'group':'img'} aria-label={t("Embroidery canvas")}
           onDragOver={e=>{if(!e.dataTransfer.types.includes(libraryDragType))return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect=hasDraft||shapeDraft||drawing||busy?'none':'copy';}}
           onDrop={e=>{if(!e.dataTransfer.types.includes(libraryDragType))return;e.preventDefault();e.stopPropagation();const asset=libraryAssets.find(a=>a.id===e.dataTransfer.getData(libraryDragType));if(asset)addLibraryAsset(asset,clientToWorld(viewport.current,[e.clientX,e.clientY],e.currentTarget.getBoundingClientRect(),hoop));}}
@@ -1186,7 +1187,7 @@ function StudioEditor({projectId,initialProject,initialRevision}:StudioProps) {
               {!thread&&<><rect x="-1000" y="-1000" width="3000" height="3000" fill="var(--bg-workspace)"/>
               <rect x="-2" y="-2" width={hoop.width+4} height={hoop.height+4} rx="5" fill="var(--hoop-rim)" filter="url(#hoop-shadow)"/>
               <rect x="0" y="0" width={hoop.width} height={hoop.height} rx="3" fill="var(--fabric)" stroke="var(--hoop-border)" strokeWidth=".35"/>
-              <rect width={hoop.width} height={hoop.height} rx="3" fill="url(#cloth)" pointerEvents="none"/>
+              <FabricBackground fabric={project.fabric} background={project.background} width={hoop.width} height={hoop.height}/>
               <path d={`M${hoop.width/2-2} ${hoop.height/2}h4M${hoop.width/2} ${hoop.height/2-2}v4`} stroke="var(--centre-cross)" strokeWidth={1.1/canvasScale} pointerEvents="none"/></>}
               {!thread&&viewSettings.showGrid&&viewSettings.subdivisions>1&&viewSettings.gridSize/viewSettings.subdivisions*canvasScale>=6&&<rect width={hoop.width} height={hoop.height} rx="3" fill="url(#fine-grid)" opacity=".5" pointerEvents="none"/>}
               {!thread&&viewSettings.showGrid&&<path d={`M0 ${hoop.height/2}H${hoop.width}M${hoop.width/2} 0V${hoop.height}`} stroke="var(--centre-cross)" strokeWidth={.65/canvasScale} opacity=".55" pointerEvents="none"/>}

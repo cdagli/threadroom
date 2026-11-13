@@ -1,6 +1,26 @@
 // English phrases are stable translation keys; model IDs and saved content are never translated.
 export type Lang='tr'|'en';
 export const en={
+  "Canvas background": "Canvas background",
+  "Solid colour": "Solid colour",
+  "Linen": "Linen",
+  "Cotton": "Cotton",
+  "Denim": "Denim",
+  "Jersey": "Jersey",
+  "Felt": "Felt",
+  "Terry": "Terry",
+  "Natural linen": "Natural linen",
+  "Ivory cotton": "Ivory cotton",
+  "Indigo denim": "Indigo denim",
+  "Blush felt": "Blush felt",
+  "Sage linen": "Sage linen",
+  "Follow sewing fabric": "Follow sewing fabric",
+  "Custom background": "Custom background",
+  "Background preset": "Background preset",
+  "Textile": "Textile",
+  "Fabric colour": "Fabric colour",
+  "Saved with this design. Changes the preview and PNG background, not stitch settings.": "Saved with this design. Changes the preview and PNG background, not stitch settings.",
+
   "Library": "Library",
   "Design library": "Design library",
   "Basic shapes": "Basic shapes",
@@ -1426,6 +1446,26 @@ export const en={
 } as const;
 export type Key=keyof typeof en;
 export const tr={
+  "Canvas background": "Tuval arka planı",
+  "Solid colour": "Düz renk",
+  "Linen": "Keten",
+  "Cotton": "Pamuk",
+  "Denim": "Kot",
+  "Jersey": "Jarse",
+  "Felt": "Keçe",
+  "Terry": "Havlu",
+  "Natural linen": "Doğal keten",
+  "Ivory cotton": "Fildişi pamuk",
+  "Indigo denim": "İndigo kot",
+  "Blush felt": "Pembe keçe",
+  "Sage linen": "Adaçayı keten",
+  "Follow sewing fabric": "Dikiş kumaşını izle",
+  "Custom background": "Özel arka plan",
+  "Background preset": "Arka plan ön ayarı",
+  "Textile": "Tekstil",
+  "Fabric colour": "Kumaş rengi",
+  "Saved with this design. Changes the preview and PNG background, not stitch settings.": "Bu tasarımla kaydedilir. Önizleme ve PNG arka planını değiştirir; dikiş ayarlarını değiştirmez.",
+
   "Library": "Kütüphane",
   "Design library": "Tasarım kütüphanesi",
   "Basic shapes": "Temel Şekiller",

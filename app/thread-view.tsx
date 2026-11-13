@@ -2,9 +2,10 @@
 import {memo, useEffect, useRef, useState, type RefObject} from 'react';
 import {drawFabric} from '@/lib/thread';
 import {drawRealisticThreads} from '@/lib/thread-renderer';
+import type {CanvasBackground} from '@/lib/canvas-background';
 import type {Compiled, Fabric, RefImage} from '@/lib/project';
 
-type Props={canvasSize:{width:number;height:number};compiled:Compiled;count:number;fabric:Fabric;hoop:{width:number;height:number};view:[number,number,number,number];svg:RefObject<SVGSVGElement|null>;dimmed:boolean;images:RefImage[];grid:{size:number;subdivisions:number}|null};
+type Props={background?:CanvasBackground;canvasSize:{width:number;height:number};compiled:Compiled;count:number;fabric:Fabric;hoop:{width:number;height:number};view:[number,number,number,number];svg:RefObject<SVGSVGElement|null>;dimmed:boolean;images:RefImage[];grid:{size:number;subdivisions:number}|null};
 type Drawn={key:string;scene:string;compiled:Compiled|null;count:number;s:number;ox:number;oy:number;ms:number};
 // Canvas under the transparent SVG overlay (Studio passes canvasSize on resize).
 // GPU playback resolves the sewn prefix together before downsampling; appending
@@ -23,13 +24,13 @@ export default memo(function ThreadView(props:Props){
   useEffect(()=>{
     const paint=(full=false)=>{
       frame.current=0;const el=canvas.current,svg=latest.current.svg.current;if(!el||!svg)return;
-      const {compiled,count,fabric,hoop,images,grid,view:[vx,vy,vw,vh]}=latest.current,box=svg.getBoundingClientRect(),wrap=el.parentElement!.getBoundingClientRect(),dpr=Math.min(3,window.devicePixelRatio||1);
+      const {compiled,count,fabric,background,hoop,images,grid,view:[vx,vy,vw,vh]}=latest.current,box=svg.getBoundingClientRect(),wrap=el.parentElement!.getBoundingClientRect(),dpr=Math.min(3,window.devicePixelRatio||1);
       const w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);if(!w||!h)return;
       Object.assign(el.style,{left:`${box.left-wrap.left}px`,top:`${box.top-wrap.top}px`,width:`${box.width}px`,height:`${box.height}px`});
       const scale=Math.min(box.width/vw,box.height/vh),ox=(box.width-vw*scale)/2-vx*scale,oy=(box.height-vh*scale)/2-vy*scale,px=scale*dpr;
       const cull:[number,number,number,number]=[-ox/scale,-oy/scale,(box.width-ox)/scale,(box.height-oy)/scale];
       const arts=images.filter(i=>decoded.current.get(i.src)?.ready);
-      const scene=[w,h,dpr,fabric,hoop.width,hoop.height,grid?.size,grid?.subdivisions,arts.map(i=>[i.src.length,i.x,i.y,i.width,i.height,i.rotation??0,i.opacity].join(' ')).join('|')].join(),key=[scene,vx,vy,vw,vh].join(),d=drawn.current,start=performance.now(),c=el.getContext('2d')!;
+      const scene=[w,h,dpr,fabric,background?.textile,background?.color,hoop.width,hoop.height,grid?.size,grid?.subdivisions,arts.map(i=>[i.src.length,i.x,i.y,i.width,i.height,i.rotation??0,i.opacity].join(' ')).join('|')].join(),key=[scene,vx,vy,vw,vh].join(),d=drawn.current,start=performance.now(),c=el.getContext('2d')!;
       const colours=compiled.threads.map(t=>t.color),threads=(from:number)=>{el.dataset.renderer=drawRealisticThreads(c,compiled.commands,colours,from,count,px,cull);},done=()=>{el.dataset.frameMs=(performance.now()-start).toFixed(1);};
       if(d.key===key&&d.compiled===compiled&&count===d.count)return;
       if(el.dataset.renderer==='canvas2d'&&d.key===key&&d.compiled===compiled&&count>d.count){c.setTransform(px,0,0,px,ox*dpr,oy*dpr);threads(d.count);d.count=count;d.ms=Infinity;done();return;}
@@ -39,7 +40,7 @@ export default memo(function ThreadView(props:Props){
       }
       clearTimeout(settle.current);
       if(el.width!==w||el.height!==h){el.width=w;el.height=h;}
-      c.setTransform(px,0,0,px,ox*dpr,oy*dpr);drawFabric(c,fabric,hoop,px,cull);for(const i of arts){c.save();c.globalAlpha=i.opacity;c.translate(i.x+i.width/2,i.y+i.height/2);if(i.rotation)c.rotate(i.rotation*Math.PI/180);c.drawImage(decoded.current.get(i.src)!.img,-i.width/2,-i.height/2,i.width,i.height);c.restore();}
+      c.setTransform(px,0,0,px,ox*dpr,oy*dpr);drawFabric(c,fabric,hoop,px,cull,background);for(const i of arts){c.save();c.globalAlpha=i.opacity;c.translate(i.x+i.width/2,i.y+i.height/2);if(i.rotation)c.rotate(i.rotation*Math.PI/180);c.drawImage(decoded.current.get(i.src)!.img,-i.width/2,-i.height/2,i.width,i.height);c.restore();}
       if(grid){
         const theme=getComputedStyle(el),lines=(step:number,width:number,alpha:number)=>{c.globalAlpha=alpha;c.lineWidth=width;c.beginPath();for(let x=Math.max(0,Math.ceil(cull[0]/step)*step);x<=Math.min(hoop.width,cull[2]);x+=step){c.moveTo(x,0);c.lineTo(x,hoop.height);}for(let y=Math.max(0,Math.ceil(cull[1]/step)*step);y<=Math.min(hoop.height,cull[3]);y+=step){c.moveTo(0,y);c.lineTo(hoop.width,y);}c.stroke();};
         c.save();c.strokeStyle=theme.getPropertyValue('--grid').trim();

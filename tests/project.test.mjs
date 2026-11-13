@@ -359,3 +359,12 @@ test('Saved redwork objects migrate to one running-stitch object with the same l
   assert.ok(p.objects.every(o=>!('sources' in o)));
   const current={...old,objects:[line]};assert.equal(migrateProject(current),current,'up-to-date designs are returned unchanged');
 });
+
+test('Canvas backgrounds validate and survive saving without changing sewing geometry',()=>{
+  const p=project(object('Region',[square]));
+  const background={textile:'linen',color:'#c9b99a'};
+  const saved=JSON.parse(JSON.stringify({...p,background}));
+  assert.ok(validProject(saved));assert.deepEqual(saved.background,background);
+  assert.deepEqual(geometryPayload(saved),geometryPayload(p));
+  for(const value of [null,{}, {textile:'silk',color:'#ffffff'}, {textile:'linen',color:'red'}, {textile:'linen',color:'#fff'}, {textile:'__proto__',color:'#ffffff'}])assert.equal(validProject({...p,background:value}),false);
+});

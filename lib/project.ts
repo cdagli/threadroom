@@ -1,3 +1,4 @@
+import {validBackground,type CanvasBackground} from './canvas-background';
 import {validPathSettings,type PathBinding} from './path-binding';
 import {validThread,type Thread} from './threads';
 import {createT,type Translator,type Key} from './i18n';
@@ -49,6 +50,7 @@ export type Project = {
   version: 1; name: string; machine: 'brother-pr1x'; hoop: string;
   fabric: Fabric; locks: Locks; trimJump: number; objects: StitchObject[]; images?: RefImage[]; artwork?: Artwork;
   groups?: {id: string; name: string; pathBinding?:PathBinding}[];
+  background?: CanvasBackground; // Preview only; independent of sewing fabric.
   sewingSpeed?: number; // stitches/minute; unset = 650, PR1X maximum 1000
 };
 // trim: a jump that starts with a thread cut; travel: an untrimmed connecting stitch between runs.
@@ -252,6 +254,7 @@ export function validProject(value: unknown): value is Project {
   if (!value || typeof value !== 'object') return false;
   const p = value as Project;
   if (p.version !== 1 || p.machine !== 'brother-pr1x' || !hoops[p.hoop] || !Object.hasOwn(fabrics,p.fabric) || typeof p.name !== 'string') return false;
+  if(p.background!==undefined&&!validBackground(p.background))return false;
   if(p.sewingSpeed!==undefined&&!inRange(p.sewingSpeed,100,1000))return false;
   if (!Array.isArray(p.objects) || p.objects.length > 80) return false;
   if(p.groups!==undefined&&(!Array.isArray(p.groups)||p.groups.length>80||Array.from(p.groups).some(g=>!g||typeof g.id!=='string'||typeof g.name!=='string'||g.name.length>40)||new Set(p.groups.map(g=>g.id)).size!==p.groups.length))return false;

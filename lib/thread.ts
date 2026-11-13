@@ -1,3 +1,4 @@
+import type {CanvasBackground} from './canvas-background';
 import type {Command, Fabric} from './project';
 // Canvas fallback for the thread preview (lib/thread-renderer.ts is the GPU renderer): each sewn
 // stitch is a lit stroke 0.36 mm wide, broader than the real thread so that it still reads as a
@@ -58,7 +59,7 @@ function roundInset(ax:number,ay:number,bx:number,by:number,t:number,r:number):[
   for(let i=0;i<n;i++){const d=(i+.5)*step,x=ax+ux*d,y=ay+uy*d;segs.push(x-ux*skew-uy*flank,y-uy*skew+ux*flank,x+ux*skew+uy*flank,y+uy*skew-ux*flank);}
   return segs;
 }
-export type FabricPattern='plain'|'gauze'|'knit'|'rib'|'fleece'|'terry'|'twill';
+export type FabricPattern='linen'|'solid'|'plain'|'gauze'|'knit'|'rib'|'fleece'|'terry'|'twill';
 // Light baby-fabric colours so thread stays readable; period is the texture repeat in mm.
 /** @test */ export const fabricLooks:Record<Fabric,{base:string;yarn:string;pattern:FabricPattern;period:number}>={
   woven:{base:'#f7f2e6',yarn:'#d9ccb2',pattern:'plain',period:.5},
@@ -70,13 +71,28 @@ export type FabricPattern='plain'|'gauze'|'knit'|'rib'|'fleece'|'terry'|'twill';
   denim:{base:'#b4c3d6',yarn:'#8197b4',pattern:'twill',period:.7},
 };
 
+export function backgroundLook(fabric:Fabric,background?:CanvasBackground){
+  if(!background)return fabricLooks[fabric];
+  const patterns:Record<CanvasBackground['textile'],{pattern:FabricPattern;period:number}>={plain:{pattern:'solid',period:1},linen:{pattern:'linen',period:8},cotton:{pattern:'plain',period:.5},gauze:{pattern:'gauze',period:.9},rib:{pattern:'rib',period:1.6},denim:{pattern:'twill',period:.7},jersey:{pattern:'knit',period:.9},felt:{pattern:'fleece',period:3},terry:{pattern:'terry',period:1.2}};
+  return {...patterns[background.textile],base:background.color,yarn:hex(mix(rgb(background.color),[0,0,0],.45))};
+}
+// Shared tile for SVG editing and Canvas thread views; no external image requests.
+export function backgroundTile(fabric:Fabric,background?:CanvasBackground){const look=backgroundLook(fabric,background);return {src:tile(look.pattern,look.yarn,128).toDataURL(),period:look.period};}
+
 type Ctx=CanvasRenderingContext2D;
 const tiles=new Map<string,HTMLCanvasElement>();
 function tile(pattern:FabricPattern,yarn:string,size:number){
   const key=`${pattern}${yarn}${size}`;let t=tiles.get(key);if(t)return t;
   t=document.createElement('canvas');t.width=t.height=size;const c=t.getContext('2d')!,s=size,[r,g,b]=rgb(yarn),y=(a:number)=>`rgba(${r},${g},${b},${a})`,light='rgba(255,255,255,.55)';
   c.lineCap='round';
-  if(pattern==='plain'){
+  if(pattern==='solid')return t;
+  if(pattern==='linen'){
+    // Uneven flax yarns, seeded slubs and fine fibres in a seamless 8 mm tile.
+    let seed=19;const rand=()=>(seed=seed*16807%2147483647)/2147483647;
+    for(let axis=0;axis<2;axis++){c.save();if(axis)c.transform(0,1,1,0,0,0);
+      for(let i=0;i<32;i++){const x=i*s/32,w=s/32*(.55+rand()*.35);c.fillStyle=y(.35);c.fillRect(x,0,w,s);c.fillStyle='rgba(255,255,255,.18)';c.fillRect(x,0,w*.3,s);
+        for(let j=0;j<12;j++){const yy=rand()*s;c.fillStyle=j%2?y(.18):'rgba(255,255,255,.16)';c.fillRect(x,yy,w,s*(.015+rand()*.07));}}c.restore();}
+  }else if(pattern==='plain'){
     // Plain weave: each yarn passes over one and under the next, so every cell shows a short
     // rounded float, weft and warp alternating; the float dips out of sight at both ends.
     const h=s/2,yarn=(x:number,yy:number,across:boolean)=>{
@@ -98,17 +114,18 @@ function tile(pattern:FabricPattern,yarn:string,size:number){
     for(let i=0;i<220;i++){const x=rand()*s,yy=rand()*s,rad=s*(.01+rand()*.035);c.fillStyle=i%3?y(.18):'rgba(255,255,255,.5)';for(const [ox,oy] of [[0,0],[s,0],[0,s],[s,s],[-s,0],[0,-s]]){c.beginPath();c.arc(x+ox,yy+oy,rad,0,7);c.fill();}}}
   else if(pattern==='terry'){for(const [x,yy] of [[s/4,s/4],[s*.75,s*.75],[s*.75,-s/4],[s/4,s*1.25],[-s/4,s*.75],[s*1.25,s/4]]){c.strokeStyle=y(.55);c.lineWidth=s*.07;c.beginPath();c.arc(x,yy,s*.16,0,7);c.stroke();c.strokeStyle=light;c.lineWidth=s*.04;c.beginPath();c.arc(x,yy,s*.16,3.4,4.9);c.stroke();}}
   else{c.lineWidth=s*.22;for(let i=-1;i<3;i++){c.strokeStyle=y(.5);c.beginPath();c.moveTo(i*s/2,s);c.lineTo(i*s/2+s,0);c.stroke();}c.lineWidth=s*.06;c.strokeStyle='rgba(255,255,255,.4)';for(let i=-1;i<3;i++){c.beginPath();c.moveTo(i*s/2-s*.06,s);c.lineTo(i*s/2+s-s*.06,0);c.stroke();}}
+  if(tiles.size>=64)tiles.delete(tiles.keys().next().value!);
   tiles.set(key,t);return t;
 }
 function roundRect(c:Ctx,x:number,y:number,w:number,h:number,r:number){c.beginPath();c.roundRect(x,y,w,h,r);}
 // Workspace, hoop frame and textured fabric; ctx is already in mm with pxPerMm device pixels per mm.
-export function drawFabric(c:Ctx,fabric:Fabric,hoop:{width:number;height:number},pxPerMm:number,view:[number,number,number,number]){
-  const look=fabricLooks[fabric],{width:w,height:h}=hoop,theme=getComputedStyle(c.canvas);
+export function drawFabric(c:Ctx,fabric:Fabric,hoop:{width:number;height:number},pxPerMm:number,view:[number,number,number,number],background?:CanvasBackground){
+  const look=backgroundLook(fabric,background),{width:w,height:h}=hoop,theme=getComputedStyle(c.canvas);
   c.fillStyle=theme.getPropertyValue('--bg-workspace').trim();c.fillRect(view[0],view[1],view[2]-view[0],view[3]-view[1]);
   c.save();c.shadowColor=theme.getPropertyValue('--hoop-shadow').trim();c.shadowBlur=1.5*pxPerMm;c.shadowOffsetY=.6*pxPerMm;roundRect(c,-2.4,-2.4,w+4.8,h+4.8,5);c.fillStyle=theme.getPropertyValue('--hoop-rim').trim();c.fill();c.restore();
   roundRect(c,0,0,w,h,3);c.fillStyle=look.base;c.fill();
   c.save();c.clip();
-  drawFabricTexture(c,fabric,pxPerMm,[Math.max(0,view[0]),Math.max(0,view[1]),Math.min(w,view[2]),Math.min(h,view[3])]);
+  drawFabricTexture(c,fabric,pxPerMm,[Math.max(0,view[0]),Math.max(0,view[1]),Math.min(w,view[2]),Math.min(h,view[3])],background);
   c.lineWidth=1.6;c.strokeStyle='rgba(90,75,50,.08)';roundRect(c,0,0,w,h,3);c.stroke();c.restore();
   c.lineWidth=.35;c.strokeStyle=theme.getPropertyValue('--hoop-border').trim();roundRect(c,0,0,w,h,3);c.stroke();
 }
@@ -177,8 +194,8 @@ export function drawThreads(c:Ctx,commands:Command[],shades:ReturnType<typeof th
 }
 
 // Fabric-only painting for mock-ups; shares the realistic view texture without the hoop frame.
-export function drawFabricTexture(c:Ctx,fabric:Fabric,pxPerMm:number,view:[number,number,number,number]){
-  const look=fabricLooks[fabric];c.fillStyle=look.base;c.fillRect(view[0],view[1],view[2]-view[0],view[3]-view[1]);
+export function drawFabricTexture(c:Ctx,fabric:Fabric,pxPerMm:number,view:[number,number,number,number],background?:CanvasBackground){
+  const look=backgroundLook(fabric,background);c.fillStyle=look.base;c.fillRect(view[0],view[1],view[2]-view[0],view[3]-view[1]);
   const px=look.period*pxPerMm;
   if(px>=8){const size=Math.min(128,Math.max(16,Math.round(px/8)*8)),p=c.createPattern(tile(look.pattern,look.yarn,size),'repeat')!;p.setTransform(new DOMMatrix([look.period/size,0,0,look.period/size,0,0]));c.globalAlpha=Math.min(.75,(px-8)/10+.3);c.fillStyle=p;c.fillRect(view[0],view[1],view[2]-view[0],view[3]-view[1]);c.globalAlpha=1;}
 }

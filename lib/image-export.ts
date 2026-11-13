@@ -20,7 +20,7 @@ export async function exportImage(compiled:Compiled,project:Project,pxPerMm:numb
   try{
     c.setTransform(b.scale,0,0,b.scale,-b.x*b.scale,-b.y*b.scale);
     const view:[number,number,number,number]=[b.x,b.y,b.x+b.width,b.y+b.height];
-    if(!transparent)drawFabricTexture(c,project.fabric,b.scale,view);
+    if(!transparent)drawFabricTexture(c,project.fabric,b.scale,view,project.background);
     for(const [i,img] of images){c.save();c.globalAlpha=i.opacity;c.translate(i.x+i.width/2,i.y+i.height/2);if(i.rotation)c.rotate(i.rotation*Math.PI/180);c.drawImage(img,-i.width/2,-i.height/2,i.width,i.height);c.restore();}
     drawRealisticThreads(c,commands,compiled.threads.map(t=>t.color),0,commands.length,b.scale,view);
     return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('PNG')),'image/png'));
